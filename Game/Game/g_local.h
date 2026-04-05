@@ -841,6 +841,7 @@ qboolean trap_EntityContact( const vec3_t mins, const vec3_t maxs, const gentity
 int		trap_BotAllocateClient( void );
 void	trap_BotFreeClient( int clientNum );
 void	trap_GetUsercmd( int clientNum, usercmd_t *cmd );
+int		trap_BotQueryActionState( int clientNum );
 qboolean	trap_GetEntityToken( char *buffer, int bufferSize );
 
 int		trap_DebugPolygonCreate(int color, int numPoints, vec3_t *points);

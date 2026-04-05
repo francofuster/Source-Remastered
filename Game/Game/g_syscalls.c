@@ -193,6 +193,10 @@ void trap_GetUsercmd( int clientNum, usercmd_t *cmd ) {
 	syscall( G_GET_USERCMD, clientNum, cmd );
 }
 
+int trap_BotQueryActionState( int clientNum ) {
+	return syscall( G_BOT_QUERY_ACTION_STATE, clientNum );
+}
+
 qboolean trap_GetEntityToken( char *buffer, int bufferSize ) {
 	return syscall( G_GET_ENTITY_TOKEN, buffer, bufferSize );
 }

@@ -1838,10 +1838,19 @@ GOBJ_ = \
   $(B)/Base/Game/g_tiers.o \
   $(B)/Base/Game/g_radar.o \
   $(B)/Base/Game/g_botlite_main.o \
+  $(B)/Base/Game/g_botlite_action.o \
+  $(B)/Base/Game/g_botlite_profile.o \
+  $(B)/Base/Game/g_botlite_skill.o \
+  $(B)/Base/Game/g_botlite_ai.o \
   $(B)/Base/Game/g_botlite_target.o \
   $(B)/Base/Game/g_botlite_lockon.o \
   $(B)/Base/Game/g_botlite_movement.o \
-  $(B)/Base/Game/g_botlite_combat.o \
+  $(B)/Base/Game/g_botlite_tactics.o \
+  $(B)/Base/Game/g_botlite_melee.o \
+  $(B)/Base/Game/g_botlite_ranged.o \
+  $(B)/Base/Game/g_botlite_skill1.o \
+  $(B)/Base/Game/g_botlite_skill2.o \
+  $(B)/Base/Game/g_botlite_skill3.o \
   $(B)/Base/Game/g_weapPhysParser.o \
   $(B)/Base/Game/g_weapPhysScanner.o \
   $(B)/Base/Game/g_weapPhysAttributes.o \

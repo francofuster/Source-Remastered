@@ -63,13 +63,30 @@ if "%1"=="TA" goto TA
 @if errorlevel 1 goto quit
 %cc%  ../g_botlite_main.c
 @if errorlevel 1 goto quit
+%cc%  ../g_botlite_action.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_profile.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_skill.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_ai.c
+@if errorlevel 1 goto quit
 %cc%  ../g_botlite_target.c
 @if errorlevel 1 goto quit
 %cc%  ../g_botlite_lockon.c
 @if errorlevel 1 goto quit
 %cc%  ../g_botlite_movement.c
 @if errorlevel 1 goto quit
-%cc%  ../g_botlite_combat.c
+%cc%  ../g_botlite_tactics.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_melee.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_ranged.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_skill1.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_skill2.c
+%cc%  ../g_botlite_skill3.c
 @if errorlevel 1 goto quit
 %cc%  ../g_weapPhysParser.c
 @if errorlevel 1 goto quit

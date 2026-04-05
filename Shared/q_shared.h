@@ -1103,6 +1103,9 @@ typedef struct playerState_s {
 #define BUTTON_JUMP			16384
 #define	MOVE_RUN			120
 // usercmd_t is sent to the server each client frame
+
+#define PSO_IS_BOT		0x00000001
+
 typedef struct usercmd_s {
 	int				serverTime;
 	int				angles[3];

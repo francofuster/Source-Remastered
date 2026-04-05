@@ -1034,6 +1034,10 @@ void ClientSpawn(gentity_t *ent) {
 	VectorCopy (playerMaxs, ent->r.maxs);
 
 	client->ps.clientNum = index;
+	client->ps.options = 0;
+	if ( ent->r.svFlags & SVF_BOT ) {
+		client->ps.options |= PSO_IS_BOT;
+	}
 	client->ps.stats[stSkills] = *G_FindUserWeaponMask( index );
 	client->ps.stats[stChargePercentPrimary] = 0;
 	client->ps.stats[stChargePercentSecondary] = 0;

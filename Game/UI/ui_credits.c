@@ -63,7 +63,7 @@ UI_CreditMenu_Draw
 static void UI_CreditMenu_Draw( void ) {
 	int		x,y;
 
-	y = 105;
+	y = 70;
 	x = 30;
 
 	UI_DrawProportionalString( x, y, "Design/Management", UI_LEFT|UI_SMALLFONT|UI_DROPSHADOW, color_white );
@@ -74,6 +74,11 @@ static void UI_CreditMenu_Draw( void ) {
 	UI_DrawProportionalString( x, y, "Programming", UI_LEFT|UI_SMALLFONT|UI_DROPSHADOW, color_white );
 	y += PROP_HEIGHT * PROP_SMALL_SIZE_SCALE;
 	UI_DrawProportionalString( x, y, "RiO, Zeth, MDave", UI_LEFT|UI_TINYFONT|UI_DROPSHADOW, color_white );
+
+	y += 1.42 * PROP_HEIGHT * PROP_SMALL_SIZE_SCALE;
+	UI_DrawProportionalString( x, y, "bot system & ui fix", UI_LEFT|UI_SMALLFONT|UI_DROPSHADOW, color_white );
+	y += PROP_HEIGHT * PROP_SMALL_SIZE_SCALE;
+	UI_DrawProportionalString( x, y, "FFuster", UI_LEFT|UI_TINYFONT|UI_DROPSHADOW, color_white );
 
 	y += 1.42 * PROP_HEIGHT * PROP_SMALL_SIZE_SCALE;
 	UI_DrawProportionalString( x, y, "2D/3D Animation", UI_LEFT|UI_SMALLFONT|UI_DROPSHADOW, color_white );

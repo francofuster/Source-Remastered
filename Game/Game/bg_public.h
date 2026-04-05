@@ -378,6 +378,31 @@ typedef enum {
 #define canMelee		0x00000400
 #define canLockon		0x00000800
 #define canBlock		0x00001000
+
+// Bot action-state query flags returned by the server/engine.
+// These encode hard movement / combat restrictions that are more stable
+// when evaluated from the authoritative playerState side.
+#define BOTACT_FREEZE			0x00000001
+#define BOTACT_KNOCKBACK		0x00000002
+#define BOTACT_RECOVERING		0x00000004
+#define BOTACT_TRANSFORMING		0x00000008
+#define BOTACT_CHARGING			0x00000010
+#define BOTACT_USING_MELEE		0x00000020
+#define BOTACT_USING_BLOCK		0x00000040
+#define BOTACT_USING_WEAPON		0x00000080
+#define BOTACT_USING_ZANZOKEN	0x00000100
+#define BOTACT_USING_BOOST		0x00000200
+#define BOTACT_USING_SOAR		0x00000400
+#define BOTACT_PREPARING		0x00000800
+#define BOTACT_STRUGGLING		0x00001000
+#define BOTACT_MELEE_RECOVERY	0x00002000
+#define BOTACT_WEAPON_BUSY		0x00004000
+#define BOTACT_CAN_BOOST		0x00008000
+#define BOTACT_CAN_ZANZOKEN		0x00010000
+#define BOTACT_CAN_BLOCK		0x00020000
+#define BOTACT_GUIDING			0x00040000
+#define BOTACT_CRASHED			0x00080000
+#define BOTACT_UNCONSCIOUS		0x00100000
 #define canTransform	0x00002000
 #define canSoar			0x00004000
 #define advancedMelee	0x00008000

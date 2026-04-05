@@ -282,6 +282,93 @@ void SV_GetUsercmd( int clientNum, usercmd_t *cmd ) {
 	*cmd = svs.clients[clientNum].lastUsercmd;
 }
 
+static int SV_BotQueryActionState( int clientNum ) {
+	playerState_t *ps;
+	int flags;
+
+	if ( clientNum < 0 || clientNum >= sv_maxclients->integer ) {
+		return 0;
+	}
+
+	ps = SV_GameClientNum( clientNum );
+	if ( !ps ) {
+		return 0;
+	}
+
+	flags = 0;
+
+	if ( ps->timers[tmFreeze] > 0 || ps->pm_type == PM_FREEZE ) {
+		flags |= BOTACT_FREEZE;
+	}
+	if ( ps->timers[tmKnockback] > 0 ) {
+		flags |= BOTACT_KNOCKBACK;
+	}
+	if ( ps->timers[tmCrash] > 0 || ps->timers[tmRecover] > 0 || ps->powerups[PW_STATE] == -1 ) {
+		flags |= BOTACT_RECOVERING;
+	}
+	if ( ps->timers[tmTransform] != 0 || ( ps->bitFlags & isTransforming ) ) {
+		flags |= BOTACT_TRANSFORMING;
+	}
+	if ( ps->timers[tmMeleeIdle] < 0 ) {
+		flags |= BOTACT_MELEE_RECOVERY;
+	}
+	if ( ps->bitFlags & isCharging ) {
+		flags |= BOTACT_CHARGING;
+	}
+	if ( ps->bitFlags & usingMelee ) {
+		flags |= BOTACT_USING_MELEE;
+	}
+	if ( ps->bitFlags & usingBlock ) {
+		flags |= BOTACT_USING_BLOCK;
+	}
+	if ( ps->bitFlags & usingWeapon ) {
+		flags |= BOTACT_USING_WEAPON;
+	}
+	if ( ps->bitFlags & usingZanzoken || ps->timers[tmZanzoken] > 0 ) {
+		flags |= BOTACT_USING_ZANZOKEN;
+	}
+	if ( ps->bitFlags & usingBoost ) {
+		flags |= BOTACT_USING_BOOST;
+	}
+	if ( ps->bitFlags & usingSoar ) {
+		flags |= BOTACT_USING_SOAR;
+	}
+	if ( ps->bitFlags & isPreparing ) {
+		flags |= BOTACT_PREPARING;
+	}
+	if ( ps->bitFlags & isStruggling ) {
+		flags |= BOTACT_STRUGGLING;
+	}
+	if ( ps->bitFlags & isGuiding ) {
+		flags |= BOTACT_GUIDING;
+	}
+	if ( ps->bitFlags & isCrashed ) {
+		flags |= BOTACT_CRASHED;
+	}
+	if ( ps->bitFlags & isUnconcious ) {
+		flags |= BOTACT_UNCONSCIOUS;
+	}
+	if ( ps->weaponstate == WEAPON_FIRING ||
+		 ps->weaponstate == WEAPON_GUIDING ||
+		 ps->weaponstate == WEAPON_CHARGING ||
+		 ps->weaponstate == WEAPON_ALTFIRING ||
+		 ps->weaponstate == WEAPON_ALTGUIDING ||
+		 ps->weaponstate == WEAPON_ALTCHARGING ) {
+		flags |= BOTACT_WEAPON_BUSY;
+	}
+	if ( ps->states & canBoost ) {
+		flags |= BOTACT_CAN_BOOST;
+	}
+	if ( ps->states & canZanzoken ) {
+		flags |= BOTACT_CAN_ZANZOKEN;
+	}
+	if ( ps->states & canBlock ) {
+		flags |= BOTACT_CAN_BLOCK;
+	}
+
+	return flags;
+}
+
 //==============================================
 
 static int	FloatAsInt( float f ) {
@@ -411,6 +498,8 @@ intptr_t SV_GameSystemCalls( intptr_t *args ) {
 	case G_GET_USERCMD:
 		SV_GetUsercmd( args[1], VMA(2) );
 		return 0;
+	case G_BOT_QUERY_ACTION_STATE:
+		return SV_BotQueryActionState( args[1] );
 	case G_GET_ENTITY_TOKEN:
 		{
 			const char	*s;

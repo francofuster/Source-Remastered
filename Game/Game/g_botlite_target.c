@@ -5,6 +5,10 @@ static void BotLite_FailsafeRecoverCrash( gentity_t *bot, botlite_info_t *info )
 static gentity_t *BotLite_GetLastAttacker( gentity_t *bot );
 static gentity_t *BotLite_FindBestDamageAttacker( gentity_t *bot, float *outDistSq );
 static void BotLite_FaceDamageDirection( gentity_t *bot );
+static qboolean BotLite_HasLineOfSight( gentity_t *bot, gentity_t *target );
+static qboolean BotLite_TargetFacingBot( gentity_t *bot, gentity_t *target );
+static qboolean BotLite_TargetChargingAttack( gentity_t *target );
+static qboolean BotLite_SnapshotBotDisabled( gentity_t *bot );
 
 void BotLite_DebugLog( gentity_t *bot, const char *msg ) {
 	botlite_info_t *info;
@@ -14,13 +18,12 @@ void BotLite_DebugLog( gentity_t *bot, const char *msg ) {
 	}
 
 	info = &g_botlite[bot->s.number];
-	if ( !info->debugEnabled ) {
+	if ( !info->runtime.debugEnabled ) {
 		return;
 	}
 
 	G_Printf( "[BOTDEBUG:%s:%d] %s\n", bot->client->pers.netname, bot->s.number, msg );
 }
-
 
 static void BotLite_FailsafeRecoverCrash( gentity_t *bot, botlite_info_t *info ) {
 	if ( !bot || !bot->client || !info ) {
@@ -32,17 +35,17 @@ static void BotLite_FailsafeRecoverCrash( gentity_t *bot, botlite_info_t *info )
 		 bot->client->ps.timers[tmCrash] <= 0 &&
 		 bot->client->ps.timers[tmRecover] <= 0 &&
 		 bot->client->ps.timers[tmKnockback] <= 0 ) {
-		info->crashStartTime = 0;
+		info->runtime.crashStartTime = 0;
 		return;
 	}
 
-	if ( info->crashStartTime <= 0 ) {
-		info->crashStartTime = level.time;
+	if ( info->runtime.crashStartTime <= 0 ) {
+		info->runtime.crashStartTime = level.time;
 		BotLite_DebugLog( bot, "Crash state started" );
 		return;
 	}
 
-	if ( level.time - info->crashStartTime < 3000 ) {
+	if ( level.time - info->runtime.crashStartTime < 3000 ) {
 		return;
 	}
 
@@ -52,14 +55,11 @@ static void BotLite_FailsafeRecoverCrash( gentity_t *bot, botlite_info_t *info )
 	bot->client->ps.timers[tmCrash] = 0;
 	bot->client->ps.timers[tmRecover] = 0;
 	bot->client->ps.timers[tmKnockback] = 0;
-	info->nextActionTime = 0;
-	info->actionUntil = 0;
-	info->comboStep = 0;
-	info->crashStartTime = 0;
+	BotLite_ResetTransientCombatState( bot->s.number );
+	info->runtime.crashStartTime = 0;
 
 	BotLite_DebugLog( bot, "Failsafe recovery applied" );
 }
-
 
 qboolean BotLite_IsTemporarilyDisabled( gentity_t *bot ) {
 	botlite_info_t *info;
@@ -82,7 +82,6 @@ qboolean BotLite_IsTemporarilyDisabled( gentity_t *bot ) {
 	return qfalse;
 }
 
-
 qboolean BotLite_TargetIsValid( gentity_t *bot, gentity_t *target ) {
 	qboolean targetIsBot;
 
@@ -104,14 +103,10 @@ qboolean BotLite_TargetIsValid( gentity_t *bot, gentity_t *target ) {
 		return qfalse;
 	}
 	if ( target->client->ps.bitFlags & isDead ) {
-		if ( targetIsBot ) {
-			BotLite_DebugLog( bot, va( "Reject bot target=%d name=%s reason=dead", target->s.number, target->client->pers.netname ) );
-		}
 		return qfalse;
 	}
 	return qtrue;
 }
-
 
 static gentity_t *BotLite_GetLastAttacker( gentity_t *bot ) {
 	int attackerNum;
@@ -125,7 +120,6 @@ static gentity_t *BotLite_GetLastAttacker( gentity_t *bot ) {
 	if ( attackerNum < 0 || attackerNum >= level.maxclients ) {
 		attackerNum = bot->client->ps.persistant[PERS_ATTACKER];
 	}
-
 	if ( attackerNum < 0 || attackerNum >= level.maxclients ) {
 		return NULL;
 	}
@@ -137,7 +131,6 @@ static gentity_t *BotLite_GetLastAttacker( gentity_t *bot ) {
 
 	return attacker;
 }
-
 
 static gentity_t *BotLite_FindBestDamageAttacker( gentity_t *bot, float *outDistSq ) {
 	int i;
@@ -188,7 +181,6 @@ static gentity_t *BotLite_FindBestDamageAttacker( gentity_t *bot, float *outDist
 	return best;
 }
 
-
 static void BotLite_FaceDamageDirection( gentity_t *bot ) {
 	vec3_t angles;
 
@@ -199,7 +191,6 @@ static void BotLite_FaceDamageDirection( gentity_t *bot ) {
 	BotLite_ApplyViewAngles( bot, angles );
 }
 
-
 qboolean BotLite_ReactToDamage( gentity_t *bot, int clientNum, float *outDistSq ) {
 	botlite_info_t *info;
 	gentity_t *attacker;
@@ -207,15 +198,14 @@ qboolean BotLite_ReactToDamage( gentity_t *bot, int clientNum, float *outDistSq 
 	float distSq;
 
 	info = &g_botlite[clientNum];
-	if ( bot->client->ps.damageEvent == info->lastDamageEvent || bot->client->ps.damageCount <= 0 ) {
+	if ( bot->client->ps.damageEvent == info->runtime.lastDamageEvent || bot->client->ps.damageCount <= 0 ) {
 		return qfalse;
 	}
 
-	info->lastDamageEvent = bot->client->ps.damageEvent;
+	info->runtime.lastDamageEvent = bot->client->ps.damageEvent;
 	BotLite_DebugLog( bot, va( "Received damage dmgEv=%d count=%d lastHurt=%d persAttacker=%d", bot->client->ps.damageEvent, bot->client->ps.damageCount, bot->client->lasthurt_client, bot->client->ps.persistant[PERS_ATTACKER] ) );
-	info->mode = BOTLITE_MODE_COMBAT;
-	info->nextActionTime = 0;
-	info->actionUntil = 0;
+	info->runtime.mode = BOTLITE_MODE_COMBAT;
+	BotLite_ResetTransientCombatState( clientNum );
 
 	attacker = BotLite_GetLastAttacker( bot );
 	if ( !attacker ) {
@@ -228,7 +218,7 @@ qboolean BotLite_ReactToDamage( gentity_t *bot, int clientNum, float *outDistSq 
 	if ( attacker ) {
 		VectorSubtract( attacker->client->ps.origin, bot->client->ps.origin, delta );
 		distSq = VectorLengthSquared( delta );
-		info->lastTargetNum = attacker->s.number;
+		info->runtime.lastTargetNum = attacker->s.number;
 		BotLite_DebugLog( bot, "Damage reaction target acquired" );
 		BotLite_SetLockOn( bot, attacker );
 		BotLite_FaceTarget( bot, attacker );
@@ -238,14 +228,13 @@ qboolean BotLite_ReactToDamage( gentity_t *bot, int clientNum, float *outDistSq 
 		return qtrue;
 	}
 
-	info->lastTargetNum = -1;
+	info->runtime.lastTargetNum = -1;
 	BotLite_FaceDamageDirection( bot );
 	if ( outDistSq ) {
-		*outDistSq = BOTLITE_LOCK_RANGE * BOTLITE_LOCK_RANGE;
+		*outDistSq = info->profile ? info->profile->lockRange * info->profile->lockRange : ( 2200.0f * 2200.0f );
 	}
 	return qtrue;
 }
-
 
 gentity_t *BotLite_GetTrackedTarget( gentity_t *bot, int clientNum, float *outDistSq ) {
 	botlite_info_t *info;
@@ -255,10 +244,10 @@ gentity_t *BotLite_GetTrackedTarget( gentity_t *bot, int clientNum, float *outDi
 
 	info = &g_botlite[clientNum];
 	target = NULL;
-	distSq = BOTLITE_LOCK_RANGE * BOTLITE_LOCK_RANGE;
+	distSq = info->profile ? info->profile->lockRange * info->profile->lockRange : ( 2200.0f * 2200.0f );
 
-	if ( info->lastTargetNum >= 0 && info->lastTargetNum < level.maxclients ) {
-		target = &g_entities[info->lastTargetNum];
+	if ( info->runtime.lastTargetNum >= 0 && info->runtime.lastTargetNum < level.maxclients ) {
+		target = &g_entities[info->runtime.lastTargetNum];
 		if ( !BotLite_TargetIsValid( bot, target ) ) {
 			target = NULL;
 		} else {
@@ -270,7 +259,7 @@ gentity_t *BotLite_GetTrackedTarget( gentity_t *bot, int clientNum, float *outDi
 	if ( !target ) {
 		target = BotLite_FindNearestVisiblePlayer( bot, &distSq );
 		if ( target ) {
-			info->lastTargetNum = target->s.number;
+			info->runtime.lastTargetNum = target->s.number;
 		}
 	}
 
@@ -279,7 +268,6 @@ gentity_t *BotLite_GetTrackedTarget( gentity_t *bot, int clientNum, float *outDi
 	}
 	return target;
 }
-
 
 gentity_t *BotLite_FindNearestPlayerAnyDistance( gentity_t *bot, float *outDistSq ) {
 	int i;
@@ -309,24 +297,43 @@ gentity_t *BotLite_FindNearestPlayerAnyDistance( gentity_t *bot, float *outDistS
 		bestDistSq = distSq;
 	}
 
-	if ( best && ( best->r.svFlags & SVF_BOT ) ) {
-		BotLite_DebugLog( bot, va( "AnyDistance picked bot target=%d name=%s dist=%.0f", best->s.number, best->client->pers.netname, (float)sqrt( bestDistSq ) ) );
-	}
-
 	if ( outDistSq ) {
-		*outDistSq = best ? bestDistSq : ( BOTLITE_LOCK_RANGE * BOTLITE_LOCK_RANGE );
+		*outDistSq = best ? bestDistSq : 0.0f;
 	}
 	return best;
 }
-
 
 gentity_t *BotLite_FindNearestVisiblePlayer( gentity_t *bot, float *outDistSq ) {
 	int i;
 	gentity_t *best;
 	float bestDistSq;
+	float minDistSq;
+	float maxDistSq;
+	const botlite_profile_t *profile;
+	botlite_info_t *info;
+	qboolean requireLOS;
 
 	best = NULL;
-	bestDistSq = BOTLITE_ACQUIRE_DISTANCE * BOTLITE_ACQUIRE_DISTANCE;
+	bestDistSq = 999999999.0f;
+	minDistSq = 0.0f;
+	maxDistSq = 0.0f;
+	requireLOS = qfalse;
+
+	profile = NULL;
+	info = NULL;
+	if ( bot && bot->s.number >= 0 && bot->s.number < BOTLITE_MAX_BOTS ) {
+		info = &g_botlite[bot->s.number];
+		profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+	}
+	if ( profile ) {
+		if ( profile->targetAcquireMinDistance > 0.0f ) {
+			minDistSq = profile->targetAcquireMinDistance * profile->targetAcquireMinDistance;
+		}
+		if ( profile->acquireDistance > 0.0f ) {
+			maxDistSq = profile->acquireDistance * profile->acquireDistance;
+		}
+		requireLOS = profile->targetAcquireRequiresLOS;
+	}
 
 	for ( i = 0; i < level.maxclients; i++ ) {
 		gentity_t *other;
@@ -340,6 +347,15 @@ gentity_t *BotLite_FindNearestVisiblePlayer( gentity_t *bot, float *outDistSq ) 
 
 		VectorSubtract( other->client->ps.origin, bot->client->ps.origin, delta );
 		distSq = VectorLengthSquared( delta );
+		if ( distSq < minDistSq ) {
+			continue;
+		}
+		if ( maxDistSq > 0.0f && distSq > maxDistSq ) {
+			continue;
+		}
+		if ( requireLOS && !BotLite_HasLineOfSight( bot, other ) ) {
+			continue;
+		}
 		if ( distSq >= bestDistSq ) {
 			continue;
 		}
@@ -348,16 +364,11 @@ gentity_t *BotLite_FindNearestVisiblePlayer( gentity_t *bot, float *outDistSq ) 
 		bestDistSq = distSq;
 	}
 
-	if ( best && ( best->r.svFlags & SVF_BOT ) ) {
-		BotLite_DebugLog( bot, va( "Visible picked bot target=%d name=%s dist=%.0f", best->s.number, best->client->pers.netname, (float)sqrt( bestDistSq ) ) );
-	}
-
 	if ( outDistSq ) {
-		*outDistSq = bestDistSq;
+		*outDistSq = best ? bestDistSq : 0.0f;
 	}
 	return best;
 }
-
 
 qboolean BotLite_TargetStillRecovering( gentity_t *target ) {
 	if ( !target || !target->client ) {
@@ -375,21 +386,157 @@ qboolean BotLite_TargetStillRecovering( gentity_t *target ) {
 	return qfalse;
 }
 
-
 qboolean BotLite_TargetNeedsRecoveryWait( gentity_t *target ) {
+	return BotLite_TargetStillRecovering( target );
+}
+
+static qboolean BotLite_HasLineOfSight( gentity_t *bot, gentity_t *target ) {
+	trace_t tr;
+	vec3_t start;
+	vec3_t end;
+
+	if ( !bot || !bot->client || !target || !target->client ) {
+		return qfalse;
+	}
+
+	VectorCopy( bot->client->ps.origin, start );
+	start[2] += BOTLITE_VIEW_HEIGHT;
+	VectorCopy( target->client->ps.origin, end );
+	end[2] += BOTLITE_VIEW_HEIGHT;
+	trap_Trace( &tr, start, NULL, NULL, end, bot->s.number, MASK_SHOT );
+	if ( tr.fraction >= 1.0f ) {
+		return qtrue;
+	}
+	if ( tr.entityNum == target->s.number ) {
+		return qtrue;
+	}
+	return qfalse;
+}
+
+static qboolean BotLite_TargetFacingBot( gentity_t *bot, gentity_t *target ) {
+	vec3_t delta;
+	vec3_t targetAngles;
+	float yawToBot;
+	float yawDelta;
+
+	if ( !bot || !target || !target->client ) {
+		return qfalse;
+	}
+
+	VectorSubtract( bot->client->ps.origin, target->client->ps.origin, delta );
+	yawToBot = vectoyaw( delta );
+	VectorCopy( target->client->ps.viewangles, targetAngles );
+	yawDelta = fabs( BotLite_ShortestAngleDelta( targetAngles[YAW], yawToBot ) );
+	return ( yawDelta <= 45.0f ) ? qtrue : qfalse;
+}
+
+static qboolean BotLite_TargetChargingAttack( gentity_t *target ) {
 	if ( !target || !target->client ) {
 		return qfalse;
 	}
 
-	if ( ( target->client->ps.bitFlags & isCrashed ) ||
-		 ( target->client->ps.bitFlags & isUnconcious ) ||
-		 target->client->ps.timers[tmCrash] > 0 ||
-		 target->client->ps.timers[tmRecover] > 0 ||
-		 target->client->ps.powerups[PW_STATE] == -1 ) {
+	if ( target->client->ps.weaponstate == WEAPON_CHARGING ||
+		 target->client->ps.weaponstate == WEAPON_ALTCHARGING ||
+		 target->client->ps.weaponstate == WEAPON_GUIDING ||
+		 target->client->ps.weaponstate == WEAPON_ALTGUIDING ) {
 		return qtrue;
 	}
 
 	return qfalse;
 }
 
+static qboolean BotLite_SnapshotBotDisabled( gentity_t *bot ) {
+	if ( !bot || !bot->client ) {
+		return qtrue;
+	}
+	if ( ( bot->client->ps.bitFlags & isCrashed ) ||
+		 ( bot->client->ps.bitFlags & isUnconcious ) ||
+		 bot->client->ps.timers[tmCrash] > 0 ||
+		 bot->client->ps.timers[tmKnockback] > 0 ||
+		 bot->client->ps.timers[tmRecover] > 0 ) {
+		return qtrue;
+	}
+	return qfalse;
+}
 
+void BotLite_PopulateSnapshotMetrics( gentity_t *bot, int clientNum, gentity_t *target, float distSq, botlite_snapshot_t *snapshot ) {
+	vec3_t delta;
+
+	if ( !snapshot ) {
+		return;
+	}
+
+	snapshot->bot = bot;
+	snapshot->botActionFlags = ( bot && bot->client && clientNum >= 0 && clientNum < level.maxclients ) ? trap_BotQueryActionState( clientNum ) : 0;
+	snapshot->botInMelee = ( snapshot->botActionFlags & BOTACT_USING_MELEE ) ? qtrue : qfalse;
+	snapshot->botFrozen = ( snapshot->botActionFlags & ( BOTACT_FREEZE | BOTACT_MELEE_RECOVERY ) ) ? qtrue : qfalse;
+	snapshot->botDisabled = ( snapshot->botActionFlags & ( BOTACT_RECOVERING | BOTACT_KNOCKBACK | BOTACT_CRASHED | BOTACT_UNCONSCIOUS ) ) ? qtrue : BotLite_SnapshotBotDisabled( bot );
+
+	if ( !bot || !bot->client || !target || !target->client ) {
+		return;
+	}
+
+	VectorSubtract( target->client->ps.origin, bot->client->ps.origin, delta );
+	snapshot->distSq = distSq;
+	snapshot->dist = sqrt( distSq );
+	snapshot->horizontalDist = sqrt( delta[0] * delta[0] + delta[1] * delta[1] );
+	snapshot->verticalDelta = delta[2];
+	snapshot->hasLineOfSight = BotLite_HasLineOfSight( bot, target );
+	snapshot->targetFacingBot = BotLite_TargetFacingBot( bot, target );
+	snapshot->targetCharging = BotLite_TargetChargingAttack( target );
+	snapshot->targetBlocking = ( target->client->ps.bitFlags & usingBlock ) ? qtrue : qfalse;
+	snapshot->targetInMelee = ( target->client->ps.bitFlags & usingMelee ) ? qtrue : qfalse;
+	snapshot->targetWeapon = target->client->ps.weapon;
+}
+
+void BotLite_UpdateTargetRecoveryState( gentity_t *bot, int clientNum, gentity_t *target, float distSq, botlite_snapshot_t *snapshot ) {
+	botlite_info_t *info;
+	qboolean targetCrashNow;
+	qboolean targetCrashPartial;
+	qboolean targetCrashEdge;
+
+	if ( !snapshot ) {
+		return;
+	}
+
+	info = &g_botlite[clientNum];
+	targetCrashEdge = qfalse;
+	targetCrashNow = qfalse;
+	targetCrashPartial = qfalse;
+
+	if ( target && target->client ) {
+		if ( info->runtime.targetRecoveryHandledNum != target->s.number ) {
+			info->runtime.targetRecoveryHandled = qfalse;
+			info->runtime.targetRecoveryHandledNum = target->s.number;
+			info->runtime.targetRecoveryHandledEvent = target->client->botCrashEventCounter;
+			info->runtime.targetCrashActive = qfalse;
+			info->runtime.crashDiagNextLogTime = 0;
+			BotLite_DebugLog( bot, va( "Target switch sync target=%d crashCounter=%d", target->s.number, target->client->botCrashEventCounter ) );
+		}
+		targetCrashNow = BotLite_TargetNeedsRecoveryWait( target );
+		targetCrashPartial = ( target->client->ps.timers[tmKnockback] > 0 ) ||
+			( target->client->ps.timers[tmCrash] > 0 ) ||
+			( target->client->ps.timers[tmRecover] > 0 ) ||
+			( target->client->ps.powerups[PW_STATE] == -1 ) ||
+			( target->client->ps.bitFlags & isCrashed ) ||
+			( target->client->ps.bitFlags & isUnconcious );
+
+		if ( targetCrashNow && !info->runtime.targetCrashActive ) {
+			targetCrashEdge = qtrue;
+		} else if ( target->client->botCrashEventCounter != info->runtime.targetRecoveryHandledEvent ) {
+			targetCrashEdge = qtrue;
+		}
+
+		info->runtime.targetCrashActive = targetCrashNow;
+	} else if ( info->runtime.mode != BOTLITE_MODE_WAIT_TARGET_RECOVERY ) {
+		info->runtime.targetRecoveryHandled = qfalse;
+		info->runtime.targetRecoveryHandledNum = -1;
+		info->runtime.targetRecoveryHandledEvent = -1;
+		info->runtime.crashDiagNextLogTime = 0;
+		info->runtime.targetCrashActive = qfalse;
+	}
+
+	snapshot->targetCrashNow = targetCrashNow;
+	snapshot->targetCrashEdge = targetCrashEdge;
+	snapshot->targetCrashPartial = targetCrashPartial;
+}

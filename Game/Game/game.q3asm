@@ -32,7 +32,16 @@ g_weapPhysScanner
 g_weapPhysAttributes
 g_radar
 g_botlite_main
+g_botlite_action
+g_botlite_profile
+g_botlite_skill
+g_botlite_ai
 g_botlite_target
 g_botlite_lockon
 g_botlite_movement
-g_botlite_combat
+g_botlite_tactics
+g_botlite_melee
+g_botlite_ranged
+g_botlite_skill1
+g_botlite_skill2
+g_botlite_skill3

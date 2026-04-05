@@ -41,7 +41,7 @@ static void Cmd_AddBot_f( gentity_t *ent ) {
 	}
 
 	trap_Argv( 1, character, sizeof( character ) );
-	skill = 1;
+	skill = 0;
 	enableDebug = qfalse;
 
 	if ( trap_Argc() >= 3 ) {
@@ -90,7 +90,7 @@ static void Cmd_AddBotDebug_f( gentity_t *ent ) {
 	}
 
 	trap_Argv( 1, character, sizeof( character ) );
-	skill = 1;
+	skill = 0;
 	if ( trap_Argc() >= 3 ) {
 		trap_Argv( 2, skillArg, sizeof( skillArg ) );
 		skill = atoi( skillArg );

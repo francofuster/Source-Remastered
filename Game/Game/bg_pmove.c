@@ -30,6 +30,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "g_tiers.h"
 pmove_t		*pm;
 pml_t		pml;
+
+static qboolean PM_IsBotControlled( void ) {
+	return ( pm && pm->ps && ( pm->ps->options & PSO_IS_BOT ) ) ? qtrue : qfalse;
+}
 // movement parameters
 float	pm_stopspeed = 100.0f;
 float	pm_swimScale = 0.80f;
@@ -336,8 +340,16 @@ POWER LEVEL
 ===============*/
 void PM_UsePowerLevel(){
 	int newValue,amount,stat,useType,limit;
+	qboolean botNoFatigue;
 	useType = 0;
 	limit = pm->ps->powerLevel[plLimit];
+	botNoFatigue = PM_IsBotControlled();
+	if ( botNoFatigue ) {
+		pm->ps->powerLevel[plUseFatigue] = 0;
+		if ( pm->ps->powerLevel[plFatigue] < pm->ps->powerLevel[plMaximum] ) {
+			pm->ps->powerLevel[plFatigue] = pm->ps->powerLevel[plMaximum];
+		}
+	}
 	while(useType < 4){
 		stat = useType == 1 ? pm->ps->powerLevel[plFatigue] : pm->ps->powerLevel[plCurrent];
 		stat = useType == 2 ? pm->ps->powerLevel[plHealth] : stat;
@@ -354,16 +366,22 @@ void PM_UsePowerLevel(){
 		}
 		newValue = newValue < -limit ? -limit : newValue;
 		if(useType == 1){
-			pm->ps->powerLevel[plFatigue] = newValue;
-			if(pm->ps->powerLevel[plFatigue] < 0){
-				amount = (pm->ps->powerLevel[plFatigue]*-1)*0.75;
-				if(pm->ps->powerLevel[plHealth] - amount <= 0){
-					amount = pm->ps->powerLevel[plHealth] - 1;
-				}
-				pm->ps->powerLevel[plUseHealth] += amount;
-				pm->ps->powerLevel[plFatigue] = 0;
+			if ( botNoFatigue ) {
+				pm->ps->powerLevel[plFatigue] = pm->ps->powerLevel[plMaximum];
+				pm->ps->powerLevel[plUseFatigue] = 0;
 			}
-			pm->ps->powerLevel[plUseFatigue] = 0;
+			else {
+				pm->ps->powerLevel[plFatigue] = newValue;
+				if(pm->ps->powerLevel[plFatigue] < 0){
+					amount = (pm->ps->powerLevel[plFatigue]*-1)*0.75;
+					if(pm->ps->powerLevel[plHealth] - amount <= 0){
+						amount = pm->ps->powerLevel[plHealth] - 1;
+					}
+					pm->ps->powerLevel[plUseHealth] += amount;
+					pm->ps->powerLevel[plFatigue] = 0;
+				}
+				pm->ps->powerLevel[plUseFatigue] = 0;
+			}
 		}
 		else if(useType == 2){
 			pm->ps->powerLevel[plHealth] = newValue;
@@ -440,7 +458,12 @@ void PM_CheckCrash(void){
 		pm->ps->timers[tmCrash] -= pml.msec;
 		PM_ContinueTorsoAnim(ANIM_KNOCKBACK_HIT_WALL);
 		PM_ContinueLegsAnim(ANIM_KNOCKBACK_HIT_WALL);
-		if(pm->ps->timers[tmCrash] < 0){
+		/*
+		 * If tmCrash lands exactly on 0, we still need to transition into the
+		 * recovery state. Otherwise the player can remain flagged as crashed
+		 * forever without ever entering PW_STATE == -1 recovery.
+		 */
+		if(pm->ps->timers[tmCrash] <= 0){
 			pm->ps->powerups[PW_STATE] = -1;
 			pm->ps->timers[tmCrash] = 0;
 		}
@@ -449,7 +472,8 @@ void PM_CheckCrash(void){
 		pm->ps->timers[tmCrash] += pml.msec;
 		PM_ContinueTorsoAnim(ANIM_DEATH_AIR_LAND);
 		PM_ContinueLegsAnim(ANIM_DEATH_AIR_LAND);
-		if(pm->ps->timers[tmCrash] > 0){
+		/* Same edge case for vertical crashes recovering from a negative timer. */
+		if(pm->ps->timers[tmCrash] >= 0){
 			pm->ps->powerups[PW_STATE] = -1;
 			pm->ps->timers[tmCrash] = 0;
 		}
@@ -628,13 +652,22 @@ void PM_CheckPowerLevel(void){
 		}*/
 		newValue = powerLevel[plCurrent] + powerLevel[plDrainCurrent];
 		if(newValue < powerLevel[plMaximum] && newValue > 0){powerLevel[plCurrent] = newValue;}
-		newValue = powerLevel[plFatigue] + powerLevel[plDrainFatigue];
-		if(newValue < powerLevel[plMaximum]){powerLevel[plFatigue] = newValue;}
+		if ( PM_IsBotControlled() ) {
+			powerLevel[plFatigue] = powerLevel[plMaximum];
+			powerLevel[plUseFatigue] = 0;
+		}
+		else {
+			newValue = powerLevel[plFatigue] + powerLevel[plDrainFatigue];
+			if(newValue < powerLevel[plMaximum]){powerLevel[plFatigue] = newValue;}
+		}
 		newValue = powerLevel[plHealth] + powerLevel[plDrainHealth];
 		if(newValue < powerLevel[plMaximum]){powerLevel[plHealth] = newValue;}
 		newValue = powerLevel[plMaximum] + powerLevel[plDrainMaximum];
 		if(newValue < limit &&  newValue > 0){powerLevel[plMaximum] = newValue;}
-		if(powerLevel[plFatigue] + recovery < powerLevel[plMaximum]){
+		if ( PM_IsBotControlled() ) {
+			powerLevel[plFatigue] = powerLevel[plMaximum];
+		}
+		else if(powerLevel[plFatigue] + recovery < powerLevel[plMaximum]){
 			powerLevel[plFatigue] += recovery;
 		}
 		else{

@@ -3,14 +3,144 @@
 
 static float BotLite_RandomRange( float minv, float maxv );
 static float BotLite_AngleNormalize360( float angle );
-static float BotLite_ShortestAngleDelta( float from, float to );
 static void BotLite_SetMoveYaw( gentity_t *bot, int clientNum );
-static void BotLite_MoveSearchPattern( gentity_t *bot, int clientNum );
+static float BotLite_Skill3StatPercent( int value, int maxValue );
+static qboolean BotLite_Skill3NeedsHeal( gentity_t *bot, const botlite_profile_t *profile );
+static qboolean BotLite_Skill3ReachedHealTarget( gentity_t *bot, const botlite_profile_t *profile );
+static qboolean BotLite_Skill3WithinHealRetreatLimit( gentity_t *bot, gentity_t *target, const botlite_profile_t *profile );
+static qboolean BotLite_Skill3BotInMeleeNow( gentity_t *bot );
+static gentity_t *BotLite_Skill3GetRecentAttacker( gentity_t *bot );
+static qboolean BotLite_Skill3IsMeleeAttacker( gentity_t *bot, gentity_t *attacker, const botlite_profile_t *profile );
+static qboolean BotLite_Skill3HasForcedCombatEngagement( gentity_t *bot, gentity_t *target );
+static qboolean BotLite_Skill3HealInterrupted( gentity_t *bot, botlite_info_t *info, gentity_t *target );
+static void BotLite_Skill3PrimeHealTracking( gentity_t *bot, botlite_info_t *info );
+static void BotLite_Skill3RefreshHealTracking( gentity_t *bot, botlite_info_t *info );
+static qboolean BotLite_RunSkill3RecoveryHeal( gentity_t *bot, int clientNum, gentity_t *target );
+static int BotLite_GetActionStateFlags( gentity_t *bot, int clientNum );
+
+static int BotLite_GetActionStateFlags( gentity_t *bot, int clientNum ) {
+	if ( !bot || !bot->client || clientNum < 0 || clientNum >= level.maxclients ) {
+		return 0;
+	}
+	return trap_BotQueryActionState( clientNum );
+}
+
+qboolean BotLite_ShouldUseBoost( gentity_t *bot, int clientNum ) {
+	botlite_info_t *info;
+	int actionFlags;
+
+	if ( !bot || !bot->client || clientNum < 0 || clientNum >= level.maxclients ) {
+		return qfalse;
+	}
+
+	info = &g_botlite[clientNum];
+	actionFlags = BotLite_GetActionStateFlags( bot, clientNum );
+
+	if ( info->runtime.mode == BOTLITE_MODE_WAIT_TARGET_RECOVERY ) {
+		return qfalse;
+	}
+
+	if ( info->skill == 3 ) {
+		if ( !info->ranged.didInitialTransform ) {
+			return qfalse;
+		}
+		if ( actionFlags & BOTACT_TRANSFORMING ) {
+			return qfalse;
+		}
+	}
+
+	if ( !( actionFlags & BOTACT_CAN_BOOST ) ) {
+		return qfalse;
+	}
+
+	if ( actionFlags & ( BOTACT_FREEZE |
+			BOTACT_KNOCKBACK |
+			BOTACT_RECOVERING |
+			BOTACT_TRANSFORMING |
+			BOTACT_CHARGING |
+			BOTACT_USING_MELEE |
+			BOTACT_USING_BLOCK |
+			BOTACT_USING_WEAPON |
+			BOTACT_USING_ZANZOKEN |
+			BOTACT_USING_SOAR |
+			BOTACT_PREPARING |
+			BOTACT_STRUGGLING |
+			BOTACT_MELEE_RECOVERY |
+			BOTACT_WEAPON_BUSY |
+			BOTACT_GUIDING |
+			BOTACT_CRASHED |
+			BOTACT_UNCONSCIOUS ) ) {
+		return qfalse;
+	}
+
+	if ( info->melee.actionUntil > level.time ||
+		 info->melee.blockUntil > level.time ||
+		 info->melee.specialHoldUntil > level.time ) {
+		return qfalse;
+	}
+
+	return qtrue;
+}
+
+qboolean BotLite_ShouldUseSanzoken( gentity_t *bot, int clientNum ) {
+	botlite_info_t *info;
+	int actionFlags;
+
+	if ( !bot || !bot->client || clientNum < 0 || clientNum >= level.maxclients ) {
+		return qfalse;
+	}
+
+	info = &g_botlite[clientNum];
+	actionFlags = BotLite_GetActionStateFlags( bot, clientNum );
+
+	if ( info->runtime.mode == BOTLITE_MODE_WAIT_TARGET_RECOVERY ) {
+		return qfalse;
+	}
+
+	if ( !( actionFlags & BOTACT_CAN_ZANZOKEN ) ) {
+		return qfalse;
+	}
+
+	if ( info->skill == 3 ) {
+		if ( !info->ranged.didInitialTransform ) {
+			return qfalse;
+		}
+		if ( actionFlags & BOTACT_TRANSFORMING ) {
+			return qfalse;
+		}
+	}
+
+	/* Keep this helper permissive for approach teleports. Hard-disabled states still block,
+	 * but short transitional flags from ranged pressure should not kill sanzoken entirely. */
+	if ( actionFlags & ( BOTACT_FREEZE |
+			BOTACT_KNOCKBACK |
+			BOTACT_RECOVERING |
+			BOTACT_TRANSFORMING |
+			BOTACT_USING_MELEE |
+			BOTACT_USING_ZANZOKEN |
+			BOTACT_MELEE_RECOVERY |
+			BOTACT_CRASHED |
+			BOTACT_UNCONSCIOUS ) ) {
+		return qfalse;
+	}
+
+	if ( info->melee.blockUntil > level.time ||
+		 info->melee.specialHoldUntil > level.time ) {
+		return qfalse;
+	}
+
+	return qtrue;
+}
+
+void BotLite_EA_BoostIfAllowed( gentity_t *bot, int clientNum ) {
+	if ( BotLite_ShouldUseBoost( bot, clientNum ) ) {
+		BotLite_EA_Button( bot, BUTTON_BOOST );
+	}
+}
 
 static float BotLite_RandomRange( float minv, float maxv ) {
 	return minv + random() * ( maxv - minv );
 }
-
 
 static float BotLite_AngleNormalize360( float angle ) {
 	while ( angle < 0.0f ) {
@@ -22,8 +152,7 @@ static float BotLite_AngleNormalize360( float angle ) {
 	return angle;
 }
 
-
-static float BotLite_ShortestAngleDelta( float from, float to ) {
+float BotLite_ShortestAngleDelta( float from, float to ) {
 	float delta;
 	from = BotLite_AngleNormalize360( from );
 	to = BotLite_AngleNormalize360( to );
@@ -37,176 +166,437 @@ static float BotLite_ShortestAngleDelta( float from, float to ) {
 	return delta;
 }
 
-
 static void BotLite_SetMoveYaw( gentity_t *bot, int clientNum ) {
 	botlite_info_t *info;
 	float currentYaw;
 	float yawDelta;
+	const botlite_profile_t *profile;
 
 	info = &g_botlite[clientNum];
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
 	currentYaw = bot->client->ps.viewangles[YAW];
-	yawDelta = BotLite_RandomRange( BOTLITE_SEARCH_TURN_MIN, BOTLITE_SEARCH_TURN_MAX );
+	yawDelta = BotLite_RandomRange( profile->searchTurnMin, profile->searchTurnMax );
 	if ( rand() & 1 ) {
 		yawDelta = -yawDelta;
 	}
-	info->turnYawStart = BotLite_AngleNormalize360( currentYaw );
-	info->moveYaw = BotLite_AngleNormalize360( currentYaw + yawDelta );
-	info->turnEndTime = level.time + BOTLITE_SEARCH_TURN_TIME;
-	info->moveEndTime = info->turnEndTime + BOTLITE_SEARCH_FORWARD_TIME;
+	info->search.turnYawStart = BotLite_AngleNormalize360( currentYaw );
+	info->search.moveYaw = BotLite_AngleNormalize360( currentYaw + yawDelta );
+	info->search.turnEndTime = level.time + profile->searchTurnTime;
+	info->search.moveEndTime = info->search.turnEndTime + profile->searchForwardTime;
 }
 
+static float BotLite_Skill3StatPercent( int value, int maxValue ) {
+	if ( maxValue <= 0 ) {
+		return 1.0f;
+	}
+	return (float)value / (float)maxValue;
+}
 
-qboolean BotLite_RunPostCrashFlyup( gentity_t *bot, int clientNum ) {
-	botlite_info_t *info;
-	usercmd_t *cmd;
+static qboolean BotLite_Skill3NeedsHeal( gentity_t *bot, const botlite_profile_t *profile ) {
+	float healthPct;
+	if ( !bot || !bot->client || !profile ) {
+		return qfalse;
+	}
+	healthPct = BotLite_Skill3StatPercent( bot->client->ps.powerLevel[plHealth], bot->client->ps.powerLevel[plMaximum] );
+	return ( healthPct < profile->skill3HealthStartPct ) ? qtrue : qfalse;
+}
 
-	info = &g_botlite[clientNum];
-	if ( !info->postCrashFlyup ) {
+static qboolean BotLite_Skill3ReachedHealTarget( gentity_t *bot, const botlite_profile_t *profile ) {
+	float healthPct;
+	if ( !bot || !bot->client || !profile ) {
+		return qtrue;
+	}
+	healthPct = BotLite_Skill3StatPercent( bot->client->ps.powerLevel[plHealth], bot->client->ps.powerLevel[plMaximum] );
+	return ( healthPct >= profile->skill3HealthStopPct ) ? qtrue : qfalse;
+}
+
+static qboolean BotLite_Skill3WithinHealRetreatLimit( gentity_t *bot, gentity_t *target, const botlite_profile_t *profile ) {
+	vec3_t delta;
+	float distSq;
+	float maxDist;
+
+	if ( !target || !target->client || !profile ) {
+		return qfalse;
+	}
+	maxDist = profile->skill3HealRetreatMaxDistance;
+	if ( maxDist <= 0.0f ) {
+		return qtrue;
+	}
+	VectorSubtract( target->client->ps.origin, bot->client->ps.origin, delta );
+	distSq = VectorLengthSquared( delta );
+	return ( distSq < maxDist * maxDist ) ? qtrue : qfalse;
+}
+
+static qboolean BotLite_Skill3BotInMeleeNow( gentity_t *bot ) {
+	if ( !bot || !bot->client ) {
+		return qfalse;
+	}
+	if ( bot->client->ps.bitFlags & usingMelee ) {
+		return qtrue;
+	}
+	return ( bot->client->ps.stats[stMeleeState] != 0 ) ? qtrue : qfalse;
+}
+
+static gentity_t *BotLite_Skill3GetRecentAttacker( gentity_t *bot ) {
+	int attackerNum;
+	gentity_t *attacker;
+
+	if ( !bot || !bot->client ) {
+		return NULL;
+	}
+
+	attackerNum = bot->client->lasthurt_client;
+	if ( attackerNum < 0 || attackerNum >= level.maxclients ) {
+		attackerNum = bot->client->ps.persistant[PERS_ATTACKER];
+	}
+	if ( attackerNum < 0 || attackerNum >= level.maxclients ) {
+		return NULL;
+	}
+	if ( attackerNum == bot->s.number ) {
+		return NULL;
+	}
+
+	attacker = &g_entities[attackerNum];
+	if ( !BotLite_TargetIsValid( bot, attacker ) ) {
+		return NULL;
+	}
+
+	return attacker;
+}
+
+static qboolean BotLite_Skill3IsMeleeAttacker( gentity_t *bot, gentity_t *attacker, const botlite_profile_t *profile ) {
+	vec3_t delta;
+	float distSq;
+	float meleeRange;
+	qboolean attackerMelee;
+	qboolean botMeleeLink;
+
+	if ( !bot || !bot->client || !attacker || !attacker->client ) {
 		return qfalse;
 	}
 
-	cmd = &bot->client->pers.cmd;
-	if ( info->postCrashRiseEndTime <= 0 ) {
-		info->postCrashRiseEndTime = level.time + 1000;
+	attackerMelee = ( attacker->client->ps.bitFlags & usingMelee ) ? qtrue : qfalse;
+	if ( attacker->client->ps.stats[stMeleeState] != 0 ) {
+		attackerMelee = qtrue;
 	}
 
-	if ( level.time < info->postCrashRiseEndTime ) {
-		cmd->upmove = 127;
+	botMeleeLink = qfalse;
+	if ( attacker->client->ps.lockedTarget == bot->s.number + 1 || bot->client->ps.lockedTarget == attacker->s.number + 1 ) {
+		botMeleeLink = qtrue;
+	}
+
+	VectorSubtract( attacker->client->ps.origin, bot->client->ps.origin, delta );
+	distSq = VectorLengthSquared( delta );
+	meleeRange = profile ? profile->lockRange : 2200.0f;
+	if ( meleeRange < 12000.0f ) {
+		meleeRange = 12000.0f;
+	}
+
+	if ( distSq <= meleeRange * meleeRange && ( attackerMelee || botMeleeLink ) ) {
 		return qtrue;
 	}
 
-	BotLite_DebugLog( bot, va( "Finish post-crash flyup lastTarget=%d", info->lastTargetNum ) );
-	info->postCrashFlyup = qfalse;
-	info->postCrashRiseEndTime = 0;
-	info->didInitialRise = qtrue;
-	info->mode = ( info->lastTargetNum >= 0 ) ? BOTLITE_MODE_COMBAT : BOTLITE_MODE_SEARCH;
-	info->nextActionTime = 0;
-	info->actionUntil = 0;
+	if ( botMeleeLink && ( bot->client->ps.timers[tmKnockback] > 0 || bot->client->ps.timers[tmFreeze] > 0 ) ) {
+		return qtrue;
+	}
+
 	return qfalse;
 }
 
+
+static void BotLite_Skill3PrimeHealTracking( gentity_t *bot, botlite_info_t *info ) {
+	if ( !bot || !bot->client || !info ) {
+		return;
+	}
+	info->runtime.lastDamageEvent = bot->client->ps.damageEvent;
+	info->recovery.healLastHealth = bot->client->ps.powerLevel[plHealth];
+	info->recovery.healLastCurrent = bot->client->ps.powerLevel[plCurrent];
+	info->recovery.healLastProgressTime = level.time;
+}
+
+static void BotLite_Skill3RefreshHealTracking( gentity_t *bot, botlite_info_t *info ) {
+	if ( !bot || !bot->client || !info ) {
+		return;
+	}
+	if ( bot->client->ps.powerLevel[plHealth] > info->recovery.healLastHealth ||
+		 bot->client->ps.powerLevel[plCurrent] > info->recovery.healLastCurrent ) {
+		info->recovery.healLastProgressTime = level.time;
+	}
+	info->recovery.healLastHealth = bot->client->ps.powerLevel[plHealth];
+	info->recovery.healLastCurrent = bot->client->ps.powerLevel[plCurrent];
+}
+static qboolean BotLite_Skill3HasForcedCombatEngagement( gentity_t *bot, gentity_t *target ) {
+	if ( !bot || !bot->client || !target || !target->client ) {
+		return qfalse;
+	}
+
+	if ( bot->client->ps.lockedTarget == target->s.number + 1 ||
+		 target->client->ps.lockedTarget == bot->s.number + 1 ) {
+		return qtrue;
+	}
+
+	return qfalse;
+}
+
+static qboolean BotLite_Skill3HealInterrupted( gentity_t *bot, botlite_info_t *info, gentity_t *target ) {
+	gentity_t *attacker;
+	qboolean forcedCombatInterrupt;
+
+	if ( !bot || !bot->client || !info ) {
+		return qfalse;
+	}
+
+	forcedCombatInterrupt = BotLite_Skill3HasForcedCombatEngagement( bot, target );
+	if ( forcedCombatInterrupt ) {
+		BotLite_DebugLog( bot, "Skill3 heal interrupted by forced lockOn" );
+		return qtrue;
+	}
+
+	if ( bot->client->ps.damageCount <= 0 ) {
+		return qfalse;
+	}
+	if ( bot->client->ps.damageEvent == info->runtime.lastDamageEvent ) {
+		return qfalse;
+	}
+
+	attacker = BotLite_Skill3GetRecentAttacker( bot );
+	info->runtime.lastDamageEvent = bot->client->ps.damageEvent;
+	if ( attacker && target && attacker->s.number == target->s.number ) {
+		BotLite_DebugLog( bot, va( "Skill3 heal interrupted by tracked target hit attacker=%d dmgEv=%d", attacker->s.number, bot->client->ps.damageEvent ) );
+		return qtrue;
+	}
+
+	if ( attacker && attacker->client ) {
+		BotLite_DebugLog( bot, va( "Skill3 heal ignored off-target damage attacker=%d dmgEv=%d", attacker->s.number, bot->client->ps.damageEvent ) );
+	} else {
+		BotLite_DebugLog( bot, va( "Skill3 heal ignored non-target damage dmgEv=%d", bot->client->ps.damageEvent ) );
+	}
+	return qfalse;
+}
+
+void BotLite_StartSkill3DeathHeal( int clientNum ) {
+	botlite_info_t *info;
+	gentity_t *bot;
+	const botlite_profile_t *profile;
+
+	if ( clientNum < 0 || clientNum >= level.maxclients ) {
+		return;
+	}
+	info = &g_botlite[clientNum];
+	if ( info->skill != 3 ) {
+		return;
+	}
+	bot = &g_entities[clientNum];
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+	if ( !BotLite_Skill3NeedsHeal( bot, profile ) ) {
+		return;
+	}
+	info->runtime.mode = BOTLITE_MODE_WAIT_TARGET_RECOVERY;
+	info->runtime.lastTargetNum = -1;
+	info->recovery.retreatUntil = 0;
+	info->recovery.healRequested = qtrue;
+	info->recovery.healActive = qfalse;
+	BotLite_Skill3PrimeHealTracking( bot, info );
+	BotLite_ResetTransientCombatState( clientNum );
+	BotLite_ClearLock( bot );
+	BotLite_DebugLog( bot, "Skill3 start heal window on target death" );
+}
+
+qboolean BotLite_RunPostCrashFlyup( gentity_t *bot, int clientNum ) {
+	botlite_info_t *info;
+	const botlite_profile_t *profile;
+
+	info = &g_botlite[clientNum];
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+	if ( !info->recovery.postCrashFlyup ) {
+		return qfalse;
+	}
+
+	if ( info->recovery.postCrashRiseEndTime <= 0 ) {
+		info->recovery.postCrashRiseEndTime = level.time + profile->postCrashFlyupTime;
+	}
+
+	if ( level.time < info->recovery.postCrashRiseEndTime ) {
+		BotLite_EA_MoveUp( bot, 127 );
+		return qtrue;
+	}
+
+	BotLite_DebugLog( bot, va( "Finish post-crash flyup lastTarget=%d", info->runtime.lastTargetNum ) );
+	info->recovery.postCrashFlyup = qfalse;
+	info->recovery.postCrashRiseEndTime = 0;
+	info->search.didInitialRise = qtrue;
+	info->runtime.mode = ( info->runtime.lastTargetNum >= 0 ) ? BOTLITE_MODE_COMBAT : BotLite_DefaultModeForSkill( info->skill );
+	BotLite_ResetTransientCombatState( clientNum );
+	return qfalse;
+}
 
 void BotLite_StartRecoveryWait( gentity_t *bot, int clientNum, gentity_t *target ) {
 	botlite_info_t *info;
 	vec3_t delta;
+	const botlite_profile_t *profile;
 
 	info = &g_botlite[clientNum];
-	info->mode = BOTLITE_MODE_WAIT_TARGET_RECOVERY;
-	info->lastTargetNum = target ? target->s.number : -1;
-	info->nextActionTime = 0;
-	info->actionUntil = 0;
-	info->comboStep = 0;
-	info->retreatUntil = level.time + 3000;
-	info->recoveryWaitEndTime = 0;
-	BotLite_DebugLog( bot, va( "Start retreat target=%d retreatUntil=%d", info->lastTargetNum, info->retreatUntil ) );
-	
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+	info->runtime.mode = BOTLITE_MODE_WAIT_TARGET_RECOVERY;
+	info->runtime.lastTargetNum = target ? target->s.number : -1;
+	BotLite_ResetTransientCombatState( clientNum );
+	info->recovery.retreatUntil = level.time + profile->recoveryRetreatTime;
+	info->recovery.recoveryWaitEndTime = 0;
+	info->recovery.healRequested = ( info->skill == 3 && BotLite_Skill3NeedsHeal( bot, profile ) ) ? qtrue : qfalse;
+	info->recovery.healActive = qfalse;
+	if ( info->recovery.healRequested ) {
+		BotLite_Skill3PrimeHealTracking( bot, info );
+	}
+	BotLite_DebugLog( bot, va( "Start retreat target=%d retreatUntil=%d heal=%d", info->runtime.lastTargetNum, info->recovery.retreatUntil, info->recovery.healRequested ? 1 : 0 ) );
+
 	if ( target && target->client ) {
 		VectorSubtract( bot->client->ps.origin, target->client->ps.origin, delta );
 		if ( delta[0] == 0.0f && delta[1] == 0.0f ) {
-			info->retreatYaw = bot->client->ps.viewangles[YAW];
+			info->recovery.retreatYaw = bot->client->ps.viewangles[YAW];
 		} else {
-			info->retreatYaw = vectoyaw( delta );
+			info->recovery.retreatYaw = vectoyaw( delta );
 		}
 	} else {
-		info->retreatYaw = bot->client->ps.viewangles[YAW];
+		info->recovery.retreatYaw = bot->client->ps.viewangles[YAW];
 	}
 }
 
+static qboolean BotLite_RunSkill3RecoveryHeal( gentity_t *bot, int clientNum, gentity_t *target ) {
+	botlite_info_t *info;
+	const botlite_profile_t *profile;
+
+	info = &g_botlite[clientNum];
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+	if ( info->skill != 3 ) {
+		return qfalse;
+	}
+	if ( !info->recovery.healRequested && !info->recovery.healActive ) {
+		return qfalse;
+	}
+	BotLite_Skill3RefreshHealTracking( bot, info );
+	if ( BotLite_Skill3HealInterrupted( bot, info, target ) ) {
+		info->recovery.healRequested = qfalse;
+		info->recovery.healActive = qfalse;
+			info->recovery.healLastProgressTime = 0;
+		info->runtime.mode = BOTLITE_MODE_COMBAT;
+		BotLite_ResetTransientCombatState( clientNum );
+		BotLite_DebugLog( bot, "Skill3 heal interrupted by damage" );
+		return qfalse;
+	}
+	if ( BotLite_Skill3ReachedHealTarget( bot, profile ) ) {
+		info->recovery.healRequested = qfalse;
+		info->recovery.healActive = qfalse;
+			info->recovery.healLastProgressTime = 0;
+		BotLite_DebugLog( bot, "Skill3 heal target reached" );
+		return qfalse;
+	}
+	if ( info->recovery.healLastProgressTime > 0 && ( level.time - info->recovery.healLastProgressTime ) > 5000 ) {
+		info->recovery.healRequested = qfalse;
+		info->recovery.healActive = qfalse;
+			BotLite_DebugLog( bot, "Skill3 heal stalled -> abort window" );
+		return qfalse;
+	}
+	info->recovery.healRequested = qfalse;
+	info->recovery.healActive = qtrue;
+	if ( target && target->client ) {
+		BotLite_FaceTarget( bot, target );
+	}
+	BotLite_EA_Button( bot, BUTTON_POWERLEVEL );
+	BotLite_EA_MoveRight( bot, 127 );
+	return qtrue;
+}
 
 qboolean BotLite_RunRecoveryWait( gentity_t *bot, int clientNum, gentity_t *target ) {
 	botlite_info_t *info;
-	usercmd_t *cmd;
 	vec3_t angles;
 	qboolean targetNeedsRecovery;
 
 	info = &g_botlite[clientNum];
-	if ( info->mode != BOTLITE_MODE_WAIT_TARGET_RECOVERY ) {
+	if ( info->runtime.mode != BOTLITE_MODE_WAIT_TARGET_RECOVERY ) {
 		return qfalse;
 	}
 
-	cmd = &bot->client->pers.cmd;
 	targetNeedsRecovery = ( target && target->client ) ? BotLite_TargetNeedsRecoveryWait( target ) : qfalse;
 
-	if ( level.time < info->retreatUntil ) {
+	if ( level.time < info->recovery.retreatUntil ) {
 		VectorClear( angles );
-		angles[YAW] = info->retreatYaw;
+		angles[YAW] = info->recovery.retreatYaw;
 		BotLite_ApplyViewAngles( bot, angles );
-
-		cmd->forwardmove = 127;
-		cmd->buttons |= BUTTON_BOOST;
+		if ( BotLite_Skill3WithinHealRetreatLimit( bot, target, info->profile ? info->profile : BotLite_GetProfile( info->skill ) ) ) {
+			BotLite_EA_MoveForward( bot, 127 );
+		}
 		return qtrue;
 	}
 
-	if ( info->retreatUntil != 0 ) {
-		BotLite_DebugLog( bot, va( "Retreat finished, target=%d recovered=%d", info->lastTargetNum, targetNeedsRecovery ? 0 : 1 ) );
-		info->retreatUntil = 0;
+	if ( info->recovery.retreatUntil != 0 ) {
+		BotLite_DebugLog( bot, va( "Retreat finished, target=%d recovered=%d", info->runtime.lastTargetNum, targetNeedsRecovery ? 0 : 1 ) );
+		info->recovery.retreatUntil = 0;
+	}
+
+	if ( BotLite_RunSkill3RecoveryHeal( bot, clientNum, target ) ) {
+		return qtrue;
 	}
 
 	if ( target && target->client && targetNeedsRecovery ) {
 		BotLite_FaceTarget( bot, target );
-		cmd->forwardmove = 0;
-		cmd->rightmove = 0;
-		cmd->upmove = 0;
-		cmd->buttons = 0;
 		return qtrue;
 	}
 
-	BotLite_DebugLog( bot, va( "Recovery finished -> reengage target=%d", info->lastTargetNum ) );
-	info->mode = BOTLITE_MODE_COMBAT;
-	info->nextActionTime = 0;
-	info->actionUntil = 0;
-	info->comboStep = 0;
-	info->retreatUntil = 0;
-	info->recoveryWaitEndTime = 0;
+	BotLite_DebugLog( bot, va( "Recovery finished -> reengage target=%d", info->runtime.lastTargetNum ) );
+	info->runtime.mode = ( target && target->client ) ? BOTLITE_MODE_COMBAT : BotLite_DefaultModeForSkill( info->skill );
+	BotLite_ResetTransientCombatState( clientNum );
+	info->recovery.retreatUntil = 0;
+	info->recovery.recoveryWaitEndTime = 0;
+	info->recovery.healRequested = qfalse;
+	info->recovery.healActive = qfalse;
+	info->recovery.healLastProgressTime = 0;
 
 	if ( target && target->client ) {
-		info->lastTargetNum = target->s.number;
+		info->runtime.lastTargetNum = target->s.number;
 		BotLite_SetLockOn( bot, target );
 	} else {
-		info->lastTargetNum = -1;
-		info->mode = ( info->skill == 1 || info->skill == 2 ) ? BOTLITE_MODE_SEARCH : BOTLITE_MODE_IDLE;
+		info->runtime.lastTargetNum = -1;
 	}
 
 	return qfalse;
 }
 
-
-static void BotLite_MoveSearchPattern( gentity_t *bot, int clientNum ) {
+void BotLite_RunSearchPattern( gentity_t *bot, int clientNum ) {
 	botlite_info_t *info;
-	usercmd_t *cmd;
+	const botlite_profile_t *profile;
 	vec3_t angles;
 	float yaw;
 
 	info = &g_botlite[clientNum];
-	cmd = &bot->client->pers.cmd;
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
 
-	if ( !info->didInitialRise ) {
-		info->didInitialRise = qtrue;
-		info->riseEndTime = level.time + BOTLITE_SEARCH_RISE_TIME;
-		info->turnEndTime = 0;
-		info->moveEndTime = 0;
+	if ( !info->search.didInitialRise ) {
+		info->search.didInitialRise = qtrue;
+		info->search.riseEndTime = level.time + profile->searchRiseTime;
+		info->search.turnEndTime = 0;
+		info->search.moveEndTime = 0;
 	}
 
-	if ( level.time < info->riseEndTime ) {
-		cmd->upmove = 127;
+	if ( level.time < info->search.riseEndTime ) {
+		BotLite_EA_MoveUp( bot, 127 );
 		return;
 	}
 
-	if ( level.time >= info->moveEndTime ) {
+	if ( level.time >= info->search.moveEndTime ) {
 		BotLite_SetMoveYaw( bot, clientNum );
 	}
 
-	if ( level.time < info->turnEndTime ) {
+	if ( level.time < info->search.turnEndTime ) {
 		float frac;
 		float delta;
-		frac = (float)( level.time - ( info->turnEndTime - BOTLITE_SEARCH_TURN_TIME ) ) / (float)BOTLITE_SEARCH_TURN_TIME;
+		frac = (float)( level.time - ( info->search.turnEndTime - profile->searchTurnTime ) ) / (float)profile->searchTurnTime;
 		if ( frac < 0.0f ) frac = 0.0f;
 		if ( frac > 1.0f ) frac = 1.0f;
-		delta = BotLite_ShortestAngleDelta( info->turnYawStart, info->moveYaw );
-		yaw = BotLite_AngleNormalize360( info->turnYawStart + delta * frac );
+		delta = BotLite_ShortestAngleDelta( info->search.turnYawStart, info->search.moveYaw );
+		yaw = BotLite_AngleNormalize360( info->search.turnYawStart + delta * frac );
 	} else {
-		yaw = info->moveYaw;
-		cmd->forwardmove = 127;
+		yaw = info->search.moveYaw;
+		BotLite_EA_MoveForward( bot, 127 );
 	}
 
 	VectorClear( angles );
@@ -214,32 +604,14 @@ static void BotLite_MoveSearchPattern( gentity_t *bot, int clientNum ) {
 	BotLite_ApplyViewAngles( bot, angles );
 }
 
-
-void BotLite_RunSearchSkill1( gentity_t *bot, int clientNum, gentity_t *target ) {
-	botlite_info_t *info;
-	info = &g_botlite[clientNum];
-
+void BotLite_RunDefaultSearch( gentity_t *bot, int clientNum, gentity_t *target ) {
 	if ( target ) {
-		info->mode = BOTLITE_MODE_COMBAT;
-		info->lastTargetNum = target->s.number;
-		info->nextActionTime = 0;
-		info->actionUntil = 0;
-		BotLite_DebugLog( bot, "Search acquired target" );
+		g_botlite[clientNum].runtime.mode = BOTLITE_MODE_COMBAT;
+		g_botlite[clientNum].runtime.lastTargetNum = target->s.number;
+		BotLite_DebugLog( bot, "Default search acquired target" );
 		BotLite_SetLockOn( bot, target );
 		return;
 	}
 
-	BotLite_MoveSearchPattern( bot, clientNum );
+	BotLite_RunSearchPattern( bot, clientNum );
 }
-
-
-void BotLite_RunSearchDefault( gentity_t *bot, int clientNum, gentity_t *target ) {
-	if ( target ) {
-		g_botlite[clientNum].mode = BOTLITE_MODE_COMBAT;
-		g_botlite[clientNum].lastTargetNum = target->s.number;
-		BotLite_DebugLog( bot, "Default search acquired target" );
-		BotLite_SetLockOn( bot, target );
-	}
-}
-
-
