@@ -34,6 +34,21 @@ pml_t		pml;
 static qboolean PM_IsBotControlled( void ) {
 	return ( pm && pm->ps && ( pm->ps->options & PSO_IS_BOT ) ) ? qtrue : qfalse;
 }
+/*
+ * T0.4 -- Historicamente los bots tenian la fatiga congelada al maximo, lo que les
+ * daba velocidad, zanzoken y dano de melee ilimitados (la fatiga escala las tres:
+ * ver PM_CmdScale, PM_CheckZanzoken y PM_Melee).
+ *
+ * Con g_botStamina activo el servidor marca PSO_BOT_STAMINA y la exencion se apaga:
+ * el bot pasa a gastar y recuperar stamina igual que un jugador. Con el cvar en 0
+ * el comportamiento es identico al anterior.
+ */
+static qboolean PM_BotFatigueExempt( void ) {
+	if ( !PM_IsBotControlled() ) {
+		return qfalse;
+	}
+	return ( pm->ps->options & PSO_BOT_STAMINA ) ? qfalse : qtrue;
+}
 // movement parameters
 float	pm_stopspeed = 100.0f;
 float	pm_swimScale = 0.80f;
@@ -343,7 +358,7 @@ void PM_UsePowerLevel(){
 	qboolean botNoFatigue;
 	useType = 0;
 	limit = pm->ps->powerLevel[plLimit];
-	botNoFatigue = PM_IsBotControlled();
+	botNoFatigue = PM_BotFatigueExempt();
 	if ( botNoFatigue ) {
 		pm->ps->powerLevel[plUseFatigue] = 0;
 		if ( pm->ps->powerLevel[plFatigue] < pm->ps->powerLevel[plMaximum] ) {
@@ -652,7 +667,7 @@ void PM_CheckPowerLevel(void){
 		}*/
 		newValue = powerLevel[plCurrent] + powerLevel[plDrainCurrent];
 		if(newValue < powerLevel[plMaximum] && newValue > 0){powerLevel[plCurrent] = newValue;}
-		if ( PM_IsBotControlled() ) {
+		if ( PM_BotFatigueExempt() ) {
 			powerLevel[plFatigue] = powerLevel[plMaximum];
 			powerLevel[plUseFatigue] = 0;
 		}
@@ -664,7 +679,7 @@ void PM_CheckPowerLevel(void){
 		if(newValue < powerLevel[plMaximum]){powerLevel[plHealth] = newValue;}
 		newValue = powerLevel[plMaximum] + powerLevel[plDrainMaximum];
 		if(newValue < limit &&  newValue > 0){powerLevel[plMaximum] = newValue;}
-		if ( PM_IsBotControlled() ) {
+		if ( PM_BotFatigueExempt() ) {
 			powerLevel[plFatigue] = powerLevel[plMaximum];
 		}
 		else if(powerLevel[plFatigue] + recovery < powerLevel[plMaximum]){

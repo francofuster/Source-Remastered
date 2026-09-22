@@ -88,6 +88,7 @@ vmCvar_t	g_verboseParse;
 vmCvar_t	g_powerlevel;
 vmCvar_t	g_powerlevelMaximum;
 vmCvar_t	g_breakLimitRate;
+vmCvar_t	g_botStamina;
 vmCvar_t	g_allowTiers;
 vmCvar_t	g_allowScoreboard;
 vmCvar_t	g_allowSoar;
@@ -192,6 +193,7 @@ static cvarTable_t		gameCvarTable[] = {
 	{ &g_allowAdvancedMelee, "g_allowAllowAdvancedMelee", "1", CVAR_ARCHIVE | CVAR_SERVERINFO,0,qtrue },
 	{ &g_breakLimitRate, "g_breakLimitRate", "1.0", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue  },
 	{ &g_botlite_targetBots, "g_botlite_targetBots", "1", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
+	{ &g_botStamina, "g_botStamina", "0", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
 	// END ADDING
 
 };

@@ -1105,6 +1105,9 @@ typedef struct playerState_s {
 // usercmd_t is sent to the server each client frame
 
 #define PSO_IS_BOT		0x00000001
+/* Puesto por el servidor cuando g_botStamina esta activo. bg_pmove.c se compila
+ * tambien en el cgame, asi que no puede leer un cvar g_*: el puente es este bit. */
+#define PSO_BOT_STAMINA	0x00000002
 
 typedef struct usercmd_s {
 	int				serverTime;

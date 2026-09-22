@@ -13,6 +13,7 @@ typedef struct {
 	qboolean needsCharge;
 	qboolean firing;
 	qboolean canStartAttack;
+	qboolean staminaAllowsAttack;
 } botlite_skill2_pressure_context_t;
 
 typedef enum {
@@ -37,23 +38,62 @@ static qboolean BotLite_Skill2BotDisallowsWeapon( gentity_t *bot, int weapon ) {
 	return qfalse;
 }
 
-static int BotLite_PickSkill2Weapon( gentity_t *bot, int currentWeapon ) {
+/*
+ * T3.5 -- Economia vida/ki/stamina.
+ *
+ * Algunas armas tienen costs_health > 0 (g_userweapons.h) -- restan vida propia
+ * al usarlas, no solo ki. Con ventaja de vida sobre el rival, skill 3 las deja
+ * en el pool de opciones; en desventaja, las descarta mientras haya alternativa,
+ * jugando conservador en vez de acelerar su propia derrota.
+ */
+static qboolean BotLite_WeaponCostsHealth( int clientNum, int weapon ) {
+	g_userWeapon_t *weaponData;
+
+	weaponData = G_FindUserWeaponData( clientNum, weapon );
+	return ( weaponData && weaponData->costs_health > 0 ) ? qtrue : qfalse;
+}
+
+static qboolean BotLite_ShouldAvoidHealthCostWeapons( gentity_t *bot, int skill ) {
+	if ( skill != 3 || !bot || !bot->client || !bot->client->ps.lockedPlayer ) {
+		return qfalse;
+	}
+	if ( bot->client->ps.lockedPlayer->powerLevel[plHealth] <= 0 ) {
+		return qfalse;
+	}
+	/* Detras en vida: no sumar mas costo de vida del que ya se esta pagando. */
+	return ( bot->client->ps.powerLevel[plHealth] < bot->client->ps.lockedPlayer->powerLevel[plHealth] ) ? qtrue : qfalse;
+}
+
+static int BotLite_PickSkill2Weapon( gentity_t *bot, int currentWeapon, int skill ) {
 	int i;
 	int count;
+	int cautiousCount;
 	int choices[MAX_PLAYERWEAPONS];
+	int cautious[MAX_PLAYERWEAPONS];
 	int mask;
+	qboolean avoidHealthCost;
 	if ( !bot || !bot->client ) {
 		return 1;
 	}
+	avoidHealthCost = BotLite_ShouldAvoidHealthCostWeapons( bot, skill );
 	mask = bot->client->ps.stats[stSkills];
 	count = 0;
+	cautiousCount = 0;
 	for ( i = 1; i <= MAX_PLAYERWEAPONS; i++ ) {
 		if ( mask & ( 1 << i ) ) {
 			if ( BotLite_Skill2BotDisallowsWeapon( bot, i ) ) {
 				continue;
 			}
 			choices[count++] = i;
+			if ( avoidHealthCost && !BotLite_WeaponCostsHealth( bot->s.number, i ) ) {
+				cautious[cautiousCount++] = i;
+			}
 		}
+	}
+	/* Solo se restringe si dejar afuera las que cuestan vida deja algo con que
+		 * pelear; sin alternativa, usar lo que haya. */
+	if ( avoidHealthCost && cautiousCount > 0 ) {
+		return cautious[rand() % cautiousCount];
 	}
 	if ( count <= 0 ) {
 		return 1;
@@ -119,7 +159,7 @@ static void BotLite_StartSkill2Attack( gentity_t *bot, int clientNum ) {
 
 	info = &g_botlite[clientNum];
 	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
-	info->ranged.weapon = BotLite_PickSkill2Weapon( bot, info->ranged.weapon + 1 );
+	info->ranged.weapon = BotLite_PickSkill2Weapon( bot, info->ranged.weapon + 1, info->skill );
 	info->ranged.weaponSwitchTime = level.time + profile->skill2WeaponSwitchTime;
 	info->ranged.holdUntil = 0;
 	hasAlt = BotLite_Skill2WeaponHasAlt( clientNum, info->ranged.weapon );
@@ -157,6 +197,10 @@ static void BotLite_BuildSkill2PressureContext( gentity_t *bot, int clientNum, b
 	context->firing = ( weaponState == WEAPON_FIRING || weaponState == WEAPON_GUIDING ||
 		( context->useAlt && ( weaponState == WEAPON_ALTFIRING || weaponState == WEAPON_ALTGUIDING ) ) ) ? qtrue : qfalse;
 	context->canStartAttack = ( level.time >= info->melee.nextActionTime ) ? qtrue : qfalse;
+	/* T1.3: los ataques de ki cobran fatiga (bg_pmove.c:2779). Sin presupuesto
+	 * no se inician nuevos, pero una carga ya empezada si se libera: retenerla
+	 * desperdiciaria la energia ya invertida. */
+	context->staminaAllowsAttack = BotLite_StaminaAllowsSpend( clientNum, BOTLITE_SPEND_NORMAL );
 }
 
 static botlite_skill2_pressure_decision_t BotLite_SelectSkill2PressureDecision( const botlite_skill2_pressure_context_t *context ) {
@@ -166,7 +210,7 @@ static botlite_skill2_pressure_decision_t BotLite_SelectSkill2PressureDecision( 
 		return BOTLITE_SKILL2_PRESSURE_HOLD_CHARGE;
 	}
 	if ( context->weaponReady ) {
-		if ( context->canStartAttack ) return BOTLITE_SKILL2_PRESSURE_START_ATTACK;
+		if ( context->canStartAttack && context->staminaAllowsAttack ) return BOTLITE_SKILL2_PRESSURE_START_ATTACK;
 		return BOTLITE_SKILL2_PRESSURE_NONE;
 	}
 	if ( context->needsCharge ) return BOTLITE_SKILL2_PRESSURE_NONE;

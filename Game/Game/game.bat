@@ -88,6 +88,18 @@ if "%1"=="TA" goto TA
 %cc%  ../g_botlite_skill2.c
 %cc%  ../g_botlite_skill3.c
 @if errorlevel 1 goto quit
+%cc%  ../g_botlite_struggle.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_resource.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_transform.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_dodge.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_engage.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_zanzoken.c
+@if errorlevel 1 goto quit
 %cc%  ../g_weapPhysParser.c
 @if errorlevel 1 goto quit
 %cc%  ../g_weapPhysScanner.c

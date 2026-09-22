@@ -41,7 +41,26 @@ void BotLite_ResetTransientCombatState( int clientNum ) {
 	info->melee.combatState = BOTLITE_COMBAT_STATE_NONE;
 	info->melee.combatNextThinkTime = 0;
 	info->melee.combatStateChangedTime = 0;
+	info->melee.reactiveChargeSeen = qfalse;
+	info->melee.reactiveBlockCommitted = qfalse;
+	info->melee.reactiveBlockReadyTime = 0;
+	info->melee.reactiveBlockUntil = 0;
+	info->melee.reactiveDefenseIsEvade = qfalse;
+	info->melee.chargeCommitUntil = 0;
+	info->melee.chargeCommitButton = 0;
+	info->melee.chargeNextCommitTime = 0;
+	info->melee.breakerHoldUntil = 0;
+	info->melee.breakerNextTime = 0;
+	info->melee.breakerEpisodeUsed = qfalse;
+	info->melee.targetChargingNow = qfalse;
+	info->melee.zanzokenEscapeNextTime = 0;
+	info->melee.dodgeIncomingNextTime = 0;
+	info->melee.zanzokenHoldUntil = 0;
+	info->melee.zanzokenMoveForward = 0;
+	info->melee.zanzokenMoveRight = 0;
+	info->melee.zanzokenMoveUp = 0;
 	info->ranged.holdUntil = 0;
+	BotLite_ResetEngageState( clientNum, qfalse );
 	info->runtime.plannedTactic = BOTLITE_TACTIC_NONE;
 	info->runtime.nextTacticThinkTime = 0;
 }
@@ -85,6 +104,14 @@ void BotLite_ResetCoreRuntimeState( int clientNum, qboolean respawnStyle, qboole
 	info->ranged.didInitialTransform = respawnStyle ? qfalse : info->ranged.didInitialTransform;
 	info->ranged.openingStyle = BOTLITE_SKILL3_OPENING_NONE;
 	info->ranged.openingTargetNum = -1;
+	info->ranged.punishKnockbackDecided = qfalse;
+	info->ranged.punishKnockbackUseRanged = qfalse;
+	info->ranged.tierNextAttemptTime = 0;
+	info->ranged.tierLastLogTime = 0;
+	info->ranged.tierEngagedSince = 0;
+	info->ranged.tierHoldUntil = 0;
+	info->ranged.tierHoldDirection = 0;
+	info->ranged.tierLastSeen = -1;
 	info->recovery.retreatUntil = 0;
 	info->recovery.recoveryWaitEndTime = 0;
 	info->recovery.recoveryWaitCooldownUntil = 0;
@@ -97,10 +124,42 @@ void BotLite_ResetCoreRuntimeState( int clientNum, qboolean respawnStyle, qboole
 	info->recovery.healLastCurrent = 0;
 	info->recovery.healLastProgressTime = 0;
 	info->recovery.knockbackStartTime = 0;
+	info->recovery.recoverActive = qfalse;
+	info->recovery.recoverStage = 0;	/* BOTLITE_RECOVER_STAGE_DISENGAGE */
+	info->recovery.recoverEndTime = 0;
+	info->recovery.recoverStageTime = 0;
+	info->recovery.recoverLastHealth = 0;
+	info->recovery.recoverHealthProgressTime = 0;
+	info->recovery.recoverNextAllowedTime = 0;
+	info->recovery.kiChargeActive = qfalse;
+	info->recovery.breakLimitUntil = 0;
+	info->recovery.breakLimitDecided = qfalse;
 	info->runtime.targetRecoveryHandled = qfalse;
 	info->runtime.targetRecoveryHandledNum = -1;
 	info->runtime.targetRecoveryHandledEvent = -1;
+	info->melee.reactiveChargeSeen = qfalse;
+	info->melee.reactiveBlockCommitted = qfalse;
+	info->melee.reactiveBlockReadyTime = 0;
+	info->melee.reactiveBlockUntil = 0;
+	info->melee.reactiveDefenseIsEvade = qfalse;
+	info->melee.chargeCommitUntil = 0;
+	info->melee.chargeCommitButton = 0;
+	info->melee.chargeNextCommitTime = 0;
+	info->melee.breakerHoldUntil = 0;
+	info->melee.breakerNextTime = 0;
+	info->melee.breakerEpisodeUsed = qfalse;
+	info->melee.targetChargingNow = qfalse;
+	info->melee.zanzokenEscapeNextTime = 0;
+	info->melee.dodgeIncomingNextTime = 0;
+	info->melee.zanzokenHoldUntil = 0;
+	info->melee.zanzokenMoveForward = 0;
+	info->melee.zanzokenMoveRight = 0;
+	info->melee.zanzokenMoveUp = 0;
 	info->runtime.crashDiagNextLogTime = 0;
+	info->runtime.targetSpeedBreakerBias = 0.0f;
+	info->runtime.patternTargetNum = -1;
+	info->runtime.speedBreakerEdgeSeen = qfalse;
+	info->runtime.snapshotDiagNextLogTime = 0;
 	info->runtime.targetCrashActive = qfalse;
 	info->runtime.conserveBoost = qfalse;
 	info->runtime.lastGoal = BOTLITE_GOAL_NONE;
@@ -116,6 +175,9 @@ void BotLite_ResetCoreRuntimeState( int clientNum, qboolean respawnStyle, qboole
 		info->skillOps->ResetRuntime( clientNum, respawnStyle );
 	}
 
+	/* Al respawnear se borra tambien la efectividad aprendida: la partida
+	 * anterior no dice nada de esta. */
+	BotLite_ResetEngageState( clientNum, respawnStyle );
 	memset( &info->action, 0, sizeof( info->action ) );
 	BotLite_ClearLock( &g_entities[clientNum] );
 }

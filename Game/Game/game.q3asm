@@ -1,4 +1,4 @@
--o "..\..\..\..\Build\ZEQ2\vm\game.qvm"
+-o "..\..\..\..\Build-Remastered\ZEQ2\vm\game.qvm"
 g_main
 bg_misc
 ..\g_syscalls
@@ -45,3 +45,9 @@ g_botlite_ranged
 g_botlite_skill1
 g_botlite_skill2
 g_botlite_skill3
+g_botlite_struggle
+g_botlite_resource
+g_botlite_transform
+g_botlite_dodge
+g_botlite_engage
+g_botlite_zanzoken

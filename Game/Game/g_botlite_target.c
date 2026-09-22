@@ -472,6 +472,22 @@ void BotLite_PopulateSnapshotMetrics( gentity_t *bot, int clientNum, gentity_t *
 	snapshot->botFrozen = ( snapshot->botActionFlags & ( BOTACT_FREEZE | BOTACT_MELEE_RECOVERY ) ) ? qtrue : qfalse;
 	snapshot->botDisabled = ( snapshot->botActionFlags & ( BOTACT_RECOVERING | BOTACT_KNOCKBACK | BOTACT_CRASHED | BOTACT_UNCONSCIOUS ) ) ? qtrue : BotLite_SnapshotBotDisabled( bot );
 
+	/* El estado propio es valido aunque no haya objetivo: el presupuesto de recursos
+	 * debe poder consultarse tambien mientras busca o se recupera. */
+	if ( bot && bot->client ) {
+		snapshot->botMeleeState = bot->client->ps.stats[stMeleeState];
+		snapshot->botMeleeChargeTime = bot->client->ps.timers[tmMeleeCharge];
+		snapshot->botKnockbackTime = bot->client->ps.timers[tmKnockback];
+		snapshot->botBoostTime = bot->client->ps.timers[tmBoost];
+		snapshot->botStruggling = ( bot->client->ps.bitFlags & isStruggling ) ? qtrue : qfalse;
+		snapshot->botFatigue = bot->client->ps.powerLevel[plFatigue];
+		snapshot->botFatigueMax = bot->client->ps.powerLevel[plMaximum];
+		snapshot->botKi = bot->client->ps.powerLevel[plCurrent];
+		snapshot->botKiMax = bot->client->ps.powerLevel[plMaximum];
+		snapshot->botHealth = bot->client->ps.powerLevel[plHealth];
+		snapshot->botTier = bot->client->ps.powerLevel[plTierCurrent];
+	}
+
 	if ( !bot || !bot->client || !target || !target->client ) {
 		return;
 	}
@@ -487,6 +503,93 @@ void BotLite_PopulateSnapshotMetrics( gentity_t *bot, int clientNum, gentity_t *
 	snapshot->targetBlocking = ( target->client->ps.bitFlags & usingBlock ) ? qtrue : qfalse;
 	snapshot->targetInMelee = ( target->client->ps.bitFlags & usingMelee ) ? qtrue : qfalse;
 	snapshot->targetWeapon = target->client->ps.weapon;
+	snapshot->targetMeleeState = target->client->ps.stats[stMeleeState];
+	snapshot->targetMeleeChargeTime = target->client->ps.timers[tmMeleeCharge];
+	snapshot->targetKnockbackTime = target->client->ps.timers[tmKnockback];
+	snapshot->targetStruggling = ( target->client->ps.bitFlags & isStruggling ) ? qtrue : qfalse;
+	snapshot->targetFatigue = target->client->ps.powerLevel[plFatigue];
+	snapshot->targetKi = target->client->ps.powerLevel[plCurrent];
+	snapshot->targetKiMax = target->client->ps.powerLevel[plMaximum];
+	snapshot->targetHealth = target->client->ps.powerLevel[plHealth];
+	snapshot->targetTier = target->client->ps.powerLevel[plTierCurrent];
+}
+
+const char *BotLite_MeleeStateName( int meleeState ) {
+	switch ( meleeState ) {
+	case stMeleeInactive: return "INACTIVE";
+	case stMeleeAggressing: return "AGGRESS";
+	case stMeleeDegressing: return "DEGRESS";
+	case stMeleeIdle: return "IDLE";
+	case stMeleeStartPower: return "START_POWER";
+	case stMeleeStartAttack: return "START_ATTACK";
+	case stMeleeStartDodge: return "START_DODGE";
+	case stMeleeStartHit: return "START_HIT";
+	case stMeleeUsingSpeed: return "SPEED";
+	case stMeleeUsingPower: return "POWER";
+	case stMeleeUsingStun: return "STUN";
+	case stMeleeUsingBlock: return "BLOCK";
+	case stMeleeUsingEvade: return "EVADE";
+	case stMeleeUsingSpeedBreaker: return "SPEED_BREAKER";
+	case stMeleeUsingChargeBreaker: return "CHARGE_BREAKER";
+	case stMeleeUsingZanzoken: return "ZANZOKEN";
+	case stMeleeChargingPower: return "CHARGING_POWER";
+	case stMeleeChargingStun: return "CHARGING_STUN";
+	default: return "?";
+	}
+}
+
+/* Volcado periodico del snapshot: es el criterio de aceptacion de T0.1 y la
+ * herramienta para depurar todas las tareas reactivas que vienen despues. */
+void BotLite_DebugLogSnapshot( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot ) {
+	botlite_info_t *info;
+	int fatiguePct;
+	int kiPct;
+
+	if ( !bot || !bot->client || !snapshot ) {
+		return;
+	}
+	if ( clientNum < 0 || clientNum >= level.maxclients ) {
+		return;
+	}
+
+	info = &g_botlite[clientNum];
+	if ( !info->runtime.debugEnabled ) {
+		return;
+	}
+	if ( level.time < info->runtime.snapshotDiagNextLogTime ) {
+		return;
+	}
+	info->runtime.snapshotDiagNextLogTime = level.time + 1000;
+
+	fatiguePct = ( snapshot->botFatigueMax > 0 ) ? (int)( ( (float)snapshot->botFatigue * 100.0f ) / (float)snapshot->botFatigueMax ) : 0;
+	kiPct = ( snapshot->botKiMax > 0 ) ? (int)( ( (float)snapshot->botKi * 100.0f ) / (float)snapshot->botKiMax ) : 0;
+
+	BotLite_DebugLog( bot, va( "SNAP self melee=%s chg=%d kb=%d strug=%d fatigue=%d%%(%s) ki=%d%% hp=%d tier=%d",
+		BotLite_MeleeStateName( snapshot->botMeleeState ),
+		snapshot->botMeleeChargeTime,
+		snapshot->botKnockbackTime,
+		snapshot->botStruggling ? 1 : 0,
+		fatiguePct,
+		BotLite_StaminaBudgetName( BotLite_StaminaBudget( clientNum ) ),
+		kiPct,
+		snapshot->botHealth,
+		snapshot->botTier ) );
+
+	if ( !snapshot->hasTarget ) {
+		BotLite_DebugLog( bot, "SNAP target none" );
+		return;
+	}
+
+	BotLite_DebugLog( bot, va( "SNAP targ melee=%s chg=%d kb=%d strug=%d ki=%d hp=%d tier=%d dist=%d los=%d",
+		BotLite_MeleeStateName( snapshot->targetMeleeState ),
+		snapshot->targetMeleeChargeTime,
+		snapshot->targetKnockbackTime,
+		snapshot->targetStruggling ? 1 : 0,
+		snapshot->targetKi,
+		snapshot->targetHealth,
+		snapshot->targetTier,
+		(int)snapshot->dist,
+		snapshot->hasLineOfSight ? 1 : 0 ) );
 }
 
 void BotLite_UpdateTargetRecoveryState( gentity_t *bot, int clientNum, gentity_t *target, float distSq, botlite_snapshot_t *snapshot ) {

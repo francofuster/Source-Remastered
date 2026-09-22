@@ -40,42 +40,69 @@ qboolean BotLite_ShouldUseBoost( gentity_t *bot, int clientNum ) {
 		return qfalse;
 	}
 
-	if ( info->skill == 3 ) {
-		if ( !info->ranged.didInitialTransform ) {
-			return qfalse;
-		}
-		if ( actionFlags & BOTACT_TRANSFORMING ) {
-			return qfalse;
-		}
-	}
-
+	/*
+	 * Fase 6.5: aca habia ademas un "return qfalse si !didInitialTransform".
+	 * Era un resto del modelo viejo, donde skill 3 se transformaba una vez al
+	 * abrir combate y recien despues se le permitia lo demas. T2.3 reemplazo eso
+	 * por gestion continua de tiers y el flag dejo de tener un momento claro en
+	 * que encenderse: solo se pone en qtrue cuando el bot ya llego a su tier
+	 * maximo.
+	 *
+	 * Mientras el bot escalaba a los golpes eso pasaba desapercibido, porque
+	 * terminaba llegando al tope y desbloqueaba todo. Al limitar los intentos de
+	 * transformacion (Fase 6.4) el bot se quedo en tier 0, el flag nunca se
+	 * encendio y esto dejo sin boost NI sanzoken a skill 3 durante toda la
+	 * partida. Reportado como "ahora nunca se transforma ni hace ki boost".
+	 */
 	if ( !( actionFlags & BOTACT_CAN_BOOST ) ) {
+		if ( level.time >= info->runtime.boostDenyLogTime ) {
+			info->runtime.boostDenyLogTime = level.time + 5000;
+			BotLite_DebugLog( bot, "Boost bloqueado: el tier actual no habilita canBoost" );
+		}
 		return qfalse;
 	}
 
-	if ( actionFlags & ( BOTACT_FREEZE |
-			BOTACT_KNOCKBACK |
-			BOTACT_RECOVERING |
-			BOTACT_TRANSFORMING |
-			BOTACT_CHARGING |
-			BOTACT_USING_MELEE |
-			BOTACT_USING_BLOCK |
-			BOTACT_USING_WEAPON |
-			BOTACT_USING_ZANZOKEN |
-			BOTACT_USING_SOAR |
-			BOTACT_PREPARING |
-			BOTACT_STRUGGLING |
-			BOTACT_MELEE_RECOVERY |
-			BOTACT_WEAPON_BUSY |
-			BOTACT_GUIDING |
-			BOTACT_CRASHED |
-			BOTACT_UNCONSCIOUS ) ) {
-		return qfalse;
+	{
+		/* Fase 6.7: el diagnostico anterior solo cubria el presupuesto de stamina,
+			 * que en el log nunca disparo ni una vez. Van tres reportes de "no hace
+			 * boost" sin poder decir por que. Ahora se nombra el primer gate que corta. */
+		const char *deny = NULL;
+		if ( actionFlags & BOTACT_TRANSFORMING ) { deny = "TRANSFORMING"; }
+		else if ( actionFlags & BOTACT_CHARGING ) { deny = "CHARGING"; }
+		else if ( actionFlags & BOTACT_USING_MELEE ) { deny = "USING_MELEE"; }
+		else if ( actionFlags & BOTACT_USING_WEAPON ) { deny = "USING_WEAPON"; }
+		else if ( actionFlags & BOTACT_WEAPON_BUSY ) { deny = "WEAPON_BUSY"; }
+		else if ( actionFlags & BOTACT_USING_ZANZOKEN ) { deny = "USING_ZANZOKEN"; }
+		else if ( actionFlags & BOTACT_MELEE_RECOVERY ) { deny = "MELEE_RECOVERY"; }
+		else if ( actionFlags & BOTACT_USING_BLOCK ) { deny = "USING_BLOCK"; }
+		else if ( actionFlags & BOTACT_FREEZE ) { deny = "FREEZE"; }
+		else if ( actionFlags & BOTACT_KNOCKBACK ) { deny = "KNOCKBACK"; }
+		else if ( actionFlags & BOTACT_RECOVERING ) { deny = "RECOVERING"; }
+		else if ( actionFlags & BOTACT_USING_SOAR ) { deny = "USING_SOAR"; }
+		else if ( actionFlags & BOTACT_PREPARING ) { deny = "PREPARING"; }
+		else if ( actionFlags & BOTACT_STRUGGLING ) { deny = "STRUGGLING"; }
+		else if ( actionFlags & BOTACT_GUIDING ) { deny = "GUIDING"; }
+		else if ( actionFlags & BOTACT_CRASHED ) { deny = "CRASHED"; }
+		else if ( actionFlags & BOTACT_UNCONSCIOUS ) { deny = "UNCONSCIOUS"; }
+		else if ( info->melee.actionUntil > level.time ) { deny = "combo en curso"; }
+		else if ( info->melee.blockUntil > level.time ) { deny = "bloqueando"; }
+		else if ( info->melee.specialHoldUntil > level.time ) { deny = "special en curso"; }
+		if ( deny ) {
+			if ( level.time >= info->runtime.boostDenyLogTime ) {
+				info->runtime.boostDenyLogTime = level.time + 5000;
+				BotLite_DebugLog( bot, va( "Boost bloqueado: %s", deny ) );
+			}
+			return qfalse;
+		}
 	}
 
-	if ( info->melee.actionUntil > level.time ||
-		 info->melee.blockUntil > level.time ||
-		 info->melee.specialHoldUntil > level.time ) {
+	/* T0.3: con stamina real, dejar de boostear antes de vaciarse. */
+	if ( !BotLite_StaminaAllowsSpend( clientNum, BOTLITE_SPEND_CHEAP ) ) {
+		if ( level.time >= info->runtime.boostDenyLogTime ) {
+			info->runtime.boostDenyLogTime = level.time + 5000;
+			BotLite_DebugLog( bot, va( "Boost bloqueado: presupuesto de stamina (%d%%)",
+				BotLite_StaminaPercent( clientNum ) ) );
+		}
 		return qfalse;
 	}
 
@@ -101,13 +128,22 @@ qboolean BotLite_ShouldUseSanzoken( gentity_t *bot, int clientNum ) {
 		return qfalse;
 	}
 
-	if ( info->skill == 3 ) {
-		if ( !info->ranged.didInitialTransform ) {
-			return qfalse;
-		}
-		if ( actionFlags & BOTACT_TRANSFORMING ) {
-			return qfalse;
-		}
+	/*
+	 * Fase 6.5: aca habia ademas un "return qfalse si !didInitialTransform".
+	 * Era un resto del modelo viejo, donde skill 3 se transformaba una vez al
+	 * abrir combate y recien despues se le permitia lo demas. T2.3 reemplazo eso
+	 * por gestion continua de tiers y el flag dejo de tener un momento claro en
+	 * que encenderse: solo se pone en qtrue cuando el bot ya llego a su tier
+	 * maximo.
+	 *
+	 * Mientras el bot escalaba a los golpes eso pasaba desapercibido, porque
+	 * terminaba llegando al tope y desbloqueaba todo. Al limitar los intentos de
+	 * transformacion (Fase 6.4) el bot se quedo en tier 0, el flag nunca se
+	 * encendio y esto dejo sin boost NI sanzoken a skill 3 durante toda la
+	 * partida. Reportado como "ahora nunca se transforma ni hace ki boost".
+	 */
+	if ( info->skill == 3 && ( actionFlags & BOTACT_TRANSFORMING ) ) {
+		return qfalse;
 	}
 
 	/* Keep this helper permissive for approach teleports. Hard-disabled states still block,
@@ -126,6 +162,12 @@ qboolean BotLite_ShouldUseSanzoken( gentity_t *bot, int clientNum ) {
 
 	if ( info->melee.blockUntil > level.time ||
 		 info->melee.specialHoldUntil > level.time ) {
+		return qfalse;
+	}
+
+	/* T0.3: el zanzoken cuesta plMaximum*0.12 (bg_pmove.c:331) y se bloquea
+	 * solo con fatiga <= 1; cortarlo antes de llegar a ese piso. */
+	if ( !BotLite_StaminaAllowsSpend( clientNum, BOTLITE_SPEND_EXPENSIVE ) ) {
 		return qfalse;
 	}
 
@@ -501,6 +543,11 @@ static qboolean BotLite_RunSkill3RecoveryHeal( gentity_t *bot, int clientNum, ge
 	if ( target && target->client ) {
 		BotLite_FaceTarget( bot, target );
 	}
+	/* POWERLEVEL + forwardmove>0 es 'subir de tier' (bg_pmove.c:694). Como la
+	 * accion se acumula durante el frame, cualquier movimiento hacia adelante que
+	 * haya quedado seteado antes convertiria esta carga de ki en una
+	 * transformacion involuntaria. Se limpia de forma explicita. */
+	BotLite_EA_MoveForward( bot, 0 );
 	BotLite_EA_Button( bot, BUTTON_POWERLEVEL );
 	BotLite_EA_MoveRight( bot, 127 );
 	return qtrue;

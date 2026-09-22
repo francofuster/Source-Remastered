@@ -34,6 +34,7 @@ static const char *BotLite_GoalName( botlite_goal_t goal ) {
 	case BOTLITE_GOAL_WAIT_RECOVERY: return "WAIT_RECOVERY";
 	case BOTLITE_GOAL_POST_CRASH_FLYUP: return "POST_CRASH_FLYUP";
 	case BOTLITE_GOAL_IDLE: return "IDLE";
+	case BOTLITE_GOAL_RECOVER: return "RECOVER";
 	default: return "NONE";
 	}
 }
@@ -44,6 +45,7 @@ static const char *BotLite_TacticName( botlite_tactic_t tactic ) {
 	case BOTLITE_TACTIC_APPROACH: return "APPROACH";
 	case BOTLITE_TACTIC_MELEE_PRESSURE: return "MELEE_PRESSURE";
 	case BOTLITE_TACTIC_RANGED_PRESSURE: return "RANGED_PRESSURE";
+	case BOTLITE_TACTIC_RANGED_KITE: return "RANGED_KITE";
 	case BOTLITE_TACTIC_PUNISH_RECOVERY: return "PUNISH_RECOVERY";
 	case BOTLITE_TACTIC_RETREAT_RECOVERY: return "RETREAT_RECOVERY";
 	case BOTLITE_TACTIC_REPOSITION: return "REPOSITION";
@@ -78,6 +80,7 @@ static void BotLite_HandleDisabledState( gentity_t *bot, int clientNum ) {
 	botlite_info_t *info;
 	qboolean realCrash;
 	const botlite_profile_t *profile;
+	int cancelDelay;
 
 	info = &g_botlite[clientNum];
 	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
@@ -91,7 +94,14 @@ static void BotLite_HandleDisabledState( gentity_t *bot, int clientNum ) {
 		if ( info->recovery.knockbackStartTime <= 0 || bot->client->ps.timers[tmKnockback] > 4900 ) {
 			info->recovery.knockbackStartTime = level.time;
 		}
-		if ( info->skill == 3 && profile && ( level.time - info->recovery.knockbackStartTime ) >= profile->skill3KnockbackCancelDelay && bot->client->ps.timers[tmKnockback] < 4000 ) {
+		/* T2.6 -- La ventana de cancelacion exige tmKnockback < 4000 (bg_pmove.c:247):
+		 * el primer segundo del knockback no se puede cancelar. Skill 2 reacciona con
+		 * el doble de demora que skill 3; skill 1 no se recupera. */
+		cancelDelay = profile ? profile->skill3KnockbackCancelDelay : 2000;
+		if ( info->skill == 2 ) {
+			cancelDelay *= 2;
+		}
+		if ( info->skill >= 2 && profile && ( level.time - info->recovery.knockbackStartTime ) >= cancelDelay && bot->client->ps.timers[tmKnockback] < 4000 ) {
 			BotLite_EA_Button( bot, BUTTON_ALT_ATTACK );
 		}
 	} else {
@@ -162,6 +172,9 @@ static botlite_goal_t BotLite_SelectGoal( gentity_t *bot, int clientNum, const b
 	}
 	if ( snapshot->hasTarget && snapshot->targetCrashEdge && info->runtime.mode == BOTLITE_MODE_COMBAT ) {
 		return BOTLITE_GOAL_WAIT_RECOVERY;
+	}
+	if ( info->runtime.mode == BOTLITE_MODE_RECOVER ) {
+		return BOTLITE_GOAL_RECOVER;
 	}
 	if ( info->runtime.mode == BOTLITE_MODE_COMBAT ) {
 		return BOTLITE_GOAL_COMBAT;
@@ -245,6 +258,10 @@ static void BotLite_RunGoal( gentity_t *bot, int clientNum, botlite_goal_t goal,
 	case BOTLITE_GOAL_COMBAT:
 		BotLite_RunCombatGoal( bot, clientNum, snapshot );
 		break;
+	case BOTLITE_GOAL_RECOVER:
+		BotLite_LogTacticChange( bot, &g_botlite[clientNum], BOTLITE_TACTIC_RETREAT_RECOVERY );
+		BotLite_RunRecoverCycle( bot, clientNum, snapshot );
+		break;
 	case BOTLITE_GOAL_IDLE:
 		BotLite_LogTacticChange( bot, &g_botlite[clientNum], BOTLITE_TACTIC_IDLE_TRACK );
 		if ( snapshot->target ) {
@@ -278,6 +295,7 @@ void BotLite_ThinkClient( int clientNum, int time ) {
 	}
 
 	info = &g_botlite[clientNum];
+	BotLite_SyncStaminaMode( bot );
 	BotLite_ActionReset( clientNum, time );
 
 	if ( bot->client->ps.bitFlags & isDead ) {
@@ -300,6 +318,15 @@ void BotLite_ThinkClient( int clientNum, int time ) {
 	}
 
 	BotLite_BuildSnapshot( bot, clientNum, &snapshot );
+	BotLite_DebugLogSnapshot( bot, clientNum, &snapshot );
+
+	/* El forcejeo de haces congela al bot en el sitio: se resuelve por potencia de
+	 * haz, no por movimiento. Tiene prioridad sobre cualquier tactica de combate. */
+	if ( BotLite_RunStruggle( bot, clientNum, &snapshot ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
 	if ( info->skill == 3 && info->runtime.mode == BOTLITE_MODE_COMBAT && !snapshot.hasTarget && info->runtime.lastTargetNum >= 0 ) {
 		gentity_t *lastTarget;
 		lastTarget = BotLite_GetLastTrackedTargetEntity( info );
@@ -328,8 +355,64 @@ void BotLite_ThinkClient( int clientNum, int time ) {
 		return;
 	}
 
+	/* Fase 6.2: un zanzoken en curso se sostiene antes que nada. El motor frena
+		 * el desplazamiento en seco si el boton se suelta (bg_pmove.c:317 + 320-328),
+		 * asi que cualquier modulo que se lleve el frame lo aborta a mitad de camino. */
+	if ( BotLite_RunZanzokenHold( bot, clientNum, &snapshot ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* Fase 5: esquivar un proyectil entrante es la reaccion mas urgente de todas
+		 * -- si impacta, el resto de las decisiones dejan de importar. Va primero.
+		 * Cede el frame solo si de verdad detecto una amenaza en curso. */
+	if ( BotLite_RunDodgeIncoming( bot, clientNum, &snapshot ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* T2.5: escape con zanzoken. Se evalua ANTES que RECOVER a proposito: es una
+		 * reaccion puntual a una amenaza inmediata, no depende de niveles de recurso,
+		 * y antes quedaba muerto por estar acoplado al modo RECOVER. */
+	if ( BotLite_RunDefensiveZanzoken( bot, clientNum, &snapshot ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* T2.7: decidir si conviene seguir peleando. Corre antes que todo lo demas
+		 * porque cambia el modo, y el resto de las decisiones dependen del modo. */
+	if ( BotLite_UpdateRecoverMode( bot, clientNum, &snapshot ) ) {
+		BotLite_LogGoalChange( bot, info, BOTLITE_GOAL_RECOVER );
+		BotLite_RunRecoverCycle( bot, clientNum, &snapshot );
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* T3.4: empuja el ki mas alla del 100%% cuando el rival no puede castigar.
+		 * Mas especifico que T2.4, va antes. */
+	if ( BotLite_RunOffensiveBreakLimit( bot, clientNum, &snapshot ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* T2.4: cargar ki es una pausa deliberada. Va antes de elegir goal porque
+		 * ocupa el frame entero, y sus propias condiciones ya garantizan que solo
+		 * ocurra cuando el rival no puede castigarlo. */
+	if ( BotLite_RunKiCharge( bot, clientNum, &snapshot ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* Fase 6: decidir si conviene pelear de cerca o de lejos. No consume el
+	 * frame -- solo fija la intencion que despues leen la seleccion de tactica
+	 * y BotLite_UpdateHybridRangeMode. */
+	BotLite_UpdateEngageIntent( bot, clientNum, &snapshot );
+
 	goal = BotLite_SelectGoal( bot, clientNum, &snapshot );
 	BotLite_LogGoalChange( bot, info, goal );
 	BotLite_RunGoal( bot, clientNum, goal, &snapshot );
+	/* Despues de la tactica: si hay un haz en vuelo, engancha el boost para no
+	 * llegar sin el a un eventual choque (ver g_botlite_struggle.c). */
+	BotLite_StrugglePrepare( bot, clientNum );
 	BotLite_ActionCommit( bot, clientNum, time );
 }

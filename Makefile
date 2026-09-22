@@ -1851,6 +1851,12 @@ GOBJ_ = \
   $(B)/Base/Game/g_botlite_skill1.o \
   $(B)/Base/Game/g_botlite_skill2.o \
   $(B)/Base/Game/g_botlite_skill3.o \
+  $(B)/Base/Game/g_botlite_struggle.o \
+  $(B)/Base/Game/g_botlite_resource.o \
+  $(B)/Base/Game/g_botlite_transform.o \
+  $(B)/Base/Game/g_botlite_dodge.o \
+  $(B)/Base/Game/g_botlite_engage.o \
+  $(B)/Base/Game/g_botlite_zanzoken.o \
   $(B)/Base/Game/g_weapPhysParser.o \
   $(B)/Base/Game/g_weapPhysScanner.o \
   $(B)/Base/Game/g_weapPhysAttributes.o \

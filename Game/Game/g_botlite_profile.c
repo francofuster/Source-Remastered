@@ -67,7 +67,53 @@ static const botlite_profile_t botlite_skill1_profile_default = {
 	0.0f,		/* targetAcquireMinDistance */
 	qfalse,		/* targetAcquireRequiresLOS */
 	0.0f,		/* rangedToMeleeDistance */
-	0.0f		/* meleeToRangedDistance */
+	0.0f,		/* meleeToRangedDistance */
+	220,		/* reactiveBlockMinReaction */
+	520,		/* reactiveBlockMaxReaction */
+	70,		/* staminaComfortablePct */
+	30,		/* staminaTightPct */
+	10,		/* staminaCriticalPct */
+	500.0f,	/* zanzokenEscapeDist */
+	1200.0f,	/* kiChargeMinSafeDist */
+	60,		/* kiChargeTargetPct */
+	28,		/* recoverEnterPct */
+	62,		/* recoverExitPct */
+	40,		/* recoverHealthEnterPct */
+	70,		/* recoverHealthExitPct */
+	1500.0f,	/* sanzokenBandMinDist */
+	16000.0f,	/* sanzokenBandMaxDist */
+	12000,	/* recoverMaxMs */
+	900.0f,	/* recoverSafeDist */
+	22,		/* recoverKiFloorPct */
+	4,		/* recoverKiFloorHiddenPct */
+	85,		/* breakLimitMinKiPct */
+	550,		/* breakLimitHoldMs */
+	75,		/* struggleCommitPct */
+	130,		/* breakerTapMs */
+	2600,		/* chargeCommitCooldown */
+	1050,		/* stunChargeHoldMs */
+	6000,		/* engageSwitchMinMs */
+	0.45f,		/* engageSwitchMargin */
+	1.00f,		/* engageWeightBias */
+	0.60f,		/* engageWeightKi */
+	0.60f,		/* engageWeightStamina */
+	0.00f,		/* engageWeightHealth */
+	0.00f,		/* engageWeightTargetState */
+	1.20f,		/* engageWeightDistance */
+	0.00f,		/* engageWeightEffect */
+	3000.0f,	/* engageNeutralDist */
+	0.0f,		/* engageKiteMinDist */
+	85,		/* recoverRestExitPct */
+	45,		/* recoverRechargeMinStaminaPct */
+	100,		/* recoverRechargeKiPct */
+	4000,		/* recoverCooldownMs */
+	20000,		/* transformIntervalMs */
+	130,		/* tierEscalateMarginPct */
+	8000,		/* tierEscalateCombatMs */
+	30,		/* escapeCriticalHealthPct */
+	0.0f,		/* meleeApproachMaxPitch */
+	48.0f,		/* meleeApproachLevelTolerance */
+	0.45f		/* meleeApproachSteepRatio */
 };
 
 static const botlite_profile_t botlite_skill2_profile_default = {
@@ -108,7 +154,53 @@ static const botlite_profile_t botlite_skill2_profile_default = {
 	0.0f,
 	qfalse,
 	0.0f,
-	0.0f
+	0.0f,
+	220,		/* reactiveBlockMinReaction */
+	520,		/* reactiveBlockMaxReaction */
+	70,		/* staminaComfortablePct */
+	30,		/* staminaTightPct */
+	10,		/* staminaCriticalPct */
+	500.0f,	/* zanzokenEscapeDist */
+	1200.0f,	/* kiChargeMinSafeDist */
+	60,		/* kiChargeTargetPct */
+	28,		/* recoverEnterPct */
+	62,		/* recoverExitPct */
+	40,		/* recoverHealthEnterPct */
+	70,		/* recoverHealthExitPct */
+	1500.0f,	/* sanzokenBandMinDist */
+	16000.0f,	/* sanzokenBandMaxDist */
+	12000,	/* recoverMaxMs */
+	900.0f,	/* recoverSafeDist */
+	22,		/* recoverKiFloorPct */
+	4,		/* recoverKiFloorHiddenPct */
+	85,		/* breakLimitMinKiPct */
+	550,		/* breakLimitHoldMs */
+	40,		/* struggleCommitPct */
+	130,		/* breakerTapMs */
+	2600,		/* chargeCommitCooldown */
+	1050,		/* stunChargeHoldMs */
+	4000,		/* engageSwitchMinMs */
+	0.35f,		/* engageSwitchMargin */
+	1.00f,		/* engageWeightBias */
+	0.90f,		/* engageWeightKi */
+	0.80f,		/* engageWeightStamina */
+	0.40f,		/* engageWeightHealth */
+	0.60f,		/* engageWeightTargetState */
+	0.90f,		/* engageWeightDistance */
+	0.00f,		/* engageWeightEffect */
+	2500.0f,	/* engageNeutralDist */
+	0.0f,		/* engageKiteMinDist */
+	85,		/* recoverRestExitPct */
+	45,		/* recoverRechargeMinStaminaPct */
+	100,		/* recoverRechargeKiPct */
+	4000,		/* recoverCooldownMs */
+	20000,		/* transformIntervalMs */
+	130,		/* tierEscalateMarginPct */
+	8000,		/* tierEscalateCombatMs */
+	30,		/* escapeCriticalHealthPct */
+	0.0f,		/* meleeApproachMaxPitch */
+	48.0f,		/* meleeApproachLevelTolerance */
+	0.45f		/* meleeApproachSteepRatio */
 };
 
 static const botlite_profile_t botlite_skill3_profile_default = {
@@ -149,7 +241,53 @@ static const botlite_profile_t botlite_skill3_profile_default = {
 	0.0f,
 	qfalse,
 	0.0f,
-	0.0f
+	0.0f,
+	220,		/* reactiveBlockMinReaction */
+	520,		/* reactiveBlockMaxReaction */
+	70,		/* staminaComfortablePct */
+	30,		/* staminaTightPct */
+	10,		/* staminaCriticalPct */
+	500.0f,	/* zanzokenEscapeDist */
+	1200.0f,	/* kiChargeMinSafeDist */
+	60,		/* kiChargeTargetPct */
+	28,		/* recoverEnterPct */
+	62,		/* recoverExitPct */
+	40,		/* recoverHealthEnterPct */
+	70,		/* recoverHealthExitPct */
+	1500.0f,	/* sanzokenBandMinDist */
+	16000.0f,	/* sanzokenBandMaxDist */
+	12000,	/* recoverMaxMs */
+	900.0f,	/* recoverSafeDist */
+	22,		/* recoverKiFloorPct */
+	4,		/* recoverKiFloorHiddenPct */
+	85,		/* breakLimitMinKiPct */
+	550,		/* breakLimitHoldMs */
+	20,		/* struggleCommitPct */
+	130,		/* breakerTapMs */
+	2600,		/* chargeCommitCooldown */
+	1050,		/* stunChargeHoldMs */
+	2200,		/* engageSwitchMinMs */
+	0.22f,		/* engageSwitchMargin */
+	1.00f,		/* engageWeightBias */
+	1.10f,		/* engageWeightKi */
+	1.00f,		/* engageWeightStamina */
+	0.90f,		/* engageWeightHealth */
+	1.30f,		/* engageWeightTargetState */
+	0.60f,		/* engageWeightDistance */
+	0.50f,		/* engageWeightEffect */
+	2200.0f,	/* engageNeutralDist */
+	900.0f,		/* engageKiteMinDist */
+	85,		/* recoverRestExitPct */
+	45,		/* recoverRechargeMinStaminaPct */
+	100,		/* recoverRechargeKiPct */
+	4000,		/* recoverCooldownMs */
+	20000,		/* transformIntervalMs */
+	130,		/* tierEscalateMarginPct */
+	8000,		/* tierEscalateCombatMs */
+	30,		/* escapeCriticalHealthPct */
+	0.0f,		/* meleeApproachMaxPitch */
+	48.0f,		/* meleeApproachLevelTolerance */
+	0.45f		/* meleeApproachSteepRatio */
 };
 
 static const botlite_combat_policy_t botlite_skill1_policy_default = {
@@ -163,7 +301,18 @@ static const botlite_combat_policy_t botlite_skill1_policy_default = {
 	qfalse,
 	qfalse,
 	qfalse,
-	50
+	50,
+	qtrue,	/* allowsReactiveBlock */
+	qfalse,	/* allowsDeliberateCharge (skill1: nunca) */
+	qfalse,	/* allowsBreaker (skill1: nunca) */
+	qfalse,	/* allowsDefensiveZanzoken */
+	qfalse,	/* allowsKiCharge */
+	qfalse,	/* allowsRecoverMode (skill1: nunca) */
+	qfalse,	/* allowsEvade */
+	qfalse,	/* allowsDodgeIncoming (skill1: no) */
+	qfalse,	/* allowsOffensiveBreakLimit */
+	qfalse,	/* allowsEngageIntent (skill1: no, se queda con la logica por distancia) */
+	qfalse	/* allowsEngageKiting (skill1: no) */
 };
 
 static const botlite_combat_policy_t botlite_skill2_policy_default = {
@@ -177,7 +326,18 @@ static const botlite_combat_policy_t botlite_skill2_policy_default = {
 	qfalse,
 	qfalse,
 	qfalse,
-	50
+	50,
+	qtrue,	/* allowsReactiveBlock */
+	qtrue,	/* allowsDeliberateCharge */
+	qtrue,	/* allowsBreaker */
+	qtrue,	/* allowsDefensiveZanzoken */
+	qtrue,	/* allowsKiCharge */
+	qtrue,	/* allowsRecoverMode */
+	qfalse,	/* allowsEvade (skill2: no) */
+	qtrue,	/* allowsDodgeIncoming (skill2: si) */
+	qfalse,	/* allowsOffensiveBreakLimit (skill2: no) */
+	qtrue,	/* allowsEngageIntent (skill2: si, pero lento) */
+	qfalse	/* allowsEngageKiting (skill2: no abre hueco a proposito) */
 };
 
 static const botlite_combat_policy_t botlite_skill3_policy_default = {
@@ -191,7 +351,18 @@ static const botlite_combat_policy_t botlite_skill3_policy_default = {
 	qtrue,
 	qtrue,
 	qtrue,
-	50
+	50,
+	qtrue,	/* allowsReactiveBlock */
+	qtrue,	/* allowsDeliberateCharge */
+	qtrue,	/* allowsBreaker */
+	qtrue,	/* allowsDefensiveZanzoken */
+	qtrue,	/* allowsKiCharge */
+	qtrue,	/* allowsRecoverMode */
+	qtrue,	/* allowsEvade (skill3: si) */
+	qtrue,	/* allowsDodgeIncoming */
+	qtrue,	/* allowsOffensiveBreakLimit (skill3: si) */
+	qtrue,	/* allowsEngageIntent (skill3: si) */
+	qtrue	/* allowsEngageKiting (skill3: si) */
 };
 
 static botlite_profile_t botlite_profiles[4];
@@ -401,6 +572,122 @@ static void BotLite_ApplySkillKeyValue( int skill, const char *key, const char *
 		policy->useSearchFlyup = BotLite_ParseBool( value );
 	} else if ( !Q_stricmp( key, "uses_opening_style" ) ) {
 		policy->chooseOpeningStyle = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "knockback_cancel_delay_ms" ) ) {
+		profile->skill3KnockbackCancelDelay = i;
+	} else if ( !Q_stricmp( key, "uses_defensive_zanzoken" ) ) {
+		policy->allowsDefensiveZanzoken = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_offensive_breaklimit" ) ) {
+		policy->allowsOffensiveBreakLimit = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_dodge_incoming" ) ) {
+		policy->allowsDodgeIncoming = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_evade" ) ) {
+		policy->allowsEvade = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_recover_mode" ) ) {
+		policy->allowsRecoverMode = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_ki_charge" ) ) {
+		policy->allowsKiCharge = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_breakers" ) ) {
+		policy->allowsBreaker = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_charge_attacks" ) ) {
+		policy->allowsDeliberateCharge = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "charge_cooldown_ms" ) ) {
+		profile->chargeCommitCooldown = i;
+	} else if ( !Q_stricmp( key, "stun_charge_hold_ms" ) ) {
+		profile->stunChargeHoldMs = i;
+	} else if ( !Q_stricmp( key, "stamina_comfortable_pct" ) ) {
+		profile->staminaComfortablePct = i;
+	} else if ( !Q_stricmp( key, "stamina_tight_pct" ) ) {
+		profile->staminaTightPct = i;
+	} else if ( !Q_stricmp( key, "stamina_critical_pct" ) ) {
+		profile->staminaCriticalPct = i;
+	} else if ( !Q_stricmp( key, "zanzoken_escape_dist" ) ) {
+		profile->zanzokenEscapeDist = f;
+	} else if ( !Q_stricmp( key, "ki_charge_min_safe_dist" ) ) {
+		profile->kiChargeMinSafeDist = f;
+	} else if ( !Q_stricmp( key, "ki_charge_target_pct" ) ) {
+		profile->kiChargeTargetPct = i;
+	} else if ( !Q_stricmp( key, "recover_enter_pct" ) ) {
+		profile->recoverEnterPct = i;
+	} else if ( !Q_stricmp( key, "recover_exit_pct" ) ) {
+		profile->recoverExitPct = i;
+	} else if ( !Q_stricmp( key, "recover_health_enter_pct" ) ) {
+		profile->recoverHealthEnterPct = i;
+	} else if ( !Q_stricmp( key, "recover_health_exit_pct" ) ) {
+		profile->recoverHealthExitPct = i;
+	} else if ( !Q_stricmp( key, "sanzoken_band_min_dist" ) ) {
+		profile->sanzokenBandMinDist = f;
+	} else if ( !Q_stricmp( key, "sanzoken_band_max_dist" ) ) {
+		profile->sanzokenBandMaxDist = f;
+	} else if ( !Q_stricmp( key, "recover_max_ms" ) ) {
+		profile->recoverMaxMs = i;
+	} else if ( !Q_stricmp( key, "recover_safe_dist" ) ) {
+		profile->recoverSafeDist = f;
+	} else if ( !Q_stricmp( key, "recover_ki_floor_pct" ) ) {
+		profile->recoverKiFloorPct = i;
+	} else if ( !Q_stricmp( key, "recover_ki_floor_hidden_pct" ) ) {
+		profile->recoverKiFloorHiddenPct = i;
+	} else if ( !Q_stricmp( key, "breaklimit_min_ki_pct" ) ) {
+		profile->breakLimitMinKiPct = i;
+	} else if ( !Q_stricmp( key, "breaklimit_hold_ms" ) ) {
+		profile->breakLimitHoldMs = i;
+	} else if ( !Q_stricmp( key, "struggle_commit_pct" ) ) {
+		profile->struggleCommitPct = i;
+	} else if ( !Q_stricmp( key, "breaker_tap_ms" ) ) {
+		profile->breakerTapMs = i;
+	} else if ( !Q_stricmp( key, "melee_approach_max_pitch" ) ) {
+		profile->meleeApproachMaxPitch = f;
+	} else if ( !Q_stricmp( key, "melee_approach_level_tolerance" ) ) {
+		profile->meleeApproachLevelTolerance = f;
+	} else if ( !Q_stricmp( key, "melee_approach_steep_ratio" ) ) {
+		profile->meleeApproachSteepRatio = f;
+	} else if ( !Q_stricmp( key, "transform_interval_ms" ) ) {
+		profile->transformIntervalMs = i;
+	} else if ( !Q_stricmp( key, "tier_escalate_margin_pct" ) ) {
+		profile->tierEscalateMarginPct = i;
+	} else if ( !Q_stricmp( key, "tier_escalate_combat_ms" ) ) {
+		profile->tierEscalateCombatMs = i;
+	} else if ( !Q_stricmp( key, "escape_critical_health_pct" ) ) {
+		profile->escapeCriticalHealthPct = i;
+	} else if ( !Q_stricmp( key, "recover_rest_exit_pct" ) ) {
+		profile->recoverRestExitPct = i;
+	} else if ( !Q_stricmp( key, "recover_recharge_min_stamina_pct" ) ) {
+		profile->recoverRechargeMinStaminaPct = i;
+	} else if ( !Q_stricmp( key, "recover_recharge_ki_pct" ) ) {
+		profile->recoverRechargeKiPct = i;
+	} else if ( !Q_stricmp( key, "recover_cooldown_ms" ) ) {
+		profile->recoverCooldownMs = i;
+	} else if ( !Q_stricmp( key, "uses_engage_intent" ) ) {
+		policy->allowsEngageIntent = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_engage_kiting" ) ) {
+		policy->allowsEngageKiting = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "engage_switch_min_ms" ) ) {
+		profile->engageSwitchMinMs = i;
+	} else if ( !Q_stricmp( key, "engage_switch_margin" ) ) {
+		profile->engageSwitchMargin = f;
+	} else if ( !Q_stricmp( key, "engage_w_bias" ) ) {
+		profile->engageWeightBias = f;
+	} else if ( !Q_stricmp( key, "engage_w_ki" ) ) {
+		profile->engageWeightKi = f;
+	} else if ( !Q_stricmp( key, "engage_w_stamina" ) ) {
+		profile->engageWeightStamina = f;
+	} else if ( !Q_stricmp( key, "engage_w_health" ) ) {
+		profile->engageWeightHealth = f;
+	} else if ( !Q_stricmp( key, "engage_w_target_state" ) ) {
+		profile->engageWeightTargetState = f;
+	} else if ( !Q_stricmp( key, "engage_w_distance" ) ) {
+		profile->engageWeightDistance = f;
+	} else if ( !Q_stricmp( key, "engage_w_effect" ) ) {
+		profile->engageWeightEffect = f;
+	} else if ( !Q_stricmp( key, "engage_neutral_dist" ) ) {
+		profile->engageNeutralDist = f;
+	} else if ( !Q_stricmp( key, "engage_kite_min_dist" ) ) {
+		profile->engageKiteMinDist = f;
+	} else if ( !Q_stricmp( key, "uses_reactive_block" ) ) {
+		policy->allowsReactiveBlock = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "reactive_block_min_ms" ) ) {
+		profile->reactiveBlockMinReaction = i;
+	} else if ( !Q_stricmp( key, "reactive_block_max_ms" ) ) {
+		profile->reactiveBlockMaxReaction = i;
 	} else if ( !Q_stricmp( key, "uses_block" ) ) {
 		policy->allowsBlock = BotLite_ParseBool( value );
 	} else if ( !Q_stricmp( key, "uses_special" ) ) {

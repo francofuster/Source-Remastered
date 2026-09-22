@@ -12,7 +12,7 @@ static int BotLite_ClampMove( int value ) {
 }
 
 
-static int BotLite_SanitizeButtons( int buttons ) {
+static int BotLite_SanitizeButtons( int buttons, qboolean allowBoostWithAttack ) {
 	if ( buttons & BUTTON_TELEPORT ) {
 		buttons &= ~( BUTTON_BOOST | BUTTON_BLOCK | BUTTON_ATTACK | BUTTON_ALT_ATTACK | BUTTON_POWERLEVEL );
 		return buttons;
@@ -26,7 +26,13 @@ static int BotLite_SanitizeButtons( int buttons ) {
 		return buttons;
 	}
 	if ( buttons & ( BUTTON_ATTACK | BUTTON_ALT_ATTACK ) ) {
-		buttons &= ~BUTTON_BOOST;
+		/* Excepcion deliberada: boost + ataque es legal y necesario. Es lo unico
+		 * que suma potencia en un forcejeo de haces (g_usermissile.c:443) y ademas
+		 * duplica la velocidad de carga (bg_pmove.c:2834). Solo se habilita cuando
+		 * el modulo de forcejeo lo pide, para no alterar el resto del combate. */
+		if ( !allowBoostWithAttack ) {
+			buttons &= ~BUTTON_BOOST;
+		}
 	}
 	return buttons;
 }
@@ -57,7 +63,7 @@ void BotLite_ActionCommit( gentity_t *bot, int clientNum, int serverTime ) {
 	cmd->forwardmove = BotLite_ClampMove( info->action.forwardmove );
 	cmd->rightmove = BotLite_ClampMove( info->action.rightmove );
 	cmd->upmove = BotLite_ClampMove( info->action.upmove );
-	cmd->buttons = BotLite_SanitizeButtons( info->action.buttons );
+	cmd->buttons = BotLite_SanitizeButtons( info->action.buttons, info->action.allowBoostWithAttack );
 	if ( info->action.weaponOverride ) {
 		cmd->weapon = info->action.weapon;
 	}
@@ -109,6 +115,13 @@ void BotLite_EA_Button( gentity_t *bot, int buttonMask ) {
 
 	action = &g_botlite[bot->s.number].action;
 	action->buttons |= buttonMask;
+}
+
+void BotLite_EA_AllowBoostWithAttack( gentity_t *bot ) {
+	if ( !bot || !bot->client ) {
+		return;
+	}
+	g_botlite[bot->s.number].action.allowBoostWithAttack = qtrue;
 }
 
 void BotLite_EA_SetWeapon( gentity_t *bot, int weapon ) {
