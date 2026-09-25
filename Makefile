@@ -1776,6 +1776,7 @@ CGOBJ_ = \
   $(B)/Base/CGame/cg_servercmds.o \
   $(B)/Base/CGame/cg_snapshot.o \
   $(B)/Base/CGame/cg_view.o \
+  $(B)/Base/CGame/cg_lockcam.o \
   $(B)/Base/CGame/cg_weapons.o \
   $(B)/Base/CGame/cg_auras.o \
   $(B)/Base/CGame/cg_userweapons.o \

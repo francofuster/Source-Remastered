@@ -50,6 +50,8 @@ if "%1"=="TA" goto TA
 @if errorlevel 1 goto quit
 %cc% ../cg_view.c
 @if errorlevel 1 goto quit
+%cc% ../cg_lockcam.c
+@if errorlevel 1 goto quit
 %cc% ../cg_weapons.c
 @if errorlevel 1 goto quit
 %cc% ../cg_auras.c

@@ -1111,9 +1111,14 @@ static void CG_InterpolateEntityPosition( centity_t *cent ) {
 ===============
 CG_CalcEntityLerpPositions
 
+Not static: cg_lockcam.c calls this directly on the locked-target entity so
+it can read an up-to-date cent->lerpOrigin during CG_CalcViewValues(), which
+runs before CG_AddPacketEntities() would otherwise refresh it this frame.
+The function is idempotent for a given cg.time/cg.snap/cg.nextSnap, so
+calling it early and having the normal pass call it again later is harmless.
 ===============
 */
-static void CG_CalcEntityLerpPositions( centity_t *cent ) {
+void CG_CalcEntityLerpPositions( centity_t *cent ) {
 
 	// if this player does not want to see extrapolated players
 	if ( !cg_smoothClients.integer ) {

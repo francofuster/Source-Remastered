@@ -252,8 +252,12 @@ qboolean CG_WorldCoordToScreenCoordFloat(vec3_t worldCoord, float *x, float *y) 
 		return qfalse;
 	}
 
-	xzi = xcenter / transformed[2] * (  96.0f / cg.refdef.fov_x );
-	yzi = ycenter / transformed[2] * ( 102.0f / cg.refdef.fov_y );
+	// Exact pinhole projection, matching the renderer (tan of the half FOV).
+	// This used to approximate it linearly (96/fov_x, 102/fov_y), which was
+	// within a few percent at fov 90 but drifts as the FOV widens -- about
+	// 20% off at the ~107 degrees cg_widescreenFov gives a 21:9 screen.
+	xzi = xcenter / transformed[2] / tan( cg.refdef.fov_x / 360.0f * M_PI );
+	yzi = ycenter / transformed[2] / tan( cg.refdef.fov_y / 360.0f * M_PI );
 
 	*x = xcenter + xzi * transformed[0];
 	*y = ycenter - yzi * transformed[1];
@@ -1079,6 +1083,37 @@ Fixed fov at intermissions, otherwise account for fov variable and zooms.
 #define	WAVE_AMPLITUDE	1
 #define	WAVE_FREQUENCY	0.4
 
+/*
+====================
+CG_WidescreenFovX
+
+The engine takes cg_fov as the HORIZONTAL FOV at any aspect ratio, so a
+wider screen gets a shorter view instead of a wider one: fov 90 leaves 59
+degrees vertically at 16:9 but only 45 at 21:9. With cg_widescreenFov 1,
+fovX is read as the horizontal FOV of a 16:9 view and widened just enough
+to keep that view vertical FOV on wider screens (Hor+). Screens at 16:9 or
+narrower are left exactly as before.
+====================
+*/
+float CG_WidescreenFovX( float fovX ) {
+	float	aspect, halfTan;
+
+	if ( !cg_widescreenFov.integer || cg.refdef.width <= 0 || cg.refdef.height <= 0 ) {
+		return fovX;
+	}
+	aspect = (float)cg.refdef.width / (float)cg.refdef.height;
+	if ( aspect <= 16.0f / 9.0f ) {
+		return fovX;
+	}
+
+	halfTan = tan( fovX / 360.0f * M_PI ) * aspect / ( 16.0f / 9.0f );
+	fovX = atan2( halfTan, 1.0f ) * 360.0f / M_PI;
+	if ( fovX > 170.0f ) {
+		fovX = 170.0f;
+	}
+	return fovX;
+}
+
 static int CG_CalcFov( void ) {
 	float	x;
 	float	phase;
@@ -1130,6 +1165,8 @@ static int CG_CalcFov( void ) {
 			}
 		}
 	}
+
+	fov_x = CG_WidescreenFovX( fov_x );
 
 	x = cg.refdef.width / tan( fov_x / 360 * M_PI );
 	fov_y = atan2( cg.refdef.height, x );
@@ -1410,15 +1447,28 @@ static int CG_CalcViewValues( void ) {
 	}
 
 	if ( cg.renderingThirdPerson ) {
+		qboolean lockCamDrove = qfalse;
+
 		// back away from character
-		if(cg_thirdPersonCamera.value >= 2){
-			CG_OffsetThirdPersonView2();
-		}else{
-			CG_OffsetThirdPersonView();
+		if ( cg_lockCam.integer && cg.predictedPlayerState.lockedTarget > 0 ) {
+			// dynamic combat camera (opt-in, see cg_lockcam.c); returns qfalse
+			// for the few states it leaves to the regular camera (transforms,
+			// invalid target)
+			lockCamDrove = CG_OffsetLockedCombatView();
 		}
+		if ( !lockCamDrove ) {
+			if(cg_thirdPersonCamera.value >= 2){
+				CG_OffsetThirdPersonView2();
+			}else{
+				CG_OffsetThirdPersonView();
+			}
+		}
+		// blend instead of cutting when the camera in charge changes
+		CG_LockCam_Transition( lockCamDrove );
 	} else {
 		// offset for local bobbing and kicks
 		CG_OffsetFirstPersonView();
+		CG_LockCam_Transition( qfalse );
 	}
 
 #if EARTHQUAKE_SYSTEM	// JUHOX: add earthquakes

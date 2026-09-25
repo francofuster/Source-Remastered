@@ -710,6 +710,43 @@ void Sys_PlatformInit( void )
 #ifndef DEDICATED
 	const char *SDL_VIDEODRIVER = getenv( "SDL_VIDEODRIVER" );
 
+	// SDL 1.2 has no concept of DPI awareness. Without this, Windows treats
+	// the game as a legacy app and silently scales/stretches its framebuffer
+	// to match the desktop's DPI setting, which is what makes a fullscreen
+	// mode that matches the monitor's real resolution appear zoomed in and
+	// shifted off-screen on any display that isn't running at 100% scaling.
+	// Resolved via GetProcAddress (rather than calling the API directly)
+	// since this toolchain's headers/import libs predate these Vista/Win10
+	// DPI APIs.
+	{
+		HMODULE user32 = LoadLibraryA( "user32.dll" );
+
+		if( user32 )
+		{
+			typedef BOOL (WINAPI *SetProcessDpiAwarenessContext_t)( HANDLE );
+			typedef BOOL (WINAPI *SetProcessDPIAware_t)( void );
+
+			SetProcessDpiAwarenessContext_t pSetProcessDpiAwarenessContext =
+				(SetProcessDpiAwarenessContext_t)GetProcAddress( user32, "SetProcessDpiAwarenessContext" );
+
+			if( pSetProcessDpiAwarenessContext )
+			{
+				// DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+				pSetProcessDpiAwarenessContext( (HANDLE)(LONG_PTR)-4 );
+			}
+			else
+			{
+				SetProcessDPIAware_t pSetProcessDPIAware =
+					(SetProcessDPIAware_t)GetProcAddress( user32, "SetProcessDPIAware" );
+
+				if( pSetProcessDPIAware )
+					pSetProcessDPIAware( );
+			}
+
+			FreeLibrary( user32 );
+		}
+	}
+
 	if( SDL_VIDEODRIVER )
 	{
 		Com_Printf( "SDL_VIDEODRIVER is externally set to \"%s\", "
