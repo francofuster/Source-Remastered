@@ -27,6 +27,7 @@ static int BotLite_GetActionStateFlags( gentity_t *bot, int clientNum ) {
 
 qboolean BotLite_ShouldUseBoost( gentity_t *bot, int clientNum ) {
 	botlite_info_t *info;
+	const botlite_combat_policy_t *policy;
 	int actionFlags;
 
 	if ( !bot || !bot->client || clientNum < 0 || clientNum >= level.maxclients ) {
@@ -34,6 +35,15 @@ qboolean BotLite_ShouldUseBoost( gentity_t *bot, int clientNum ) {
 	}
 
 	info = &g_botlite[clientNum];
+
+	/* Fase 7: antes el boost no tenia ningun gate por skill, solo el del motor
+	 * (canBoost). Ahora es opt-in por cfg (uses_boost) para poder tunearlo por
+	 * skill sin tocar codigo. */
+	policy = BotLite_GetCombatPolicy( info->skill );
+	if ( !policy || !policy->allowsBoost ) {
+		return qfalse;
+	}
+
 	actionFlags = BotLite_GetActionStateFlags( bot, clientNum );
 
 	if ( info->runtime.mode == BOTLITE_MODE_WAIT_TARGET_RECOVERY ) {

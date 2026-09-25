@@ -150,6 +150,15 @@ static void BotLite_BeginMeleePressure( gentity_t *bot, int clientNum, gentity_t
  * frena el avance horizontal para igualar la altura primero, y asi el ultimo tramo
  * se hace plano.
  */
+/*
+ * Fase 7 -- la correccion de altura era todo o nada: apenas se pasaba la
+ * tolerancia, upmove saltaba a maxima potencia. Eso hacia que el bot se pasara
+ * de la altura del rival, la tolerancia se cruzaba de nuevo del lado contrario
+ * y upmove se invertia a maxima potencia otra vez -- un zigzag vertical continuo
+ * en vez de un acercamiento lineal. Ahora la potencia escala con la distancia
+ * que falta, con un piso para que la correccion se siga notando cerca del
+ * limite, asi converge sin pasarse de largo.
+ */
 static void BotLite_ApplyApproachMovement( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot ) {
 	const botlite_profile_t *profile;
 	float vertical;
@@ -163,7 +172,18 @@ static void BotLite_ApplyApproachMovement( gentity_t *bot, int clientNum, const 
 		vertical = snapshot->verticalDelta;
 		tolerance = profile->meleeApproachLevelTolerance;
 		if ( tolerance > 0.0f && ( vertical > tolerance || vertical < -tolerance ) ) {
-			BotLite_EA_MoveUp( bot, ( vertical > 0.0f ) ? 127 : -127 );
+			float magnitude;
+			float rampDist;
+			float scale;
+			int upValue;
+
+			magnitude = ( vertical > 0.0f ) ? vertical : -vertical;
+			rampDist = tolerance * 4.0f;
+			scale = ( magnitude - tolerance ) / rampDist;
+			if ( scale > 1.0f ) scale = 1.0f;
+			if ( scale < 0.0f ) scale = 0.0f;
+			upValue = (int)( 40.0f + scale * 87.0f );
+			BotLite_EA_MoveUp( bot, ( vertical > 0.0f ) ? upValue : -upValue );
 			/* Mas empinado que la proporcion configurada: igualar altura primero. */
 			if ( profile->meleeApproachSteepRatio > 0.0f && snapshot->horizontalDist > 1.0f ) {
 				float steep;

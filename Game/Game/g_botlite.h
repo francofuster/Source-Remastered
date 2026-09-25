@@ -96,6 +96,14 @@ typedef struct {
 	qboolean allowsEngageIntent;
 	/* Fase 6: abrir hueco a proposito para poder disparar desde cerca. */
 	qboolean allowsEngageKiting;
+	/* Fase 7: boost configurable por skill en vez de depender solo del gate
+	 * del motor (canBoost). */
+	qboolean allowsBoost;
+	/* Fase 7: castigo a distancia tras un knockback, antes cableado al numero
+	 * de skill y ahora opt-in por cfg. */
+	qboolean allowsKnockbackPunish;
+	/* Fase 7: contraataque durante la huida del ciclo de recuperacion. */
+	qboolean allowsRetreatCounterAttack;
 } botlite_combat_policy_t;
 
 typedef struct {
@@ -195,6 +203,11 @@ typedef struct {
 	float meleeApproachMaxPitch;
 	float meleeApproachLevelTolerance;
 	float meleeApproachSteepRatio;
+
+	/* Fase 7: pisos de vida/ki por debajo de los cuales el contraataque en
+	 * retirada evita gastar justo el recurso que ya esta bajo. */
+	int retreatCounterHealthFloorPct;
+	int retreatCounterKiFloorPct;
 } botlite_profile_t;
 
 typedef struct {
@@ -310,6 +323,9 @@ typedef struct {
 	int tierHoldUntil;
 	int tierHoldDirection;
 	int tierLastSeen;
+	/* Fase 7: lado de strafe mientras dispara, en vez de quedarse quieto. */
+	int strafeDirection;
+	int strafeSwitchTime;
 } botlite_ranged_state_t;
 
 typedef struct {
@@ -619,5 +635,8 @@ qboolean BotLite_RunRecoverCycle( gentity_t *bot, int clientNum, const botlite_s
 qboolean BotLite_RunOffensiveBreakLimit( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot );
 void BotLite_RunSkill3MeleePressure( gentity_t *bot, int clientNum, gentity_t *target, const botlite_snapshot_t *snapshot );
 qboolean BotLite_RunRangedPressure( gentity_t *bot, int clientNum, gentity_t *target, const botlite_snapshot_t *snapshot );
+
+/* Fase 7 -- contraataque durante la huida del ciclo de recuperacion. */
+qboolean BotLite_RunRetreatCounterAttack( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot );
 
 #endif

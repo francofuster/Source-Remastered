@@ -113,7 +113,9 @@ static const botlite_profile_t botlite_skill1_profile_default = {
 	30,		/* escapeCriticalHealthPct */
 	0.0f,		/* meleeApproachMaxPitch */
 	48.0f,		/* meleeApproachLevelTolerance */
-	0.45f		/* meleeApproachSteepRatio */
+	0.45f,		/* meleeApproachSteepRatio */
+	40,		/* retreatCounterHealthFloorPct */
+	25		/* retreatCounterKiFloorPct */
 };
 
 static const botlite_profile_t botlite_skill2_profile_default = {
@@ -200,7 +202,9 @@ static const botlite_profile_t botlite_skill2_profile_default = {
 	30,		/* escapeCriticalHealthPct */
 	0.0f,		/* meleeApproachMaxPitch */
 	48.0f,		/* meleeApproachLevelTolerance */
-	0.45f		/* meleeApproachSteepRatio */
+	0.45f,		/* meleeApproachSteepRatio */
+	40,		/* retreatCounterHealthFloorPct */
+	25		/* retreatCounterKiFloorPct */
 };
 
 static const botlite_profile_t botlite_skill3_profile_default = {
@@ -287,7 +291,9 @@ static const botlite_profile_t botlite_skill3_profile_default = {
 	30,		/* escapeCriticalHealthPct */
 	0.0f,		/* meleeApproachMaxPitch */
 	48.0f,		/* meleeApproachLevelTolerance */
-	0.45f		/* meleeApproachSteepRatio */
+	0.45f,		/* meleeApproachSteepRatio */
+	40,		/* retreatCounterHealthFloorPct */
+	25		/* retreatCounterKiFloorPct */
 };
 
 static const botlite_combat_policy_t botlite_skill1_policy_default = {
@@ -312,7 +318,10 @@ static const botlite_combat_policy_t botlite_skill1_policy_default = {
 	qfalse,	/* allowsDodgeIncoming (skill1: no) */
 	qfalse,	/* allowsOffensiveBreakLimit */
 	qfalse,	/* allowsEngageIntent (skill1: no, se queda con la logica por distancia) */
-	qfalse	/* allowsEngageKiting (skill1: no) */
+	qfalse,	/* allowsEngageKiting (skill1: no) */
+	qtrue,	/* allowsBoost */
+	qfalse,	/* allowsKnockbackPunish (skill1: no) */
+	qfalse	/* allowsRetreatCounterAttack (skill1: no tiene ranged) */
 };
 
 static const botlite_combat_policy_t botlite_skill2_policy_default = {
@@ -337,7 +346,10 @@ static const botlite_combat_policy_t botlite_skill2_policy_default = {
 	qtrue,	/* allowsDodgeIncoming (skill2: si) */
 	qfalse,	/* allowsOffensiveBreakLimit (skill2: no) */
 	qtrue,	/* allowsEngageIntent (skill2: si, pero lento) */
-	qfalse	/* allowsEngageKiting (skill2: no abre hueco a proposito) */
+	qfalse,	/* allowsEngageKiting (skill2: no abre hueco a proposito) */
+	qtrue,	/* allowsBoost */
+	qfalse,	/* allowsKnockbackPunish (skill2: no) */
+	qtrue	/* allowsRetreatCounterAttack */
 };
 
 static const botlite_combat_policy_t botlite_skill3_policy_default = {
@@ -362,7 +374,10 @@ static const botlite_combat_policy_t botlite_skill3_policy_default = {
 	qtrue,	/* allowsDodgeIncoming */
 	qtrue,	/* allowsOffensiveBreakLimit (skill3: si) */
 	qtrue,	/* allowsEngageIntent (skill3: si) */
-	qtrue	/* allowsEngageKiting (skill3: si) */
+	qtrue,	/* allowsEngageKiting (skill3: si) */
+	qtrue,	/* allowsBoost */
+	qtrue,	/* allowsKnockbackPunish */
+	qtrue	/* allowsRetreatCounterAttack */
 };
 
 static botlite_profile_t botlite_profiles[4];
@@ -717,6 +732,16 @@ static void BotLite_ApplySkillKeyValue( int skill, const char *key, const char *
 		profile->skill3BlockMaxInterval = i;
 	} else if ( !Q_stricmp( key, "special_hold_ms" ) ) {
 		profile->skill3PowerMeleeChargeTime = i;
+	} else if ( !Q_stricmp( key, "uses_boost" ) ) {
+		policy->allowsBoost = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_knockback_punish" ) ) {
+		policy->allowsKnockbackPunish = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "uses_retreat_counter" ) ) {
+		policy->allowsRetreatCounterAttack = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "retreat_counter_health_floor_pct" ) ) {
+		profile->retreatCounterHealthFloorPct = i;
+	} else if ( !Q_stricmp( key, "retreat_counter_ki_floor_pct" ) ) {
+		profile->retreatCounterKiFloorPct = i;
 	}
 }
 
