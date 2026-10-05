@@ -2566,6 +2566,9 @@ void CG_DrawActive( stereoFrame_t stereoView ) {
 	// draw status bar and other floating elements
  	CG_Draw2D();
 
+	// dynamic combat camera debug overlay (cg_lockCamDebug 1), no-op otherwise
+	CG_LockCam_DrawDebug();
+
 	// ADDING FOR ZEQ2
 	// HACK: We don't support deferring, so until it can REALLY be removed,
 	// always issue a CG_LoadDeferredPlayers() call.

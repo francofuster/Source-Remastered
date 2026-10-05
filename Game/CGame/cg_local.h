@@ -1118,6 +1118,7 @@ extern	vmCvar_t		cg_displayObituary;
 extern	vmCvar_t		cg_ignore;
 extern	vmCvar_t		cg_simpleItems;
 extern	vmCvar_t		cg_fov;
+extern	vmCvar_t		cg_widescreenFov;
 extern	vmCvar_t		cg_zoomFov;
 extern	vmCvar_t		cg_advancedFlight;
 extern	vmCvar_t		cg_thirdPersonCameraDamp;
@@ -1192,6 +1193,21 @@ extern	vmCvar_t		cg_particlesQuality;
 extern	vmCvar_t		cg_particlesStop;
 extern  vmCvar_t		cg_particlesMaximum;
 // END ADDING
+// LOCK CAMERA (dynamic combat camera, see cg_lockcam.c)
+extern	vmCvar_t		cg_lockCam;
+extern	vmCvar_t		cg_lockCamDebug;
+extern	vmCvar_t		cg_lockCamRange;
+extern	vmCvar_t		cg_lockCamRangeMelee;
+extern	vmCvar_t		cg_lockCamFrameX;
+extern	vmCvar_t		cg_lockCamFrameXMelee;
+extern	vmCvar_t		cg_lockCamFrameY;
+extern	vmCvar_t		cg_lockCamFrameYMelee;
+extern	vmCvar_t		cg_lockCamHeight;
+extern	vmCvar_t		cg_lockCamSmooth;
+extern	vmCvar_t		cg_lockCamSmoothLook;
+extern	vmCvar_t		cg_lockCamAutoSide;
+extern	vmCvar_t		cg_lockCamSideFollowSpeed;
+extern	vmCvar_t		cg_lockCamSideFollowSensitivity;
 #if MAPLENSFLARES
 extern	vmCvar_t		cg_lensFlare;		// JUHOX
 extern	vmCvar_t		cg_mapFlare;		// JUHOX
@@ -1247,8 +1263,21 @@ void CG_ZoomUp_f( void );
 void CG_AddBufferedSound( sfxHandle_t sfx);
 qboolean CG_WorldCoordToScreenCoordFloat( vec3_t worldCoord, float *x, float *y );
 qboolean CG_WorldCoordToScreenCoordVec( vec3_t world, vec2_t screen );
+float CG_WidescreenFovX( float fovX );
 
 void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demoPlayback );
+
+//
+// cg_ents.c (exported just for cg_lockcam.c, see comment at the definition)
+//
+void CG_CalcEntityLerpPositions( centity_t *cent );
+
+//
+// cg_lockcam.c
+//
+qboolean CG_OffsetLockedCombatView( void );
+void CG_LockCam_Transition( qboolean lockCamDrove );
+void CG_LockCam_DrawDebug( void );
 
 #if EARTHQUAKE_SYSTEM	// JUHOX: prototypes
 void CG_AddEarthquake(

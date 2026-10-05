@@ -128,6 +128,7 @@ vmCvar_t	cg_autoswitch;
 vmCvar_t	cg_displayObituary;
 vmCvar_t	cg_ignore;
 vmCvar_t	cg_fov;
+vmCvar_t	cg_widescreenFov;
 vmCvar_t	cg_zoomFov;
 vmCvar_t	cg_thirdPerson;
 vmCvar_t	cg_thirdPersonRange;
@@ -194,6 +195,21 @@ vmCvar_t	cg_particlesQuality;
 vmCvar_t	cg_particlesStop;
 vmCvar_t	cg_particlesMaximum;
 //END ADDING
+// LOCK CAMERA (dynamic combat camera, see cg_lockcam.c)
+vmCvar_t	cg_lockCam;
+vmCvar_t	cg_lockCamDebug;
+vmCvar_t	cg_lockCamRange;
+vmCvar_t	cg_lockCamRangeMelee;
+vmCvar_t	cg_lockCamFrameX;
+vmCvar_t	cg_lockCamFrameXMelee;
+vmCvar_t	cg_lockCamFrameY;
+vmCvar_t	cg_lockCamFrameYMelee;
+vmCvar_t	cg_lockCamHeight;
+vmCvar_t	cg_lockCamSmooth;
+vmCvar_t	cg_lockCamSmoothLook;
+vmCvar_t	cg_lockCamAutoSide;
+vmCvar_t	cg_lockCamSideFollowSpeed;
+vmCvar_t	cg_lockCamSideFollowSensitivity;
 #if MAPLENSFLARES
 vmCvar_t	cg_lensFlare;		// JUHOX
 vmCvar_t	cg_mapFlare;		// JUHOX
@@ -215,6 +231,7 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_drawGun, "cg_drawGun", "1", CVAR_ARCHIVE },
 	{ &cg_zoomFov, "cg_zoomfov", "22.5", CVAR_ARCHIVE },
 	{ &cg_fov, "cg_fov", "90", CVAR_ARCHIVE },
+	{ &cg_widescreenFov, "cg_widescreenFov", "1", CVAR_ARCHIVE },	// 1 = cg_fov is the 16:9 horizontal FOV, wider screens gain width (Hor+)
 	{ &cg_viewsize, "cg_viewsize", "100", CVAR_ARCHIVE },
 	{ &cg_shadows, "cg_shadows", "1", CVAR_ARCHIVE  },
 	{ &cg_gibs, "cg_gibs", "1", CVAR_ARCHIVE  },
@@ -328,8 +345,25 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_music, "cg_music", "0.6", CVAR_ARCHIVE},
 	{ &cg_particlesQuality, "cg_particlesQuality", "1", CVAR_ARCHIVE},
 	{ &cg_particlesStop, "cg_particlesStop", "0", CVAR_ARCHIVE},
-	{ &cg_particlesMaximum, "cg_particlesMaximum", "1024", CVAR_ARCHIVE}
+	{ &cg_particlesMaximum, "cg_particlesMaximum", "1024", CVAR_ARCHIVE},
 	// END ADDING
+	// LOCK CAMERA (dynamic combat camera, see cg_lockcam.c). Off by default:
+	// the legacy cg_locked* third person camera keeps working exactly as
+	// before unless a player opts in.
+	{ &cg_lockCam, "cg_lockCam", "0", CVAR_ARCHIVE},
+	{ &cg_lockCamDebug, "cg_lockCamDebug", "0", 0},
+	{ &cg_lockCamRange, "cg_lockCamRange", "180", CVAR_ARCHIVE},			// orbit distance at range
+	{ &cg_lockCamRangeMelee, "cg_lockCamRangeMelee", "110", CVAR_ARCHIVE},	// orbit distance in melee
+	{ &cg_lockCamFrameX, "cg_lockCamFrameX", "0.22", CVAR_ARCHIVE},		// at range: player and target this far from center, on opposite sides (fraction of half screen)
+	{ &cg_lockCamFrameXMelee, "cg_lockCamFrameXMelee", "0.07", CVAR_ARCHIVE},	// same, in melee
+	{ &cg_lockCamFrameY, "cg_lockCamFrameY", "0.30", CVAR_ARCHIVE},		// at range: how much lower than the target the player sits
+	{ &cg_lockCamFrameYMelee, "cg_lockCamFrameYMelee", "0.12", CVAR_ARCHIVE},	// same, in melee
+	{ &cg_lockCamHeight, "cg_lockCamHeight", "10", CVAR_ARCHIVE},			// orbit pivot height over the body center
+	{ &cg_lockCamSmooth, "cg_lockCamSmooth", "0.30", CVAR_ARCHIVE},		// orbit rotation lag (seconds)
+	{ &cg_lockCamSmoothLook, "cg_lockCamSmoothLook", "0.15", CVAR_ARCHIVE},	// view direction lag (seconds)
+	{ &cg_lockCamAutoSide, "cg_lockCamAutoSide", "1", CVAR_ARCHIVE},		// switch shoulders automatically
+	{ &cg_lockCamSideFollowSpeed, "cg_lockCamSideFollowSpeed", "0.25", CVAR_ARCHIVE},	// how fast the target shoulder follows lateral movement (seconds)
+	{ &cg_lockCamSideFollowSensitivity, "cg_lockCamSideFollowSensitivity", "1.0", CVAR_ARCHIVE},	// how much the camera moves toward the side per unit of lateral speed
 //	{ &cg_pmove_fixed, "cg_pmove_fixed", "0", CVAR_USERINFO | CVAR_ARCHIVE }
 };
 
