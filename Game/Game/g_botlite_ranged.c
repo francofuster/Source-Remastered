@@ -242,6 +242,24 @@ static void BotLite_ExecuteSkill2PressureDecision( gentity_t *bot, int clientNum
 	info->ranged.holdUntil = 0;
 }
 
+/*
+ * Fase 7 -- antes esta funcion apuntaba y disparaba sin mover al bot, asi que
+ * al elegir ranged en vez de melee se quedaba parado en el lugar. Un strafe
+ * lateral que cambia de lado cada tanto lo deja esquivando mientras dispara en
+ * vez de ser un blanco quieto, sin romper la puntada (rightmove es perpendicular
+ * a la vista, que sigue centrada en el objetivo).
+ */
+static void BotLite_ApplyRangedStrafe( gentity_t *bot, int clientNum ) {
+	botlite_info_t *info;
+
+	info = &g_botlite[clientNum];
+	if ( level.time >= info->ranged.strafeSwitchTime || info->ranged.strafeDirection == 0 ) {
+		info->ranged.strafeDirection = ( rand() & 1 ) ? 127 : -127;
+		info->ranged.strafeSwitchTime = level.time + 600 + ( rand() % 900 );
+	}
+	BotLite_EA_MoveRight( bot, info->ranged.strafeDirection );
+}
+
 qboolean BotLite_RunRangedPressure( gentity_t *bot, int clientNum, gentity_t *target, const botlite_snapshot_t *snapshot ) {
 	botlite_skill2_pressure_context_t context;
 	botlite_skill2_pressure_decision_t decision;
@@ -250,9 +268,111 @@ qboolean BotLite_RunRangedPressure( gentity_t *bot, int clientNum, gentity_t *ta
 	}
 	BotLite_SetLockOn( bot, target );
 	BotLite_FaceTarget( bot, target );
+	BotLite_ApplyRangedStrafe( bot, clientNum );
 	BotLite_BuildSkill2PressureContext( bot, clientNum, &context );
 	BotLite_EA_SetWeapon( bot, context.weapon );
 	decision = BotLite_SelectSkill2PressureDecision( &context );
 	BotLite_ExecuteSkill2PressureDecision( bot, clientNum, &context, decision );
+	return qtrue;
+}
+
+/*
+ * Fase 7 -- contraataque durante la huida.
+ *
+ * Hasta ahora, huir para recargar energia era solo correr: si el rival seguia
+ * de cerca, el bot no devolvia nada. Esto elige un arma segun el presupuesto
+ * real en vez de la rotacion normal de combate (BotLite_PickSkill2Weapon):
+ * evita gastar vida si la vida ya esta baja (para eso esta huyendo) y evita
+ * las que necesitan carga si el ki tambien esta bajo, para no quedarse a mitad
+ * de una carga larga sin nada con que sostenerla.
+ */
+static int BotLite_PickRetreatCounterWeapon( gentity_t *bot, int clientNum, const botlite_profile_t *profile ) {
+	int i;
+	int mask;
+	int healthPct;
+	int kiPct;
+	qboolean avoidHealthCost;
+	qboolean avoidChargeWeapons;
+	int choices[MAX_PLAYERWEAPONS];
+	int count;
+
+	if ( !bot || !bot->client ) {
+		return 0;
+	}
+
+	healthPct = BotLite_HealthPercent( clientNum );
+	kiPct = BotLite_KiPercent( clientNum );
+	avoidHealthCost = ( profile && healthPct <= profile->retreatCounterHealthFloorPct ) ? qtrue : qfalse;
+	avoidChargeWeapons = ( profile && kiPct <= profile->retreatCounterKiFloorPct ) ? qtrue : qfalse;
+
+	mask = bot->client->ps.stats[stSkills];
+	count = 0;
+	for ( i = 1; i <= MAX_PLAYERWEAPONS; i++ ) {
+		g_userWeapon_t *weaponData;
+		if ( !( mask & ( 1 << i ) ) ) {
+			continue;
+		}
+		if ( BotLite_Skill2BotDisallowsWeapon( bot, i ) ) {
+			continue;
+		}
+		weaponData = G_FindUserWeaponData( clientNum, i );
+		if ( !weaponData ) {
+			continue;
+		}
+		if ( avoidHealthCost && weaponData->costs_health > 0 ) {
+			continue;
+		}
+		if ( avoidChargeWeapons && ( weaponData->general_bitflags & WPF_NEEDSCHARGE ) ) {
+			continue;
+		}
+		choices[count++] = i;
+	}
+
+	/* Con el presupuesto muy ajustado puede no quedar nada seguro: mejor no
+	 * disparar que gastar lo poco que le queda al bot. */
+	if ( count <= 0 ) {
+		return 0;
+	}
+	return choices[rand() % count];
+}
+
+qboolean BotLite_RunRetreatCounterAttack( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot ) {
+	botlite_info_t *info;
+	const botlite_combat_policy_t *policy;
+	const botlite_profile_t *profile;
+	int weapon;
+
+	if ( !bot || !bot->client || !snapshot || !snapshot->hasTarget || !snapshot->target ) {
+		return qfalse;
+	}
+	if ( snapshot->botInMelee || !snapshot->hasLineOfSight ) {
+		return qfalse;
+	}
+
+	info = &g_botlite[clientNum];
+	policy = BotLite_GetCombatPolicy( info->skill );
+	if ( !policy || !policy->allowsRangedPressure || !policy->allowsRetreatCounterAttack ) {
+		return qfalse;
+	}
+	/* Los ataques de ki cobran fatiga; huyendo con la stamina ajustada no
+	 * conviene gastarla en un contraataque. */
+	if ( !BotLite_StaminaAllowsSpend( clientNum, BOTLITE_SPEND_NORMAL ) ) {
+		return qfalse;
+	}
+
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+
+	if ( info->ranged.weapon <= 0 || level.time >= info->ranged.weaponSwitchTime ) {
+		weapon = BotLite_PickRetreatCounterWeapon( bot, clientNum, profile );
+		if ( weapon <= 0 ) {
+			return qfalse;
+		}
+		info->ranged.weapon = weapon;
+		info->ranged.weaponSwitchTime = level.time + 1500;
+		info->ranged.holdUntil = 0;
+		info->ranged.attackMode = 1;
+	}
+
+	BotLite_RunRangedPressure( bot, clientNum, snapshot->target, snapshot );
 	return qtrue;
 }

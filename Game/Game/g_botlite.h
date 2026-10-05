@@ -104,6 +104,9 @@ typedef struct {
 	qboolean allowsKnockbackPunish;
 	/* Fase 7: contraataque durante la huida del ciclo de recuperacion. */
 	qboolean allowsRetreatCounterAttack;
+	/* Fase 8: buscar un punto donde el target no vea al bot en vez de solo
+	 * retroceder en linea recta hacia atras. */
+	qboolean allowsHideSeek;
 } botlite_combat_policy_t;
 
 typedef struct {
@@ -208,6 +211,16 @@ typedef struct {
 	 * retirada evita gastar justo el recurso que ya esta bajo. */
 	int retreatCounterHealthFloorPct;
 	int retreatCounterKiFloorPct;
+
+	/* Fase 8: busqueda de escondite durante la huida. */
+	float hideSpotSearchRadius;
+	float hideSpotMinDist;
+	float hideSpotArriveDist;
+	int hideSpotReevalMs;
+	/* Fase 8.1: cuanto tiempo debe sostenerse "ya estoy a salvo" antes de
+	 * confiar en la transicion. Sin esto un solo tick ruidoso de distancia/LOS
+	 * cortaba la huida a mitad de camino. */
+	int recoverDisengageConfirmMs;
 } botlite_profile_t;
 
 typedef struct {
@@ -355,6 +368,13 @@ typedef struct {
 	int recoverHealthProgressTime;
 	/* Enfriamiento entre episodios: sin esto, un timeout reentra al frame siguiente. */
 	int recoverNextAllowedTime;
+	/* Fase 8: escondite elegido durante la huida y control de reevaluacion. */
+	qboolean hideSpotValid;
+	vec3_t hideSpotOrigin;
+	int hideSpotNextEvalTime;
+	int retreatAttackUntil;
+	/* Fase 8.1: desde cuando "ya estoy a salvo" viene sosteniendose sin cortes. */
+	int disengageSince;
 } botlite_recovery_state_t;
 
 /* Fase 6 -- intencion de enganche: la decision de pelear de cerca o de lejos,

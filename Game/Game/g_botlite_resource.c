@@ -295,6 +295,11 @@ static qboolean BotLite_ZanzokenThreatPresent( gentity_t *bot, int clientNum, co
 	return qfalse;
 }
 
+/* Declarada mas abajo; BotLite_RunDefensiveZanzoken la usa para apuntar el
+ * escape hacia el mismo escondite que ya eligio (o elige uno si todavia no
+ * tenia) en vez de solo alejarse del rival a ciegas. */
+static qboolean BotLite_PickHideSpot( gentity_t *bot, const botlite_snapshot_t *snapshot, const botlite_profile_t *profile, vec3_t out );
+
 qboolean BotLite_RunDefensiveZanzoken( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot ) {
 	botlite_info_t *info;
 	const botlite_combat_policy_t *policy;
@@ -341,12 +346,35 @@ qboolean BotLite_RunDefensiveZanzoken( gentity_t *bot, int clientNum, const botl
 
 	/*
 	 * Escapar es alejarse, y el zanzoken escala la velocidad que el bot YA lleva
-	 * (bg_pmove.c:336-340): sin direccion no se mueve de donde esta. Se gira en
-	 * sentido contrario al rival y se avanza, en vez de retroceder de frente:
-	 * forwardmove < 0 con el lock puesto pone al bot en stMeleeDegressing, que es
-	 * justo el estado del que se viene escapando.
+	 * (bg_pmove.c:336-340): sin direccion no se mueve de donde esta.
+	 *
+	 * Fase 8.2 -- antes esto siempre giraba en sentido contrario al rival, sin
+	 * mas criterio. Con hide-seek activo, este es exactamente el escape mas
+	 * urgente que hay (amenaza inmediata + rival encima) y competia por el
+	 * mismo frame contra BotLite_RecoverSeekHideSpot -- como el zanzoken tiene
+	 * mas prioridad en el think loop y sostiene el boton ~1.1s, el hide-seek
+	 * nunca llegaba a ejecutar mientras tanto. Ahora, si hay (o se puede elegir
+	 * ya mismo) un escondite valido, el dash apunta ahi en vez de a ciegas: las
+	 * dos capas quedan alineadas en vez de compitiendo por la direccion.
 	 */
-	if ( snapshot->hasTarget && snapshot->target && snapshot->target->client ) {
+	if ( policy->allowsHideSeek &&
+		 ( info->recovery.hideSpotValid ||
+		   BotLite_PickHideSpot( bot, snapshot, profile, info->recovery.hideSpotOrigin ) ) ) {
+		vec3_t dir;
+		vec3_t angles;
+
+		info->recovery.hideSpotValid = qtrue;
+		VectorSubtract( info->recovery.hideSpotOrigin, bot->client->ps.origin, dir );
+		vectoangles( dir, angles );
+		angles[ROLL] = 0;
+		BotLite_ApplyViewAngles( bot, angles );
+	} else if ( snapshot->hasTarget && snapshot->target && snapshot->target->client ) {
+		/*
+		 * Sin escondite disponible: se gira en sentido contrario al rival y se
+		 * avanza, en vez de retroceder de frente. forwardmove < 0 con el lock
+		 * puesto pone al bot en stMeleeDegressing, que es justo el estado del
+		 * que se viene escapando.
+		 */
 		vec3_t away;
 		vec3_t angles;
 
@@ -623,26 +651,246 @@ static void BotLite_RecoverEnterStage( botlite_info_t *info, int stage ) {
 	info->recovery.recoverStageTime = level.time;
 }
 
-static void BotLite_RecoverRunFlee( gentity_t *bot, const botlite_snapshot_t *snapshot ) {
-	vec3_t delta;
-	vec3_t angles;
-	float yaw;
+/*
+ * ============================================================================
+ * Fase 8 -- Escondite durante la huida
+ * ============================================================================
+ *
+ * Antes DISENGAGE era solo "date la vuelta y retrocede": la distancia crecia
+ * pero el rival seguia viendo al bot todo el tramo hasta cruzar recoverSafeDist,
+ * que en un mapa abierto tarda. La idea: buscar un punto donde el rival no
+ * pueda verlo (un trace alcanza, no hace falta AAS/navmesh -- este juego vuela
+ * libre en 3D, PM_FlyMove no usa navegacion) e ir ahi a toda velocidad.
+ *
+ * No existe ninguna evasion de obstaculos en todo botlite, asi que el
+ * candidato se verifica alcanzable en linea recta ANTES de comprometerse: sin
+ * eso el bot terminaria volando contra la geometria a mitad de camino.
+ *
+ * Candidatos hibridos, sin agregar datos de mapa nuevos:
+ *   - info_player_deathmatch: ya estan dispersos por cada mapa de deathmatch.
+ *   - muestreo por rayos alrededor del bot: mas sensible a la amenaza actual
+ *     que los puntos fijos de arriba.
+ */
 
-	if ( snapshot && snapshot->hasTarget && snapshot->target && snapshot->target->client ) {
-		VectorSubtract( bot->client->ps.origin, snapshot->target->client->ps.origin, delta );
-		yaw = ( delta[0] == 0.0f && delta[1] == 0.0f ) ? bot->client->ps.viewangles[YAW] : vectoyaw( delta );
-	} else {
-		yaw = bot->client->ps.viewangles[YAW];
+#define BOTLITE_HIDESPOT_MAX_SPAWN		16
+#define BOTLITE_HIDESPOT_RAY_SAMPLES	10
+#define BOTLITE_HIDESPOT_MAX_CANDIDATES	( BOTLITE_HIDESPOT_MAX_SPAWN + BOTLITE_HIDESPOT_RAY_SAMPLES )
+
+static qboolean BotLite_PointVisibleFrom( vec3_t from, vec3_t to, int ignoreEntNum ) {
+	trace_t tr;
+	trap_Trace( &tr, from, NULL, NULL, to, ignoreEntNum, MASK_SHOT );
+	return ( tr.fraction >= 1.0f ) ? qtrue : qfalse;
+}
+
+static int BotLite_CollectHideSpotCandidates( gentity_t *bot, const botlite_profile_t *profile, vec3_t *out, int maxOut ) {
+	int count;
+	gentity_t *spot;
+	int i;
+
+	count = 0;
+
+	/* Puntos ya dispersos por el mapa: gratis, sin necesitar datos de
+	 * navegacion nuevos. */
+	spot = NULL;
+	while ( count < BOTLITE_HIDESPOT_MAX_SPAWN && count < maxOut &&
+		( spot = G_Find( spot, FOFS( classname ), "info_player_deathmatch" ) ) != NULL ) {
+		VectorCopy( spot->s.origin, out[count] );
+		count++;
 	}
-	VectorClear( angles );
-	angles[YAW] = yaw;
+
+	/* Muestreo reactivo alrededor del bot: mas sensible a donde esta parado
+	 * ahora mismo que los puntos fijos de arriba. */
+	for ( i = 0; i < BOTLITE_HIDESPOT_RAY_SAMPLES && count < maxOut; i++ ) {
+		trace_t tr;
+		vec3_t angles;
+		vec3_t dir;
+		vec3_t end;
+		float traveled;
+
+		VectorClear( angles );
+		angles[YAW] = ( 360.0f / (float)BOTLITE_HIDESPOT_RAY_SAMPLES ) * (float)i;
+		AngleVectors( angles, dir, NULL, NULL );
+		VectorMA( bot->client->ps.origin, profile->hideSpotSearchRadius, dir, end );
+
+		trap_Trace( &tr, bot->client->ps.origin, NULL, NULL, end, bot->s.number, MASK_SHOT );
+		/* Quedarse corto del impacto: un punto justo en la superficie suele
+		 * volver a quedar embebido en la geometria. */
+		traveled = tr.fraction * profile->hideSpotSearchRadius * 0.85f;
+		if ( traveled < profile->hideSpotMinDist ) {
+			continue;
+		}
+		VectorMA( bot->client->ps.origin, traveled, dir, out[count] );
+		count++;
+	}
+
+	return count;
+}
+
+static qboolean BotLite_PickHideSpot( gentity_t *bot, const botlite_snapshot_t *snapshot, const botlite_profile_t *profile, vec3_t out ) {
+	vec3_t candidates[BOTLITE_HIDESPOT_MAX_CANDIDATES];
+	int count;
+	int i;
+	int bestIndex;
+	float bestDistSq;
+	vec3_t targetEye;
+
+	if ( !bot || !bot->client || !snapshot || !snapshot->hasTarget || !snapshot->target || !snapshot->target->client ) {
+		return qfalse;
+	}
+
+	VectorCopy( snapshot->target->client->ps.origin, targetEye );
+	targetEye[2] += BOTLITE_VIEW_HEIGHT;
+
+	count = BotLite_CollectHideSpotCandidates( bot, profile, candidates, BOTLITE_HIDESPOT_MAX_CANDIDATES );
+
+	bestIndex = -1;
+	bestDistSq = 0.0f;
+	for ( i = 0; i < count; i++ ) {
+		vec3_t delta;
+		vec3_t eyePos;
+		float distSq;
+
+		VectorSubtract( candidates[i], bot->client->ps.origin, delta );
+		distSq = VectorLengthSquared( delta );
+		if ( distSq < profile->hideSpotMinDist * profile->hideSpotMinDist ) {
+			continue;
+		}
+		/* Los info_player_deathmatch no tienen limite de distancia propio (a
+		 * diferencia del muestreo por rayos, que ya esta acotado al radio de
+		 * busqueda): sin este tope, un spawn point al otro lado del mapa podia
+		 * "ganar" por ser el unico candidato que pasaba los filtros de vision,
+		 * aunque fuera un viaje que el bot nunca llegaba a completar. */
+		if ( distSq > profile->hideSpotSearchRadius * profile->hideSpotSearchRadius ) {
+			continue;
+		}
+
+		/* El rival no debe poder verlo parado ahi. */
+		VectorCopy( candidates[i], eyePos );
+		eyePos[2] += BOTLITE_VIEW_HEIGHT;
+		if ( BotLite_PointVisibleFrom( targetEye, eyePos, bot->s.number ) ) {
+			continue;
+		}
+
+		/* Sin evasion de obstaculos: si el camino en linea recta no esta libre
+		 * ahora, el bot se va a quedar trabado contra la geometria de camino. */
+		if ( !BotLite_PointVisibleFrom( bot->client->ps.origin, candidates[i], bot->s.number ) ) {
+			continue;
+		}
+
+		if ( bestIndex < 0 || distSq < bestDistSq ) {
+			bestIndex = i;
+			bestDistSq = distSq;
+		}
+	}
+
+	if ( bestIndex < 0 ) {
+		return qfalse;
+	}
+
+	VectorCopy( candidates[bestIndex], out );
+	return qtrue;
+}
+
+static void BotLite_FlyToHideSpot( gentity_t *bot, int clientNum, vec3_t spot ) {
+	vec3_t dir;
+	vec3_t angles;
+
+	VectorSubtract( spot, bot->client->ps.origin, dir );
+	vectoangles( dir, angles );
+	angles[ROLL] = 0;
 	BotLite_ApplyViewAngles( bot, angles );
+	BotLite_EA_MoveForward( bot, 127 );
+	BotLite_EA_BoostIfAllowed( bot, clientNum );
+}
+
+/* Declarada mas abajo; BotLite_RecoverSeekHideSpot la usa como respaldo. */
+static void BotLite_RecoverRunFlee( gentity_t *bot, const botlite_snapshot_t *snapshot );
+
+/*
+ * Orquesta la huida hacia el escondite. Sostiene una ventana de contraataque
+ * cuando la decide, y cuando el escondite actual no sirvio (se llego y todavia
+ * nos ven, o ya paso bastante intentandolo) elige entre contraatacar de nuevo
+ * o mudarse a otro punto -- nunca se queda quieto sin hacer nada.
+ */
+static void BotLite_RecoverSeekHideSpot( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot, const botlite_profile_t *profile ) {
+	botlite_info_t *info;
+	qboolean needsNewSpot;
+	qboolean arrived;
+
+	info = &g_botlite[clientNum];
+
+	if ( info->recovery.retreatAttackUntil > level.time ) {
+		if ( BotLite_RunRetreatCounterAttack( bot, clientNum, snapshot ) ) {
+			return;
+		}
+		info->recovery.retreatAttackUntil = 0;
+	}
+
+	needsNewSpot = !info->recovery.hideSpotValid;
+	arrived = qfalse;
+	if ( info->recovery.hideSpotValid ) {
+		vec3_t delta;
+		VectorSubtract( info->recovery.hideSpotOrigin, bot->client->ps.origin, delta );
+		arrived = ( VectorLengthSquared( delta ) <= profile->hideSpotArriveDist * profile->hideSpotArriveDist ) ? qtrue : qfalse;
+	}
+
+	if ( arrived || ( !needsNewSpot && level.time >= info->recovery.hideSpotNextEvalTime ) ) {
+		if ( BotLite_RunRetreatCounterAttack( bot, clientNum, snapshot ) ) {
+			info->recovery.retreatAttackUntil = level.time + 700;
+			BotLite_DebugLog( bot, "Hide seek: counter-attacking instead of relocating" );
+			return;
+		}
+		needsNewSpot = qtrue;
+	}
+
+	if ( needsNewSpot ) {
+		info->recovery.hideSpotNextEvalTime = level.time + profile->hideSpotReevalMs;
+		info->recovery.hideSpotValid = BotLite_PickHideSpot( bot, snapshot, profile, info->recovery.hideSpotOrigin );
+		if ( info->recovery.hideSpotValid ) {
+			BotLite_DebugLog( bot, va( "Hide seek: new spot at %.0f %.0f %.0f",
+				info->recovery.hideSpotOrigin[0], info->recovery.hideSpotOrigin[1], info->recovery.hideSpotOrigin[2] ) );
+		}
+	}
+
+	if ( info->recovery.hideSpotValid ) {
+		BotLite_FlyToHideSpot( bot, clientNum, info->recovery.hideSpotOrigin );
+		return;
+	}
+
+	/* Sin candidato valido (mapa muy abierto, o todo a la vista): retroceder
+	 * como antes en vez de quedarse sin hacer nada. */
+	BotLite_RecoverRunFlee( bot, snapshot );
+}
+
+/*
+ * Fase 7 -- antes esto giraba de espaldas al rival y avanzaba: en distancia se
+ * alejaba igual, pero la animacion que se ve es de carrera hacia adelante, no
+ * de retirada. Reportado como "se ve como si retrocediera pero la animacion es
+ * de ir hacia adelante". wishvel escala igual con forwardmove negativo
+ * (bg_pmove.c:254), asi que no hay penalidad de velocidad por retroceder:
+ * mirar al rival y retroceder da la animacion de backpedal correcta y de paso
+ * deja apuntar para el contraataque (BotLite_RunRetreatCounterAttack).
+ */
+static void BotLite_RecoverRunFlee( gentity_t *bot, const botlite_snapshot_t *snapshot ) {
+	if ( snapshot && snapshot->hasTarget && snapshot->target && snapshot->target->client ) {
+		BotLite_FaceTarget( bot, snapshot->target );
+		BotLite_EA_MoveBack( bot, 127 );
+		return;
+	}
+
+	{
+		vec3_t angles;
+		VectorClear( angles );
+		angles[YAW] = bot->client->ps.viewangles[YAW];
+		BotLite_ApplyViewAngles( bot, angles );
+	}
 	BotLite_EA_MoveForward( bot, 127 );
 }
 
 qboolean BotLite_RunRecoverCycle( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot ) {
 	botlite_info_t *info;
 	const botlite_profile_t *profile;
+	const botlite_combat_policy_t *policy;
 
 	if ( !bot || !bot->client ) {
 		return qfalse;
@@ -653,23 +901,67 @@ qboolean BotLite_RunRecoverCycle( gentity_t *bot, int clientNum, const botlite_s
 		return qfalse;
 	}
 	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+	policy = BotLite_GetCombatPolicy( info->skill );
 
-	/* Mirar al rival aunque se este recuperando: perderlo de vista es peor
-		 * (salvo mientras huye, que ahi mirar hacia atras lo frenaria). */
+	/* Mirar al rival aunque se este recuperando: perderlo de vista es peor.
+	 * Mientras huye (DISENGAGE) el propio flee (con o sin escondite) ya mira
+	 * al rival -- ver los comentarios ahi sobre por que dejo de evitarse. */
 	if ( info->recovery.recoverStage != BOTLITE_RECOVER_STAGE_DISENGAGE &&
 		 snapshot && snapshot->hasTarget && snapshot->target && snapshot->target->client ) {
 		BotLite_FaceTarget( bot, snapshot->target );
 	}
 
-	if ( !BotLite_RecoverIsDisengaged( snapshot, profile->recoverSafeDist ) ) {
-		if ( info->recovery.recoverStage != BOTLITE_RECOVER_STAGE_DISENGAGE ) {
-			BotLite_DebugLog( bot, "Recover: target closed in, disengaging again" );
-			BotLite_RecoverEnterStage( info, BOTLITE_RECOVER_STAGE_DISENGAGE );
+	{
+		qboolean rawDisengaged;
+		qboolean confirmedDisengaged;
+
+		/*
+		 * Fase 8.1 -- histeresis en la confirmacion de "ya estoy a salvo".
+		 *
+		 * Reportado en juego: el bot picaba escondite, y en el log se veia el
+		 * ciclo "target closed in -> Hide seek: new spot -> disengaged,
+		 * draining ki" repitiendose cada tick, siempre con el mismo punto. La
+		 * causa: BotLite_RecoverIsDisengaged puede cruzar el umbral por un solo
+		 * tick (el escondite no siempre aleja en linea recta perfecta, a
+		 * diferencia del retroceso plano de antes), y ese solo tick alcanzaba
+		 * para entrar a DRAIN -- que pone forwardmove=0 -- asi que el rival
+		 * volvia a alcanzarlo de inmediato y jamas se completaba el viaje.
+		 * Ahora "a salvo" tiene que sostenerse sin cortes durante
+		 * recoverDisengageConfirmMs antes de confiar en la transicion.
+		 */
+		rawDisengaged = BotLite_RecoverIsDisengaged( snapshot, profile->recoverSafeDist );
+		if ( rawDisengaged ) {
+			if ( info->recovery.disengageSince == 0 ) {
+				info->recovery.disengageSince = level.time;
+			}
+		} else {
+			info->recovery.disengageSince = 0;
 		}
-		/* El zanzoken defensivo ya no se evalua desde aca: se movio al think loop
-			 * para que no dependa de que el modo RECOVER llegue a activarse. */
-		BotLite_RecoverRunFlee( bot, snapshot );
-		return qtrue;
+		confirmedDisengaged = rawDisengaged &&
+			( level.time - info->recovery.disengageSince >= profile->recoverDisengageConfirmMs );
+
+		if ( !confirmedDisengaged ) {
+			if ( info->recovery.recoverStage != BOTLITE_RECOVER_STAGE_DISENGAGE ) {
+				BotLite_DebugLog( bot, "Recover: target closed in, disengaging again" );
+				BotLite_RecoverEnterStage( info, BOTLITE_RECOVER_STAGE_DISENGAGE );
+				/* Escondite de un episodio anterior (u otro objetivo): no reusarlo
+				 * a ciegas sin revalidar contra la amenaza actual. */
+				info->recovery.hideSpotValid = qfalse;
+			}
+			/* El zanzoken defensivo ya no se evalua desde aca: se movio al think loop
+				 * para que no dependa de que el modo RECOVER llegue a activarse. */
+			if ( policy && policy->allowsHideSeek ) {
+				/* Fase 8: buscar un punto donde el rival no vea al bot e ir ahi a
+				 * toda velocidad, en vez de solo retroceder en linea recta. */
+				BotLite_RecoverSeekHideSpot( bot, clientNum, snapshot, profile );
+			} else {
+				BotLite_RecoverRunFlee( bot, snapshot );
+				/* Fase 7: perseguido en pleno vuelo. Si el presupuesto de ki/stamina/
+				 * vida lo permite, devuelve un disparo sin cortar la retirada. */
+				BotLite_RunRetreatCounterAttack( bot, clientNum, snapshot );
+			}
+			return qtrue;
+		}
 	}
 
 	if ( info->recovery.recoverStage == BOTLITE_RECOVER_STAGE_DISENGAGE ) {

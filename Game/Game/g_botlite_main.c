@@ -132,6 +132,10 @@ void BotLite_ResetCoreRuntimeState( int clientNum, qboolean respawnStyle, qboole
 	info->recovery.recoverHealthProgressTime = 0;
 	info->recovery.recoverNextAllowedTime = 0;
 	info->recovery.kiChargeActive = qfalse;
+	info->recovery.hideSpotValid = qfalse;
+	info->recovery.hideSpotNextEvalTime = 0;
+	info->recovery.retreatAttackUntil = 0;
+	info->recovery.disengageSince = 0;
 	info->recovery.breakLimitUntil = 0;
 	info->recovery.breakLimitDecided = qfalse;
 	info->runtime.targetRecoveryHandled = qfalse;

@@ -295,7 +295,9 @@ static botlite_tactic_t BotLite_ComputeManagedCombatTactic( gentity_t *bot, int 
 		return BOTLITE_TACTIC_PUNISH_RECOVERY;
 	}
 
-	if ( info->skill == 3 && BotLite_UpdateKnockbackPunish( bot, clientNum, info, snapshot ) ) {
+	/* Fase 7: antes cableado a "solo skill 3"; ahora es un parametro de cfg
+	 * (uses_knockback_punish) como el resto de las capacidades opt-in. */
+	if ( policy && policy->allowsKnockbackPunish && BotLite_UpdateKnockbackPunish( bot, clientNum, info, snapshot ) ) {
 		return BOTLITE_TACTIC_RANGED_PRESSURE;
 	}
 

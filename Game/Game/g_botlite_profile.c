@@ -115,7 +115,12 @@ static const botlite_profile_t botlite_skill1_profile_default = {
 	48.0f,		/* meleeApproachLevelTolerance */
 	0.45f,		/* meleeApproachSteepRatio */
 	40,		/* retreatCounterHealthFloorPct */
-	25		/* retreatCounterKiFloorPct */
+	25,		/* retreatCounterKiFloorPct */
+	4000.0f,	/* hideSpotSearchRadius */
+	500.0f,	/* hideSpotMinDist */
+	150.0f,	/* hideSpotArriveDist */
+	1000,		/* hideSpotReevalMs */
+	400		/* recoverDisengageConfirmMs */
 };
 
 static const botlite_profile_t botlite_skill2_profile_default = {
@@ -204,7 +209,12 @@ static const botlite_profile_t botlite_skill2_profile_default = {
 	48.0f,		/* meleeApproachLevelTolerance */
 	0.45f,		/* meleeApproachSteepRatio */
 	40,		/* retreatCounterHealthFloorPct */
-	25		/* retreatCounterKiFloorPct */
+	25,		/* retreatCounterKiFloorPct */
+	4000.0f,	/* hideSpotSearchRadius */
+	500.0f,	/* hideSpotMinDist */
+	150.0f,	/* hideSpotArriveDist */
+	1000,		/* hideSpotReevalMs */
+	400		/* recoverDisengageConfirmMs */
 };
 
 static const botlite_profile_t botlite_skill3_profile_default = {
@@ -293,7 +303,12 @@ static const botlite_profile_t botlite_skill3_profile_default = {
 	48.0f,		/* meleeApproachLevelTolerance */
 	0.45f,		/* meleeApproachSteepRatio */
 	40,		/* retreatCounterHealthFloorPct */
-	25		/* retreatCounterKiFloorPct */
+	25,		/* retreatCounterKiFloorPct */
+	4000.0f,	/* hideSpotSearchRadius */
+	500.0f,	/* hideSpotMinDist */
+	150.0f,	/* hideSpotArriveDist */
+	1000,		/* hideSpotReevalMs */
+	400		/* recoverDisengageConfirmMs */
 };
 
 static const botlite_combat_policy_t botlite_skill1_policy_default = {
@@ -321,7 +336,8 @@ static const botlite_combat_policy_t botlite_skill1_policy_default = {
 	qfalse,	/* allowsEngageKiting (skill1: no) */
 	qtrue,	/* allowsBoost */
 	qfalse,	/* allowsKnockbackPunish (skill1: no) */
-	qfalse	/* allowsRetreatCounterAttack (skill1: no tiene ranged) */
+	qfalse,	/* allowsRetreatCounterAttack (skill1: no tiene ranged) */
+	qfalse	/* allowsHideSeek (skill1: no tiene recover mode) */
 };
 
 static const botlite_combat_policy_t botlite_skill2_policy_default = {
@@ -349,7 +365,8 @@ static const botlite_combat_policy_t botlite_skill2_policy_default = {
 	qfalse,	/* allowsEngageKiting (skill2: no abre hueco a proposito) */
 	qtrue,	/* allowsBoost */
 	qfalse,	/* allowsKnockbackPunish (skill2: no) */
-	qtrue	/* allowsRetreatCounterAttack */
+	qtrue,	/* allowsRetreatCounterAttack */
+	qtrue	/* allowsHideSeek */
 };
 
 static const botlite_combat_policy_t botlite_skill3_policy_default = {
@@ -377,7 +394,8 @@ static const botlite_combat_policy_t botlite_skill3_policy_default = {
 	qtrue,	/* allowsEngageKiting (skill3: si) */
 	qtrue,	/* allowsBoost */
 	qtrue,	/* allowsKnockbackPunish */
-	qtrue	/* allowsRetreatCounterAttack */
+	qtrue,	/* allowsRetreatCounterAttack */
+	qtrue	/* allowsHideSeek */
 };
 
 static botlite_profile_t botlite_profiles[4];
@@ -742,6 +760,18 @@ static void BotLite_ApplySkillKeyValue( int skill, const char *key, const char *
 		profile->retreatCounterHealthFloorPct = i;
 	} else if ( !Q_stricmp( key, "retreat_counter_ki_floor_pct" ) ) {
 		profile->retreatCounterKiFloorPct = i;
+	} else if ( !Q_stricmp( key, "uses_hide_seek" ) ) {
+		policy->allowsHideSeek = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "hide_spot_search_radius" ) ) {
+		profile->hideSpotSearchRadius = f;
+	} else if ( !Q_stricmp( key, "hide_spot_min_dist" ) ) {
+		profile->hideSpotMinDist = f;
+	} else if ( !Q_stricmp( key, "hide_spot_arrive_dist" ) ) {
+		profile->hideSpotArriveDist = f;
+	} else if ( !Q_stricmp( key, "hide_spot_reeval_ms" ) ) {
+		profile->hideSpotReevalMs = i;
+	} else if ( !Q_stricmp( key, "recover_disengage_confirm_ms" ) ) {
+		profile->recoverDisengageConfirmMs = i;
 	}
 }
 
