@@ -13,6 +13,8 @@ if "%1"=="TA" goto TA
 @if errorlevel 1 goto quit
 %cc%  ../bg_pmove.c
 @if errorlevel 1 goto quit
+%cc%  ../bg_rush.c
+@if errorlevel 1 goto quit
 %cc%  ../bg_slidemove.c
 @if errorlevel 1 goto quit
 %cc%  ../../../Shared/q_math.c
@@ -99,6 +101,8 @@ if "%1"=="TA" goto TA
 %cc%  ../g_botlite_engage.c
 @if errorlevel 1 goto quit
 %cc%  ../g_botlite_zanzoken.c
+@if errorlevel 1 goto quit
+%cc%  ../g_botlite_rush.c
 @if errorlevel 1 goto quit
 %cc%  ../g_weapPhysParser.c
 @if errorlevel 1 goto quit

@@ -4,6 +4,7 @@ bg_misc
 ..\g_syscalls
 bg_lib
 bg_pmove
+bg_rush
 bg_slidemove
 q_math
 q_shared
@@ -51,3 +52,4 @@ g_botlite_transform
 g_botlite_dodge
 g_botlite_engage
 g_botlite_zanzoken
+g_botlite_rush

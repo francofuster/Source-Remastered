@@ -220,7 +220,10 @@ static void BotLite_RunCombatGoal( gentity_t *bot, int clientNum, const botlite_
 		info->runtime.targetRecoveryHandledNum = target->s.number;
 		info->runtime.targetRecoveryHandledEvent = target->client->botCrashEventCounter;
 		BotLite_DebugLog( bot, va( "Trigger retreat target=%d crashCounter=%d", target->s.number, target->client->botCrashEventCounter ) );
-		BotLite_ClearLock( bot );
+		/* Combate Rush: el lock-on se mantiene cuando el rival se estrella. */
+		if ( !g_rushCombat.integer ) {
+			BotLite_ClearLock( bot );
+		}
 		BotLite_StartRecoveryWait( bot, clientNum, target );
 		BotLite_RunRecoveryWait( bot, clientNum, target );
 		return;
@@ -247,7 +250,9 @@ static void BotLite_RunGoal( gentity_t *bot, int clientNum, botlite_goal_t goal,
 	case BOTLITE_GOAL_WAIT_RECOVERY:
 		BotLite_LogTacticChange( bot, &g_botlite[clientNum], BOTLITE_TACTIC_RETREAT_RECOVERY );
 		if ( snapshot->targetCrashEdge && g_botlite[clientNum].runtime.mode != BOTLITE_MODE_WAIT_TARGET_RECOVERY && snapshot->target ) {
-			BotLite_ClearLock( bot );
+			if ( !g_rushCombat.integer ) {
+				BotLite_ClearLock( bot );
+			}
 			BotLite_StartRecoveryWait( bot, clientNum, snapshot->target );
 		}
 		BotLite_RunRecoveryWait( bot, clientNum, snapshot->target );
@@ -359,6 +364,14 @@ void BotLite_ThinkClient( int clientNum, int time ) {
 		 * el desplazamiento en seco si el boton se suelta (bg_pmove.c:317 + 320-328),
 		 * asi que cualquier modulo que se lleve el frame lo aborta a mitad de camino. */
 	if ( BotLite_RunZanzokenHold( bot, clientNum, &snapshot ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* Combate Rush: un golpe cuerpo a cuerpo llega en 60-160 ms, asi que la
+	 * defensa (guardia, parada, esquiva, alejarse, zanzoken, contraataque), la
+	 * revancha y la respuesta a un choque corren en cualquier modo del bot. */
+	if ( BotLite_RunRushReactions( bot, clientNum, &snapshot ) ) {
 		BotLite_ActionCommit( bot, clientNum, time );
 		return;
 	}

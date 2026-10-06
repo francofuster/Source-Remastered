@@ -1008,6 +1008,18 @@ void ClientSpawn(gentity_t *ent) {
 	for ( i = 0 ; i < MAX_PERSISTANT ; i++ ) {
 		client->ps.persistant[i] = persistant[i];
 	}
+	// Combate Rush: the client struct is not cleared on respawn (see the
+	// memset above), so no move, stun or combo carries over a death
+	client->ps.stats[stRushMove] = 0;
+	client->ps.stats[stRushState] = RS_NONE;
+	client->ps.stats[stRushChain] = 0;
+	client->ps.stats[stRushFlags] = 0;
+	client->ps.stats[stRushCombo] = 0;
+	client->ps.stats[stRushHits] = 0;
+	client->ps.stats[stRushStep] = 0;
+	client->ps.timers[tmRushTime] = 0;
+	client->ps.timers[tmRushStun] = 0;
+	client->rushLatchedButtons = 0;
 	client->ps.eventSequence = eventSequence;
 	client->ps.persistant[PERS_SPAWN_COUNT]++;
 	client->ps.persistant[PERS_TEAM] = client->sess.sessionTeam;

@@ -200,7 +200,7 @@ void PM_StopDirections(void){
 }
 void PM_CheckKnockback(void){
 	vec3_t pre_vel,post_vel,wishvel,wishdir,direction;
-	qboolean vertical;
+	qboolean vertical,canRecover;
 	float scale,wishspeed;
 	int i,speed;
 	vertical = qfalse;
@@ -213,6 +213,7 @@ void PM_CheckKnockback(void){
 		}
 	}
 	if(pm->ps->timers[tmKnockback] > 0){
+		if(PM_RushEnabled()){PM_RushCancel();}
 		PM_ContinueLegsAnim(ANIM_KNOCKBACK);
 		pm->ps->timers[tmKnockback] -= pml.msec;
 		PM_StopDirections();
@@ -259,7 +260,15 @@ void PM_CheckKnockback(void){
 		VectorNormalize(pm->ps->velocity);
 		VectorCopy(pm->ps->velocity,pre_vel);
 		speed = pm->ps->powerups[PW_KNOCKBACK_SPEED];
-		if((pm->cmd.buttons & BUTTON_ALT_ATTACK) && (pm->ps->timers[tmKnockback] < 4000)){
+		canRecover = pm->ps->timers[tmKnockback] < 4000 ? qtrue : qfalse;
+		// Combate Rush: a launch leaves tmRushStun with the flight time that
+		// must pass before the defender can recover with the alt button.
+		if(PM_RushEnabled() && pm->ps->timers[tmRushStun] > 0){
+			pm->ps->timers[tmRushStun] -= pml.msec;
+			if(pm->ps->timers[tmRushStun] < 0){pm->ps->timers[tmRushStun] = 0;}
+			canRecover = qfalse;
+		}
+		if((pm->cmd.buttons & BUTTON_ALT_ATTACK) && canRecover){
 			pm->ps->powerLevel[plUseFatigue] += ((float)pm->ps->timers[tmKnockback] / 5000.0) * (0.2 * pm->ps->powerLevel[plFatigue]);
 			pm->ps->timers[tmKnockback] = -500;
 			speed = 0;
@@ -276,8 +285,11 @@ void PM_CheckKnockback(void){
 	}
 }
 void PM_Crash(qboolean vertical){
+	int crashTime;
 	pm->ps->powerLevel[plDamageGeneric] = pm->ps->bitFlags & usingSoar ? VectorLength(pm->ps->velocity) * 0.03 : VectorLength(pm->ps->velocity) * 0.3;
-	pm->ps->timers[tmCrash] = vertical ? -2500 : 2500;
+	// Combate Rush: hitting a wall is a short bounce (KNOCKBACK_HIT_WALL), not a long knockdown
+	crashTime = PM_RushEnabled() ? bg_rush.wallStun : 2500;
+	pm->ps->timers[tmCrash] = vertical ? -crashTime : crashTime;
 	pm->ps->bitFlags |= isCrashed;
 	PM_AddEvent(EV_CRASH);
 	PM_StopSoar();
@@ -314,6 +326,7 @@ void PM_CheckZanzoken(void){
 	}
 	if(!(pm->ps->states & canZanzoken)){return;}
 	if(pm->ps->bitFlags & usingSoar || pm->ps->bitFlags & isPreparing || pm->ps->bitFlags & usingMelee){return;}
+	if(PM_RushBusy() || PM_RushChaseAvailable()){return;}
 	if(!(pm->cmd.buttons & BUTTON_TELEPORT)){
 		pm->ps->timers[tmZanzoken] = -1;
 	}
@@ -446,6 +459,12 @@ void PM_BurnPowerLevel(){
 		initial = burn;
 		percent = 1.0 - ((float)pm->ps->powerLevel[plCurrent] / (float)pm->ps->powerLevel[plMaximum]);
 		burn -= (int)(((float)pm->ps->powerLevel[plFatigue] * 0.01) * defense);
+		// Health bars (g_healthBars): every bar holds a whole health gauge, so
+		// the damage that reaches the health, and what it feeds back, is split
+		if(BG_HealthBars(pm->ps) > 1){
+			burn /= BG_HealthBars(pm->ps);
+			initial /= BG_HealthBars(pm->ps);
+		}
 		if(burnType != 2){
 			pm->ps->powerLevel[plHealthPool] += burn * 0.5;
 			pm->ps->powerLevel[plMaximumPool] += burn * 0.7;
@@ -560,7 +579,7 @@ void PM_CheckStatus(void){
 	}*/
 	else{
 		if(pm->ps->powerups[PW_STATE] == -1){
-			if(pm->ps->timers[tmRecover] <= 0){pm->ps->timers[tmRecover] = 2000;}
+			if(pm->ps->timers[tmRecover] <= 0){pm->ps->timers[tmRecover] = PM_RushEnabled() ? bg_rush.crashRecover : 2000;}
 			pm->ps->timers[tmRecover] -= pml.msec;
 			if(pm->ps->timers[tmRecover] <= 0){
 				pm->ps->timers[tmRecover] = 0;
@@ -2002,7 +2021,7 @@ void PM_BeginWeaponChange(int weapon){
 	if(weapon <= WP_NONE || weapon >= WP_NUM_WEAPONS){
 		return;
 	}
-	if(pm->ps->stats[stMeleeState] || pm->ps->timers[tmTransform] || charging){
+	if(pm->ps->stats[stMeleeState] || pm->ps->timers[tmTransform] || charging || PM_RushBusy()){
 		return;
 	}
 	if(!(pm->ps->stats[stSkills] & (1 << weapon))){
@@ -2039,6 +2058,10 @@ void PM_BeginWeaponChange(int weapon){
 PM_TorsoAnimation
 ==============*/
 void PM_TorsoAnimation(void){
+	if(PM_RushBusy()){
+		PM_ContinueTorsoAnim(pm->ps->legsAnim & ~ANIM_TOGGLEBIT);
+		return;
+	}
 	if(pm->ps->weaponstate != WEAPON_READY){return;}
 	if(pm->ps->timers[tmImpede] || pm->ps->states & isBurning){PM_ContinueLegsAnim(ANIM_STUNNED);}
 	if(pm->ps->states & isRiding){PM_ContinueLegsAnim(ANIM_KNOCKBACK);}
@@ -2743,6 +2766,14 @@ void PM_Weapon(void){
 		PM_WeaponRelease();
 		return;
 	}
+	if(PM_RushBusy()){
+		PM_WeaponRelease();
+		return;
+	}
+	if(pml.rushEngaged && pm->ps->weaponstate != WEAPON_CHARGING && pm->ps->weaponstate != WEAPON_ALTCHARGING
+		&& pm->ps->weaponstate != WEAPON_GUIDING){
+		return;
+	}
 	if(pm->ps->lockedTarget && pm->ps->lockedPlayer->timers[tmKnockback] && VectorLength(pm->ps->velocity)){return;}
 	if(pm->ps->pm_flags & PMF_ATTACK1_HELD){
 		if(!(pm->cmd.buttons & BUTTON_ATTACK)){pm->ps->pm_flags &= ~PMF_ATTACK1_HELD;}
@@ -2975,7 +3006,7 @@ void PM_CheckLockon(void){
 		pm->ps->lockedPlayerData[lkPowerMaximum] = pm->ps->lockedPlayer->powerLevel[plMaximum];
 		pm->ps->lockedPlayer->bitFlags |= isTargeted;
 	}
-	if(pm->cmd.buttons & BUTTON_GESTURE && pm->ps->stats[stMeleeState] == 0){
+	if(pm->cmd.buttons & BUTTON_GESTURE && pm->ps->stats[stMeleeState] == 0 && !PM_RushBusy()){
 		if(pm->ps->pm_flags & PMF_LOCK_HELD){return;}
 		pm->ps->pm_flags |= PMF_LOCK_HELD;
 		if(pm->ps->lockedTarget>0){
@@ -3176,6 +3207,7 @@ void PmoveSingle(pmove_t *pmove){
 	PM_Impede();
 	PM_Burn();
 	PM_Ride();
+	if(PM_RushEnabled()){PM_RushTrackInput();}
 	PM_CheckKnockback();
 	PM_CheckHover();
 	if(PM_CheckTransform()){return;}
@@ -3184,7 +3216,12 @@ void PmoveSingle(pmove_t *pmove){
 	if(pm->cmd.buttons != 0 && pm->cmd.buttons != 2048){
 		//Com_Printf("%i\n",pm->cmd.buttons);
 	}
-	if(pm->ps->lockedTarget > 0){
+	if(PM_RushEnabled()){
+		// Combate Rush: walking, jumping and footstep animations stop only
+		// while a move or a stun is running, not just for being close
+		meleeRange = PM_RushBusy();
+	}
+	else if(pm->ps->lockedTarget > 0){
 		meleeRange = Distance(pm->ps->origin,*(pm->ps->lockedPosition)) <= 48 ? qtrue : qfalse;
 	}
 	if(!(pm->ps->bitFlags & isTransforming)){
@@ -3198,8 +3235,9 @@ void PmoveSingle(pmove_t *pmove){
 			PM_CheckPowerLevel();
 			PM_CheckLockon();
 			PM_CheckZanzoken();
+			if(PM_RushEnabled()){PM_CheckBlock();}
 			if(!meleeRange){
-				PM_CheckBlock();
+				if(!PM_RushEnabled()){PM_CheckBlock();}
 				PM_CheckJump();
 				PM_Footsteps();
 			}
@@ -3216,7 +3254,8 @@ void PmoveSingle(pmove_t *pmove){
 		PM_StopMovementTypes();
 		PM_StopFlight();
 		PM_StopDirections();
-		PM_StopLockon();
+		// Combate Rush: crashing into a wall after a knockback keeps the lock-on
+		if(!PM_RushEnabled() || (pm->ps->bitFlags & (isUnconcious | isDead))){PM_StopLockon();}
 		PM_GroundTrace();
 		PM_AirMove();
 		PM_UpdateViewAngles(pm->ps, &pm->cmd);
@@ -3224,10 +3263,12 @@ void PmoveSingle(pmove_t *pmove){
 	}
 	if(!pm->ps->timers[tmKnockback]){
 		int state;
-		PM_Melee();
+		if(PM_RushEnabled()){PM_Rush();}
+		else{PM_Melee();}
 		state = pm->ps->stats[stMeleeState];
 		if(state != stMeleeUsingPower || state != stMeleeUsingStun){
-			PM_UpdateViewAngles(pm->ps,&pm->cmd);
+			// Combate Rush: a player caught by a vanish cannot turn for a moment
+			if(!PM_RushExposed()){PM_UpdateViewAngles(pm->ps,&pm->cmd);}
 			PM_Weapon();
 		}
 	}
@@ -3240,7 +3281,8 @@ void PmoveSingle(pmove_t *pmove){
 	PM_GroundTrace();
 	PM_NearGroundTrace();
 	if(!pm->ps->timers[tmFreeze] && !pm->ps->timers[tmImpede] && pm->ps->timers[tmTransform] < 100 && pm->ps->timers[tmTransform] > -100){
-		if(!(pm->ps->bitFlags & usingAlter) && !(pm->ps->bitFlags & isStruggling) && !(pm->ps->bitFlags & usingMelee)){
+		if(PM_RushBusy()){PM_RushMove();}
+		else if(!(pm->ps->bitFlags & usingAlter) && !(pm->ps->bitFlags & isStruggling) && !(pm->ps->bitFlags & usingMelee)){
 			PM_FlyMove();
 			PM_DashMove();
 			PM_WalkMove();

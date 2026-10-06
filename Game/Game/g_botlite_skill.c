@@ -433,6 +433,11 @@ void BotLite_RunManagedCombatTactic( gentity_t *bot, int clientNum, const botlit
 	}
 
 	info = &g_botlite[clientNum];
+	/* Combate Rush: cuando el bot esta en distancia de melee, recibiendo o
+	 * persiguiendo, manda la tactica del sistema nuevo. */
+	if ( BotLite_RunRushCombat( bot, clientNum, snapshot ) ) {
+		return;
+	}
 	policy = BotLite_GetCombatPolicy( info->skill );
 	BotLite_UpdateHybridRangeMode( bot, clientNum, snapshot, policy );
 	if ( !BotLite_EngageIntentActive( clientNum ) &&

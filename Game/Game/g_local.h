@@ -323,6 +323,7 @@ extern struct gclient_s {
 	int			lasthurt_mod;		// type of damage the client did
 	int			lasthurt_location;	// Where the client was hit.
 	int			botCrashEventCounter;	// increments each time this player enters crash (server-side for bots)
+	int			rushLatchedButtons;	// Combate Rush: buttons pressed between two locked-on server frames
 	// timers
 	int			respawnTime;		// can respawn when time > this, force after g_forcerespwan
 	int			inactivityTime;		// kick players when time > this
@@ -779,6 +780,10 @@ extern	vmCvar_t	g_powerlevel;
 extern	vmCvar_t	g_powerlevelMaximum;
 extern	vmCvar_t	g_breakLimitRate;
 extern	vmCvar_t	g_botStamina;
+extern	vmCvar_t	g_rushCombat;
+extern	vmCvar_t	g_rushDebug;
+extern	vmCvar_t	g_healthBars;
+qboolean	G_LockonAllowed( gentity_t *ent, gentity_t *target );
 extern	vmCvar_t	g_allowTiers;
 extern	vmCvar_t	g_allowScoreboard;
 extern	vmCvar_t	g_allowSoar;

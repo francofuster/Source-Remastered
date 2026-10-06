@@ -49,6 +49,12 @@ typedef struct {
 	vec3_t		previous_velocity;
 	int			previous_waterlevel;
 	// -->
+	qboolean	rushEngaged;	// Combate Rush owns the attack buttons this frame
+	qboolean	rushAtkPress;	// Combate Rush button edges of this step (PM_RushTrackInput)
+	qboolean	rushAltPress;
+	qboolean	rushAltRelease;
+	qboolean	rushBlkPress;
+	qboolean	rushTelePress;
 } pml_t;
 
 extern	pmove_t		*pm;
@@ -78,3 +84,17 @@ qboolean	PM_SlideMove( qboolean gravity );
 void		PM_StepSlideMove( qboolean gravity );
 
 
+
+// Combate Rush (bg_rush.c)
+void		PM_StartLegsAnim( int anim );
+void		PM_ContinueTorsoAnim( int anim );
+void		PM_WeaponRelease( void );
+void		PM_StopDirections( void );
+qboolean	PM_RushEnabled( void );
+qboolean	PM_RushBusy( void );
+void		PM_Rush( void );
+void		PM_RushMove( void );
+void		PM_RushCancel( void );
+void		PM_RushTrackInput( void );
+qboolean	PM_RushExposed( void );
+qboolean	PM_RushChaseAvailable( void );

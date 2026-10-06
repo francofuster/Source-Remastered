@@ -175,6 +175,91 @@ also called by CG_CheckPlayerstateEvents
 ==============
 */
 #define	DEBUGNAME(x) if(cg_debugEvents.integer){CG_Printf(x"\n");}
+/*
+==============
+Combate Rush helpers: the event comes from the attacker, the impact sits in
+front of it at the range of the move.
+==============
+*/
+static void CG_RushImpactPoint( centity_t *cent, int move, vec3_t out ) {
+	vec3_t	forward;
+	float	dist;
+	dist = 30.0f;
+	if ( move > 0 && move <= bg_rush.numMoves ) {
+		dist = bg_rush.moves[move].range * 0.6f;
+	}
+	AngleVectors( cent->lerpAngles, forward, NULL, NULL );
+	VectorMA( cent->lerpOrigin, dist, forward, out );
+	out[2] += 8;
+}
+
+static sfxHandle_t CG_RushHitSound( int move ) {
+	int sound;
+	sound = RSND_NONE;
+	if ( move > 0 && move <= bg_rush.numMoves ) {
+		sound = bg_rush.moves[move].sound;
+	}
+	if ( sound < RSND_NONE || sound >= RSND_COUNT ) {
+		sound = RSND_NONE;
+	}
+	return cgs.media.rushHit[sound];
+}
+
+// The player struck in front of the attacker, -1 when nobody is there.
+static int CG_RushFindVictim( int attacker, const vec3_t org ) {
+	int			i, best;
+	float		bestDist, dist;
+	centity_t	*other;
+	vec3_t		pos;
+	best = -1;
+	bestDist = 90.0f;
+	for ( i = 0 ; i < MAX_CLIENTS ; i++ ) {
+		if ( i == attacker ) {
+			continue;
+		}
+		if ( cg.snap && i == cg.snap->ps.clientNum ) {
+			VectorCopy( cg.predictedPlayerEntity.lerpOrigin, pos );
+		}
+		else {
+			other = &cg_entities[i];
+			if ( !other->currentValid || other->currentState.eType != ET_PLAYER ) {
+				continue;
+			}
+			VectorCopy( other->lerpOrigin, pos );
+		}
+		dist = Distance( pos, org );
+		if ( dist < bestDist ) {
+			best = i;
+			bestDist = dist;
+		}
+	}
+	return best;
+}
+
+// Impact pause on both fighters, plus a FOV punch and a light shake when one
+// of them is the local player.
+static void CG_RushImpact( centity_t *cent, int move, int hitstop, float fovKick, float shake ) {
+	vec3_t	org;
+	int		attacker, victim, me;
+	CG_RushImpactPoint( cent, move, org );
+	attacker = cent->currentState.number;
+	victim = CG_RushFindVictim( attacker, org );
+	CG_RushHitstop( attacker, hitstop );
+	if ( victim >= 0 ) {
+		CG_RushHitstop( victim, hitstop );
+	}
+	me = cg.snap ? cg.snap->ps.clientNum : -1;
+	if ( attacker == me || victim == me ) {
+		if ( fovKick > 0 ) {
+			cg.rushFovKickTime = cg.time + hitstop;
+			cg.rushFovKick = fovKick;
+		}
+		if ( shake > 0 ) {
+			CG_AddEarthquake( org, 500, 0.15f, 0, 0.15f, shake );
+		}
+	}
+}
+
 void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 	entityState_t	*es,*nextState;
 	int				event;
@@ -547,6 +632,118 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 		break;
 	case EV_MELEE_KNOCKOUT:
 		DEBUGNAME("EV_MELEE_KNOCKOUT");
+		break;
+	case EV_RUSH_SWING:
+		DEBUGNAME("EV_RUSH_SWING");
+		trap_S_StartSound( NULL, es->number, CHAN_AUTO, cgs.media.rushSwing[rand() % 5] );
+		break;
+	case EV_RUSH_HIT:
+		DEBUGNAME("EV_RUSH_HIT");
+		{
+			vec3_t org;
+			CG_RushImpactPoint( cent, es->eventParm, org );
+			trap_S_StartSound( NULL, es->number, CHAN_AUTO, CG_RushHitSound( es->eventParm ) );
+			CG_SpeedMeleeEffect( org, cent->currentState.tier );
+			CG_RushImpact( cent, es->eventParm, 60, 0, 60 );
+		}
+		break;
+	case EV_RUSH_COUNTER:
+		DEBUGNAME("EV_RUSH_COUNTER");
+		{
+			vec3_t org;
+			CG_RushImpactPoint( cent, es->eventParm, org );
+			trap_S_StartSound( NULL, es->number, CHAN_AUTO, cgs.media.rushClash );
+			trap_S_StartSound( NULL, es->number, CHAN_BODY, CG_RushHitSound( es->eventParm ) );
+			CG_PowerMeleeEffect( org, cent->currentState.tier );
+			CG_RushImpact( cent, es->eventParm, 120, 4, 200 );
+		}
+		break;
+	case EV_RUSH_BLOCK:
+		DEBUGNAME("EV_RUSH_BLOCK");
+		trap_S_StartSound( NULL, es->number, CHAN_AUTO, cgs.media.rushBlock[rand() % 2] );
+		CG_RushImpact( cent, es->eventParm, 40, 0, 0 );
+		break;
+	case EV_RUSH_PARRY:
+		DEBUGNAME("EV_RUSH_PARRY");
+		{
+			vec3_t org;
+			CG_RushImpactPoint( cent, es->eventParm, org );
+			trap_S_StartSound( NULL, es->number, CHAN_AUTO, cgs.media.rushParry );
+			CG_SpeedMeleeEffect( org, cent->currentState.tier );
+			CG_RushImpact( cent, es->eventParm, 120, 3, 120 );
+		}
+		break;
+	case EV_RUSH_DODGE:
+		DEBUGNAME("EV_RUSH_DODGE");
+		trap_S_StartSound( NULL, es->number, CHAN_AUTO, cgs.media.rushWhiff[rand() % 4] );
+		break;
+	case EV_RUSH_CLASH:
+		DEBUGNAME("EV_RUSH_CLASH");
+		{
+			vec3_t org;
+			CG_RushImpactPoint( cent, 0, org );
+			trap_S_StartSound( NULL, es->number, CHAN_AUTO, cgs.media.rushClash );
+			CG_AddEarthquake( org, 800, 0.4f, 0, 0.4f, 300 );
+			CG_PowerMeleeEffect( org, cent->currentState.tier );
+			CG_RushImpact( cent, 0, 150, 5, 0 );
+		}
+		break;
+	case EV_RUSH_REVENGE:
+		DEBUGNAME("EV_RUSH_REVENGE");
+		{
+			vec3_t org;
+			CG_RushImpactPoint( cent, es->eventParm, org );
+			trap_S_StartSound( NULL, es->number, CHAN_BODY, cgs.media.rushRevenge );
+			CG_AddEarthquake( org, 800, 0.5f, 0, 0.5f, 350 );
+			CG_PowerMeleeEffect( cent->lerpOrigin, cent->currentState.tier );
+		}
+		break;
+	case EV_RUSH_VANISH:
+		DEBUGNAME("EV_RUSH_VANISH");
+		CG_SpawnEffect( position );
+		CG_SpawnLightSpeedGhost( cent );
+		break;
+	case EV_RUSH_WHIFF:
+		DEBUGNAME("EV_RUSH_WHIFF");
+		trap_S_StartSound( NULL, es->number, CHAN_AUTO, cgs.media.rushWhiff[rand() % 4] );
+		break;
+	case EV_RUSH_LAUNCH:
+		DEBUGNAME("EV_RUSH_LAUNCH");
+		{
+			vec3_t org;
+			CG_RushImpactPoint( cent, es->eventParm, org );
+			trap_S_StartSound( NULL, es->number, CHAN_AUTO, CG_RushHitSound( es->eventParm ) );
+			CG_AddEarthquake( org, 1000, 1, 0, 1, 500 );
+			CG_PowerMeleeEffect( org, cent->currentState.tier );
+			CG_RushImpact( cent, es->eventParm, 110, 6, 0 );
+		}
+		break;
+	case EV_RUSH_STUN:
+		DEBUGNAME("EV_RUSH_STUN");
+		{
+			vec3_t org;
+			CG_RushImpactPoint( cent, es->eventParm, org );
+			trap_S_StartSound( NULL, es->number, CHAN_AUTO, CG_RushHitSound( es->eventParm ) );
+			trap_S_StartSound( NULL, es->number, CHAN_BODY, cgs.media.rushStun );
+			CG_AddEarthquake( org, 600, 0.5f, 0, 0.5f, 250 );
+			CG_PowerMeleeEffect( org, cent->currentState.tier );
+			CG_RushImpact( cent, es->eventParm, 100, 4, 0 );
+		}
+		break;
+	case EV_RUSH_GUARDBREAK:
+		DEBUGNAME("EV_RUSH_GUARDBREAK");
+		{
+			vec3_t org;
+			CG_RushImpactPoint( cent, es->eventParm, org );
+			trap_S_StartSound( NULL, es->number, CHAN_AUTO, cgs.media.rushGuardBreak );
+			CG_AddEarthquake( org, 800, 0.6f, 0, 0.6f, 350 );
+			CG_PowerMeleeEffect( org, cent->currentState.tier );
+			CG_RushImpact( cent, es->eventParm, 120, 5, 0 );
+		}
+		break;
+	case EV_RUSH_CHARGE:
+		DEBUGNAME("EV_RUSH_CHARGE");
+		trap_S_StartSound( NULL, es->number, CHAN_BODY, cgs.media.rushCharge );
 		break;
 	case EV_MELEE_BREAKER:
 		DEBUGNAME("EV_MELEE_BREAKER");

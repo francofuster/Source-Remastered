@@ -729,6 +729,125 @@ static void CG_DrawDiffGaugeMirrored( float x, float y, float width, float heigh
 }
 
 /*================
+CG_HealthBarGauge
+
+Health bars (g_healthBars, up to 3): every damage is divided by the number of
+bars on the server (PM_BurnPowerLevel), so each bar lasts as long as the whole
+classic gauge did. The power gauge keeps its concept: the health lost enters
+from the right, but measured inside the bar being spent and in the color of
+that bar: green for the first, magenta for the middle one, red for the last.
+When a bar is spent the lost part resets and the next color starts. Ki
+(light blue), ki over fatigue (orange) and fatigue (gray) keep their classic
+colors; where they overlap the lost health they mix inside the hue of the
+bar (dark, tinted to the ki, pastel), so nothing turns orange.
+slot 0 is the own HUD, slot 1 the locked target.
+================*/
+static int		cg_healthBarLast[2];
+static int		cg_healthBarClient[2] = { -1, -1 };
+static int		cg_healthBarFlash[2];
+
+// [bar][layer][rgb]: bar 0 first (green), 1 middle (magenta), 2 last (red);
+// layers: health lost, fatigue in lost health, ki in lost health, ki over
+// fatigue in lost health
+static const float cg_healthBarPalette[3][4][3] = {
+	{ { 0.10f, 0.80f, 0.40f }, { 0.05f, 0.36f, 0.18f }, { 0.07f, 0.73f, 0.61f }, { 0.55f, 0.90f, 0.70f } },
+	{ { 0.90f, 0.18f, 0.78f }, { 0.41f, 0.08f, 0.35f }, { 0.59f, 0.32f, 0.86f }, { 0.95f, 0.59f, 0.89f } },
+	{ { 1.00f, 0.10f, 0.00f }, { 0.50f, 0.16f, 0.16f }, { 0.80f, 0.20f, 0.20f }, { 1.00f, 0.50f, 0.65f } }
+};
+
+// HUD rectangles use the same unstretched 640 space as the HUD pictures
+static void CG_HudFill( float x, float y, float w, float h, const float *color ) {
+	trap_R_SetColor( color );
+	CG_DrawPic( qfalse, x, y, w, h, cgs.media.whiteShader );
+	trap_R_SetColor( NULL );
+}
+
+static void CG_SetColor3( vec4_t color, const float *rgb ) {
+	color[0] = rgb[0];
+	color[1] = rgb[1];
+	color[2] = rgb[2];
+	color[3] = 1.0f;
+}
+
+// palette row of a bar: bar 1 (the last one left) is red, the full set first is green
+static int CG_HealthBarPaletteRow( int bar, int bars ) {
+	if ( bar <= 1 ) {
+		return 2;
+	}
+	if ( bar >= bars ) {
+		return 0;
+	}
+	return 1;
+}
+
+// Returns the health to draw in the power gauge and sets its four colors.
+// With one bar it returns the plain health and leaves the classic colors.
+static int CG_HealthBarGauge( int slot, int clientNum, int health, int maximum, vec4_t lost, vec4_t fatIn, vec4_t kiIn,
+							  vec4_t kiFatIn, int *current, int *bars ) {
+	float	frac, fill;
+	int		row;
+
+	*bars = cg.snap ? BG_HealthBars( &cg.snap->ps ) : 1;
+	*current = 1;
+	if ( *bars <= 1 || maximum <= 0 ) {
+		*bars = 1;
+		return health;
+	}
+	frac = (float)health / (float)maximum;
+	if ( frac < 0 ) { frac = 0; }
+	if ( frac > 1 ) { frac = 1; }
+	*current = frac > 0 ? (int)( frac * *bars + 0.9999f ) : 0;
+	if ( *current > *bars ) { *current = *bars; }
+	fill = *current > 0 ? frac * *bars - ( *current - 1 ) : 0;
+	if ( fill > 1 ) { fill = 1; }
+
+	// a bar broke: flash and sound (not when the target just changed)
+	if ( cg_healthBarClient[slot] != clientNum ) {
+		cg_healthBarClient[slot] = clientNum;
+		cg_healthBarLast[slot] = *current;
+	}
+	else if ( *current < cg_healthBarLast[slot] ) {
+		cg_healthBarFlash[slot] = cg.time;
+		trap_S_StartLocalSound( cgs.media.rushGuardBreak, CHAN_LOCAL_SOUND );
+	}
+	cg_healthBarLast[slot] = *current;
+
+	row = CG_HealthBarPaletteRow( *current > 0 ? *current : 1, *bars );
+	CG_SetColor3( lost, cg_healthBarPalette[row][0] );
+	CG_SetColor3( fatIn, cg_healthBarPalette[row][1] );
+	CG_SetColor3( kiIn, cg_healthBarPalette[row][2] );
+	CG_SetColor3( kiFatIn, cg_healthBarPalette[row][3] );
+	return (int)( fill * maximum );
+}
+
+// Flash over the gauge when a bar breaks, and one chip per bar above it,
+// lit while that bar is left (first bar on the outer side).
+static void CG_DrawHealthBarMarks( int slot, float gaugeX, float gaugeY, int current, int bars, qboolean flipped ) {
+	vec4_t	back, color;
+	float	chipX;
+	int		i, bar;
+
+	if ( bars <= 1 ) {
+		return;
+	}
+	if ( cg_healthBarFlash[slot] && cg.time - cg_healthBarFlash[slot] < 300 ) {
+		color[0] = color[1] = color[2] = 1.0f;
+		color[3] = 0.85f * ( 1.0f - ( cg.time - cg_healthBarFlash[slot] ) / 300.0f );
+		CG_HudFill( gaugeX, gaugeY, 200, 16, color );
+	}
+	back[0] = 0.05f; back[1] = 0.05f; back[2] = 0.08f; back[3] = 0.85f;
+	for ( i = 0 ; i < bars ; i++ ) {
+		bar = bars - i;		// i = 0 is the first bar spent
+		chipX = flipped ? gaugeX + 200 - 9 - i * 11 : gaugeX + 2 + i * 11;
+		CG_HudFill( chipX, gaugeY - 13, 9, 7, back );
+		if ( bar <= current ) {
+			CG_SetColor3( color, cg_healthBarPalette[CG_HealthBarPaletteRow( bar, bars )][0] );
+			CG_HudFill( chipX + 1, gaugeY - 12, 7, 5, color );
+		}
+	}
+}
+
+/*================
 CG_HUD
 ================*/
 void CG_DrawHUD(playerState_t *ps,int clientNum,int x,int y,qboolean flipped){
@@ -747,19 +866,24 @@ void CG_DrawHUD(playerState_t *ps,int clientNum,int x,int y,qboolean flipped){
 	vec4_t	plFatigueHealthColor = {0.5f,0.16f,0.16f,1.0f};
 	vec4_t	plFatigueColor = {0.4f,0.4f,0.5f,1.0f};
 	vec3_t	angles;
+	int		health, barCurrent, bars;
 
 	CG_BeginUniformHudScale( &oldScreenXScale, &oldScreenXBias );
+	// health bars: the gauge shows the bar being spent, in its color
+	health = CG_HealthBarGauge( flipped ? 1 : 0, clientNum, ps->powerLevel[plHealth], ps->powerLevel[plMaximum],
+		limitColor, plFatigueHealthColor, beyondHealthColor, healthFatigueColor, &barCurrent, &bars );
 
 	if ( !flipped ) {
 		CG_DrawHorGauge(x+60,y+41,200,16,powerColor,dullColor,ps->powerLevel[plCurrent],ps->powerLevel[plMaximum],qfalse);	
 		CG_DrawRightGauge(x+60,y+41,200,16,plFatigueColor,plFatigueColor,ps->powerLevel[plFatigue],ps->powerLevel[plMaximum]);
-		CG_DrawRightGauge(x+60,y+41,200,16,limitColor,limitColor,ps->powerLevel[plHealth],ps->powerLevel[plMaximum]);
+		CG_DrawRightGauge(x+60,y+41,200,16,limitColor,limitColor,health,ps->powerLevel[plMaximum]);
 		CG_DrawDiffGauge(x+60,y+41,200,16,beyondFatigueColor,beyondFatigueColor,ps->powerLevel[plCurrent],ps->powerLevel[plFatigue],ps->powerLevel[plMaximum],1);
-		CG_DrawDiffGauge(x+60,y+41,200,16,plFatigueHealthColor,plFatigueHealthColor,ps->powerLevel[plFatigue],ps->powerLevel[plHealth],ps->powerLevel[plMaximum],1);
-		CG_DrawDiffGauge(x+60,y+41,200,16,beyondHealthColor,beyondHealthColor,ps->powerLevel[plCurrent],ps->powerLevel[plHealth],ps->powerLevel[plMaximum],1);
-		if((ps->powerLevel[plCurrent] > ps->powerLevel[plFatigue]) && (ps->powerLevel[plFatigue] > ps->powerLevel[plHealth])){
+		CG_DrawDiffGauge(x+60,y+41,200,16,plFatigueHealthColor,plFatigueHealthColor,ps->powerLevel[plFatigue],health,ps->powerLevel[plMaximum],1);
+		CG_DrawDiffGauge(x+60,y+41,200,16,beyondHealthColor,beyondHealthColor,ps->powerLevel[plCurrent],health,ps->powerLevel[plMaximum],1);
+		if((ps->powerLevel[plCurrent] > ps->powerLevel[plFatigue]) && (ps->powerLevel[plFatigue] > health)){
 			CG_DrawDiffGauge(x+60,y+41,200,16,healthFatigueColor,healthFatigueColor,ps->powerLevel[plCurrent],ps->powerLevel[plFatigue],ps->powerLevel[plMaximum],1);
 		}
+		CG_DrawHealthBarMarks(0,x+60,y+41,barCurrent,bars,qfalse);
 		CG_DrawPic(qfalse,x,y,288,72,cgs.media.hudShader);
 		CG_DrawHead(x+6,y+22,50,50,clientNum,angles);
 		if(ps->powerLevel[plCurrent] == ps->powerLevel[plMaximum] && ps->bitFlags & usingAlter){
@@ -768,13 +892,14 @@ void CG_DrawHUD(playerState_t *ps,int clientNum,int x,int y,qboolean flipped){
 	} else {
 		CG_DrawHorGauge(x+28,y+41,200,16,powerColor,dullColor,ps->powerLevel[plCurrent],ps->powerLevel[plMaximum],qtrue);
 		CG_DrawLeftGauge(x+28,y+41,200,16,plFatigueColor,plFatigueColor,ps->powerLevel[plFatigue],ps->powerLevel[plMaximum]);
-		CG_DrawLeftGauge(x+28,y+41,200,16,limitColor,limitColor,ps->powerLevel[plHealth],ps->powerLevel[plMaximum]);
+		CG_DrawLeftGauge(x+28,y+41,200,16,limitColor,limitColor,health,ps->powerLevel[plMaximum]);
 		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,beyondFatigueColor,beyondFatigueColor,ps->powerLevel[plCurrent],ps->powerLevel[plFatigue],ps->powerLevel[plMaximum],1);
-		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,plFatigueHealthColor,plFatigueHealthColor,ps->powerLevel[plFatigue],ps->powerLevel[plHealth],ps->powerLevel[plMaximum],1);
-		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,beyondHealthColor,beyondHealthColor,ps->powerLevel[plCurrent],ps->powerLevel[plHealth],ps->powerLevel[plMaximum],1);
-		if((ps->powerLevel[plCurrent] > ps->powerLevel[plFatigue]) && (ps->powerLevel[plFatigue] > ps->powerLevel[plHealth])){
+		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,plFatigueHealthColor,plFatigueHealthColor,ps->powerLevel[plFatigue],health,ps->powerLevel[plMaximum],1);
+		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,beyondHealthColor,beyondHealthColor,ps->powerLevel[plCurrent],health,ps->powerLevel[plMaximum],1);
+		if((ps->powerLevel[plCurrent] > ps->powerLevel[plFatigue]) && (ps->powerLevel[plFatigue] > health)){
 			CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,healthFatigueColor,healthFatigueColor,ps->powerLevel[plCurrent],ps->powerLevel[plFatigue],ps->powerLevel[plMaximum],1);
 		}
+		CG_DrawHealthBarMarks(1,x+28,y+41,barCurrent,bars,qtrue);
 		CG_DrawPicMirrored(x,y,288,72,cgs.media.hudShader);
 		CG_DrawHead(x+232,y+22,50,50,clientNum,angles);
 		// CG_DrawPicMirrored(x+232,y+22,50,50,cgs.clientinfo[clientNum].tierConfig[cgs.clientinfo[clientNum].tierCurrent].icon);
@@ -2413,6 +2538,76 @@ void CG_DrawTimedMenus() {
 CG_Draw2D
 =================
 */
+/*
+=================
+CG_RushDrawDebug
+
+cg_rushDebug 1: the own Combate Rush move as a frame bar on a fixed 700 ms
+scale (startup green, active red, recovery blue, white cursor = now), the
+stun left when reeling, the smash charge, and the combo counters.
+=================
+*/
+void CG_RushDrawDebug( void ) {
+	playerState_t	*ps;
+	bgRushMove_t	*m;
+	vec4_t			back, start, active, recovery, cursor, stun;
+	float			x, y, w, h, scale;
+	int				state, move, time, len;
+
+	if ( !cg_rushDebug.integer || !cg.snap ) {
+		return;
+	}
+	ps = &cg.snap->ps;
+	state = ps->stats[stRushState];
+	move = ps->stats[stRushMove];
+	m = ( move > 0 && move <= bg_rush.numMoves ) ? &bg_rush.moves[move] : NULL;
+	time = ps->timers[tmRushTime];
+
+	back[0] = 0.0f; back[1] = 0.0f; back[2] = 0.0f; back[3] = 0.55f;
+	start[0] = 0.24f; start[1] = 0.61f; start[2] = 0.34f; start[3] = 0.95f;
+	active[0] = 0.82f; active[1] = 0.27f; active[2] = 0.24f; active[3] = 0.95f;
+	recovery[0] = 0.23f; recovery[1] = 0.44f; recovery[2] = 0.81f; recovery[3] = 0.95f;
+	cursor[0] = 1.0f; cursor[1] = 1.0f; cursor[2] = 1.0f; cursor[3] = 1.0f;
+	stun[0] = 0.95f; stun[1] = 0.75f; stun[2] = 0.2f; stun[3] = 0.95f;
+
+	x = 16;
+	y = 300;
+	w = 280;
+	h = 10;
+	scale = w / 700.0f;
+
+	CG_FillRect( x - 4, y - 40, w + 8, h + 66, back );
+	CG_DrawSmallString( x, y - 36, va( "RUSH %s  %s", BG_RushStateName( state ), m ? m->name : "-" ), 1.0f );
+	CG_DrawSmallString( x, y - 20, va( "chain %i  hits %i  taken %i  dist %i",
+		ps->stats[stRushChain], ps->stats[stRushHits], ps->stats[stRushCombo],
+		( ps->lockedTarget > 0 && cg_entities[ps->lockedTarget - 1].currentValid ) ?
+			(int)Distance( ps->origin, cg_entities[ps->lockedTarget - 1].lerpOrigin ) : -1 ), 1.0f );
+
+	if ( m && state >= RS_STARTUP && state <= RS_RECOVERY ) {
+		len = m->startup;
+		CG_FillRect( x, y, len * scale, h, start );
+		CG_FillRect( x + len * scale, y, m->active * scale, h, active );
+		len += m->active;
+		CG_FillRect( x + len * scale, y, m->recovery * scale, h, recovery );
+		if ( time > 700 ) {
+			time = 700;
+		}
+		CG_FillRect( x + time * scale - 1, y - 2, 2, h + 4, cursor );
+	}
+	else if ( state == RS_CHARGE ) {
+		len = time > bg_rush.smashMax ? bg_rush.smashMax : time;
+		CG_FillRect( x, y, len * w / bg_rush.smashMax, h, stun );
+		CG_FillRect( x + bg_rush.smashLevel2 * w / bg_rush.smashMax - 1, y - 2, 2, h + 4, cursor );
+		CG_FillRect( x + bg_rush.smashLevel3 * w / bg_rush.smashMax - 1, y - 2, 2, h + 4, cursor );
+	}
+	else if ( state >= RS_HITSTUN || state == RS_CLASH ) {
+		len = ps->timers[tmRushStun] > 700 ? 700 : ps->timers[tmRushStun];
+		CG_FillRect( x, y, len * scale, h, stun );
+	}
+	CG_DrawSmallString( x, y + h + 4, va( "chases %i  duel %i  guard %i ms", ps->stats[stRushCount] & 15,
+		( ps->stats[stRushCount] >> 4 ) & 15, ps->timers[tmRushGuard] ), 1.0f );
+}
+
 static void CG_Draw2D( void ) {
 	// if we are taking a levelshot for the menu, don't draw anything
 	if ( cg.levelShot ) {
@@ -2568,6 +2763,9 @@ void CG_DrawActive( stereoFrame_t stereoView ) {
 
 	// dynamic combat camera debug overlay (cg_lockCamDebug 1), no-op otherwise
 	CG_LockCam_DrawDebug();
+
+	// Combate Rush frame bar (cg_rushDebug 1), no-op otherwise
+	CG_RushDrawDebug();
 
 	// ADDING FOR ZEQ2
 	// HACK: We don't support deferring, so until it can REALLY be removed,

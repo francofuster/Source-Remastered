@@ -165,6 +165,9 @@ typedef struct {
 	// needed to obtain tag positions after player entity has been processed.
 	// For linking beam attacks, particle systems, etc.
 	refExtEntity_t		legsRef, torsoRef, headRef;
+
+	// Combate Rush: animation frozen until this time (impact pause)
+	int				hitstopEnd;
 } playerEntity_t;
 
 //=================================================
@@ -799,6 +802,9 @@ typedef struct {
 
 	// END ADDING
 
+	// Combate Rush: short FOV punch on heavy impacts involving the player
+	int			rushFovKickTime;
+	float		rushFovKick;
 } cg_t;
 
 
@@ -910,6 +916,17 @@ typedef struct {
 	sfxHandle_t	powerStunSound1;
 	sfxHandle_t	powerStunSound2;
 	sfxHandle_t	powerMissSound;
+	// Combate Rush
+	sfxHandle_t	rushSwing[5];
+	sfxHandle_t	rushWhiff[4];
+	sfxHandle_t	rushHit[RSND_COUNT];
+	sfxHandle_t	rushBlock[2];
+	sfxHandle_t	rushGuardBreak;
+	sfxHandle_t	rushStun;
+	sfxHandle_t	rushCharge;
+	sfxHandle_t	rushParry;
+	sfxHandle_t	rushClash;
+	sfxHandle_t	rushRevenge;
 	sfxHandle_t	airBrake1;
 	sfxHandle_t	airBrake2;
 	sfxHandle_t hover;
@@ -1196,6 +1213,7 @@ extern  vmCvar_t		cg_particlesMaximum;
 // LOCK CAMERA (dynamic combat camera, see cg_lockcam.c)
 extern	vmCvar_t		cg_lockCam;
 extern	vmCvar_t		cg_lockCamDebug;
+extern	vmCvar_t		cg_rushDebug;
 extern	vmCvar_t		cg_lockCamRange;
 extern	vmCvar_t		cg_lockCamRangeMelee;
 extern	vmCvar_t		cg_lockCamFrameX;
@@ -1278,6 +1296,8 @@ void CG_CalcEntityLerpPositions( centity_t *cent );
 qboolean CG_OffsetLockedCombatView( void );
 void CG_LockCam_Transition( qboolean lockCamDrove );
 void CG_LockCam_DrawDebug( void );
+void CG_RushDrawDebug( void );
+void CG_RushHitstop( int clientNum, int msec );
 
 #if EARTHQUAKE_SYSTEM	// JUHOX: prototypes
 void CG_AddEarthquake(

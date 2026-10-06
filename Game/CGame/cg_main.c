@@ -198,6 +198,7 @@ vmCvar_t	cg_particlesMaximum;
 // LOCK CAMERA (dynamic combat camera, see cg_lockcam.c)
 vmCvar_t	cg_lockCam;
 vmCvar_t	cg_lockCamDebug;
+vmCvar_t	cg_rushDebug;
 vmCvar_t	cg_lockCamRange;
 vmCvar_t	cg_lockCamRangeMelee;
 vmCvar_t	cg_lockCamFrameX;
@@ -352,6 +353,7 @@ static cvarTable_t cvarTable[] = {
 	// before unless a player opts in.
 	{ &cg_lockCam, "cg_lockCam", "0", CVAR_ARCHIVE},
 	{ &cg_lockCamDebug, "cg_lockCamDebug", "0", 0},
+	{ &cg_rushDebug, "cg_rushDebug", "0", 0},
 	{ &cg_lockCamRange, "cg_lockCamRange", "180", CVAR_ARCHIVE},			// orbit distance at range
 	{ &cg_lockCamRangeMelee, "cg_lockCamRangeMelee", "110", CVAR_ARCHIVE},	// orbit distance in melee
 	{ &cg_lockCamFrameX, "cg_lockCamFrameX", "0.22", CVAR_ARCHIVE},		// at range: player and target this far from center, on opposite sides (fraction of half screen)
@@ -564,6 +566,33 @@ static void CG_RegisterSounds( void ) {
 	cgs.media.powerStunSound2 = trap_S_RegisterSound( "effects/melee/powerStun2.ogg", qfalse );
 	cgs.media.powerMeleeSound = trap_S_RegisterSound( "effects/melee/powerHit1.ogg", qfalse );
 	cgs.media.powerMissSound = trap_S_RegisterSound( "effects/melee/powerMiss1.ogg", qfalse );
+	// Combate Rush
+	{
+		int i;
+		for ( i = 0 ; i < 5 ; i++ ) {
+			cgs.media.rushSwing[i] = trap_S_RegisterSound( va( "effects/melee/speedMiss%i.ogg", i + 1 ), qfalse );
+		}
+		for ( i = 0 ; i < 4 ; i++ ) {
+			cgs.media.rushWhiff[i] = trap_S_RegisterSound( va( "effects/melee/meleeMiss4%c.ogg", 'a' + i ), qfalse );
+		}
+	}
+	cgs.media.rushHit[RSND_NONE] = trap_S_RegisterSound( "effects/melee/speedHit1.ogg", qfalse );
+	cgs.media.rushHit[RSND_JAB] = trap_S_RegisterSound( "effects/melee/meleeJab.ogg", qfalse );
+	cgs.media.rushHit[RSND_JAB2] = trap_S_RegisterSound( "effects/melee/meleeJab2.ogg", qfalse );
+	cgs.media.rushHit[RSND_KICK] = trap_S_RegisterSound( "effects/melee/speedHit1.ogg", qfalse );
+	cgs.media.rushHit[RSND_KICK2] = trap_S_RegisterSound( "effects/melee/speedHit2.ogg", qfalse );
+	cgs.media.rushHit[RSND_HEAVY] = trap_S_RegisterSound( "effects/melee/powerHit1.ogg", qfalse );
+	cgs.media.rushHit[RSND_POWER2] = trap_S_RegisterSound( "effects/melee/powerHit2.ogg", qfalse );
+	cgs.media.rushHit[RSND_POWER5] = trap_S_RegisterSound( "effects/melee/powerHit5.ogg", qfalse );
+	cgs.media.rushHit[RSND_POWER6] = trap_S_RegisterSound( "effects/melee/powerHit6.ogg", qfalse );
+	cgs.media.rushBlock[0] = trap_S_RegisterSound( "effects/melee/speedBlock1.ogg", qfalse );
+	cgs.media.rushBlock[1] = trap_S_RegisterSound( "effects/melee/block.ogg", qfalse );
+	cgs.media.rushGuardBreak = trap_S_RegisterSound( "effects/melee/meleeBreaker.ogg", qfalse );
+	cgs.media.rushStun = trap_S_RegisterSound( "effects/melee/stun2.ogg", qfalse );
+	cgs.media.rushCharge = trap_S_RegisterSound( "effects/melee/powerStun2.ogg", qfalse );
+	cgs.media.rushParry = trap_S_RegisterSound( "effects/melee/stunBlock.ogg", qfalse );
+	cgs.media.rushClash = trap_S_RegisterSound( "effects/melee/meleeHitClash.ogg", qfalse );
+	cgs.media.rushRevenge = trap_S_RegisterSound( "effects/melee/powerStun1.ogg", qfalse );
 	cgs.media.lockonStart = trap_S_RegisterSound( "effects/powerSense.ogg", qfalse );
 	cgs.media.nullSound = trap_S_RegisterSound( "effects/null.ogg", qfalse );
 	cgs.media.airBrake1 = trap_S_RegisterSound( "effects/airBrake1.ogg", qfalse );
@@ -1565,6 +1594,9 @@ void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum ) {
 	CG_RegisterCvars();
 
 	CG_InitConsoleCommands();
+
+	// Combate Rush move table: the derived strike animations read its timings
+	BG_RushLoadConfig( "players/rushDefault.cfg" );
 
 	cg.weaponSelect = 1;
 

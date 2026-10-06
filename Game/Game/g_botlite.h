@@ -233,7 +233,58 @@ typedef struct {
 	/* T0.2: el boost es lo unico que suma potencia en un forcejeo de haces, y
 	 * normalmente se descarta al atacar. Esta excepcion lo deja pasar. */
 	qboolean allowBoostWithAttack;
+	/* Combate Rush: la revancha es guardia + ataque a la vez. */
+	qboolean allowBlockWithAttack;
 } botlite_action_t;
+
+/* Combate Rush (g_botlite_rush.c): memoria de la tactica del sistema nuevo. */
+typedef struct {
+	int threatKey;			/* golpe del rival al que ya se le eligio respuesta */
+	int threatResponse;		/* BOTLITE_RUSH_ANSWER_* */
+	int finisherStep;		/* paso de la cadena en el que remata, 0 = cadena completa */
+	int finisherDir;
+	int smashUntil;			/* soltar el smash en este momento */
+	int smashDir;
+	int nextOffenseTime;
+	int nextRushInTime;
+	int clashAnswerTime;
+	int clashAnswer;
+	qboolean revengeRolled;
+	int chaseKey;			/* lanzamiento del rival que ya se decidio perseguir o no */
+	qboolean chaseWanted;
+	int chaseDir;
+	int assaultStage;
+	int assaultTime;
+	int chargeKey;			/* carga de smash del rival ya evaluada */
+	int chargeAnswer;		/* 0 nada, 1 alejarse, 2 guardia */
+	int chargeSide;
+	int crashKey;			/* choque contra pared del rival ya evaluado */
+	qboolean crashFinisher;	/* rematar con un poder mientras esta en el suelo */
+	int crashFinisherStage;	/* 0 sin empezar, 1 arma elegida, 2 ya cargando o disparando */
+	int crashTime;			/* cuando se detecto el choque */
+} botlite_rush_state_t;
+
+/* Combate Rush: tabla por nivel, cargada de botsys/skills/*.cfg (claves rush_*).
+ * Los porcentajes se guardan como fraccion 0..1. */
+typedef struct {
+	float guard;			/* rush_guard_pct: guardia ante un golpe entrante */
+	float parry;			/* rush_parry_pct: parada perfecta */
+	float sway;				/* rush_sway_pct: esquiva emparejada (CTRL + direccion) */
+	float moveDodge;		/* rush_move_dodge_pct: alejarse con boost antes del golpe */
+	float vanish;			/* rush_vanish_pct: zanzoken a la espalda */
+	float counter;			/* rush_counter_pct: contraataque */
+	float revenge;			/* rush_revenge_pct: revancha, una tirada por combo */
+	float chargeDodge;		/* rush_charge_dodge_pct: alejarse de un smash cargando */
+	float chase;			/* rush_chase_pct: perseguir al rival lanzado */
+	float finisher;			/* rush_finisher_pct: rematar la cadena */
+	float smashOnGuard;		/* rush_smash_on_guard_pct: smash nivel 3 contra guardia */
+	float assault;			/* rush_assault_pct: ataque desvanecido contra guardia */
+	float rushIn;			/* rush_rushin_pct: embestida, tirada por segundo */
+	float crashFinisherChance; /* rush_crash_finisher_pct: poder contra el rival estrellado */
+	int clashDelay;			/* rush_clash_reaction_ms */
+	int offenseGapMin;		/* rush_offense_gap_min_ms */
+	int offenseGapMax;		/* rush_offense_gap_max_ms */
+} botlite_rush_skill_t;
 
 typedef struct {
 	botlite_mode_t mode;
@@ -484,6 +535,7 @@ typedef struct {
 	botlite_melee_state_t melee;
 	botlite_ranged_state_t ranged;
 	botlite_engage_state_t engage;
+	botlite_rush_state_t rush;
 	botlite_recovery_state_t recovery;
 	botlite_action_t action;
 } botlite_info_t;
@@ -556,6 +608,13 @@ void BotLite_EA_MoveUp( gentity_t *bot, int value );
 void BotLite_EA_Button( gentity_t *bot, int buttonMask );
 void BotLite_EA_SetWeapon( gentity_t *bot, int weapon );
 void BotLite_EA_AllowBoostWithAttack( gentity_t *bot );
+void BotLite_EA_AllowBlockWithAttack( gentity_t *bot );
+qboolean BotLite_RunRushCombat( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot );
+qboolean BotLite_RunRushReactions( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot );
+void BotLite_RushResetSkillDefaults( void );
+qboolean BotLite_RushApplySkillKey( int skill, const char *key, const char *value );
+const botlite_rush_skill_t *BotLite_RushSkill( int skill );
+qboolean BotLite_RunCrashFinisher( gentity_t *bot, int clientNum, gentity_t *target );
 
 /* Recursos (T0.3) */
 qboolean BotLite_RealStaminaEnabled( void );

@@ -73,6 +73,47 @@ sfxHandle_t	CG_CustomSound( int clientNum, const char *soundName ) {
 CLIENT INFO
 =============================================================================*/
 
+/*
+======================
+CG_RushDeriveAnimations
+
+Combate Rush: the speed melee loops (attack, hit, block, dodge) are six poses
+of 4 frames each: 3 frames holding the pose and 1 in-between. Every pose
+becomes its own short animation that holds it, and the model blends into it
+in initialLerp ms. Built in code so the animation.cfg files stay as they are.
+======================
+*/
+static void CG_RushDeriveAnimation( animation_t *dst, const animation_t *src, int pose, int initialLerp ) {
+	int block;
+	block = src->numFrames / 6;
+	if ( block < 1 ) {
+		block = 1;
+	}
+	*dst = *src;
+	dst->firstFrame = src->firstFrame + ( pose - 1 ) * block;
+	dst->numFrames = block > 1 ? block - 1 : 1;
+	dst->loopFrames = 0;
+	dst->frameLerp = 60;
+	dst->initialLerp = initialLerp;
+	dst->reversed = qfalse;
+	dst->flipflop = qfalse;
+	dst->continuous = qfalse;
+}
+
+static void CG_RushDeriveAnimations( animation_t *animations ) {
+	static const int sources[4] = { ANIM_SPEED_MELEE_ATTACK, ANIM_SPEED_MELEE_HIT, ANIM_SPEED_MELEE_BLOCK, ANIM_SPEED_MELEE_DODGE };
+	int type, pose, variant, lerp;
+	for ( type = 0 ; type < 4 ; type++ ) {
+		for ( pose = 1 ; pose <= 6 ; pose++ ) {
+			// strikes land when the hit is checked, reactions snap
+			lerp = ( type == RUSH_ANIM_STRIKE ) ? BG_RushStrikeLerp( pose ) : 40;
+			for ( variant = 0 ; variant < 2 ; variant++ ) {
+				CG_RushDeriveAnimation( &animations[BG_RushAnim( type, pose, variant )], &animations[sources[type]], pose, lerp );
+			}
+		}
+	}
+}
+
 /*======================
 CG_ParseAnimationFile
 
@@ -291,6 +332,7 @@ qboolean CG_ParseAnimationFile( const char *filename, clientInfo_t *ci ) {
 	animations[ANIM_BACKWALK].reversed = qtrue;
 	memcpy(&animations[ANIM_BACKRUN], &animations[ANIM_RUN], sizeof(animation_t));
 	animations[ANIM_BACKRUN].reversed = qtrue;
+	CG_RushDeriveAnimations( animations );
 	return qtrue;
 }
 
@@ -932,6 +974,36 @@ static void CG_ClearLerpFrame( clientInfo_t *ci, lerpFrame_t *lf, int animationN
 
 /*
 ===============
+CG_RushHitstop
+
+Combate Rush impact pause: freezes the animation of a player for msec and
+shifts its frame times by the same amount, so it resumes where it stopped.
+The local player is drawn from the predicted entity.
+===============
+*/
+static void CG_RushShiftLerp( lerpFrame_t *lf, int msec ) {
+	lf->frameTime += msec;
+	lf->oldFrameTime += msec;
+	lf->animationTime += msec;
+}
+
+void CG_RushHitstop( int clientNum, int msec ) {
+	centity_t *cent;
+	if ( clientNum < 0 || clientNum >= MAX_CLIENTS || msec <= 0 ) {
+		return;
+	}
+	cent = ( cg.snap && clientNum == cg.snap->ps.clientNum ) ? &cg.predictedPlayerEntity : &cg_entities[clientNum];
+	if ( cg.time < cent->pe.hitstopEnd ) {
+		return;
+	}
+	CG_RushShiftLerp( &cent->pe.legs, msec );
+	CG_RushShiftLerp( &cent->pe.torso, msec );
+	CG_RushShiftLerp( &cent->pe.head, msec );
+	cent->pe.hitstopEnd = cg.time + msec;
+}
+
+/*
+===============
 CG_PlayerAnimation
 ===============
 */
@@ -948,6 +1020,20 @@ static void CG_PlayerAnimation( centity_t *cent,
 
 	if ( cg_noPlayerAnims.integer ) {
 		*legsOld = *legs = *torsoOld = *torso = 0;
+		return;
+	}
+
+	// Combate Rush impact pause: keep the frames where they are
+	if ( cg.time < cent->pe.hitstopEnd ) {
+		*legsOld = cent->pe.legs.oldFrame;
+		*legs = cent->pe.legs.frame;
+		*legsBackLerp = cent->pe.legs.backlerp;
+		*torsoOld = cent->pe.torso.oldFrame;
+		*torso = cent->pe.torso.frame;
+		*torsoBackLerp = cent->pe.torso.backlerp;
+		*headOld = cent->pe.head.oldFrame;
+		*head = cent->pe.head.frame;
+		*headBackLerp = cent->pe.head.backlerp;
 		return;
 	}
 
@@ -1137,6 +1223,8 @@ static void CG_PlayerAnimation( centity_t *cent,
 			CG_RunLerpFrame( ci, &cent->pe.head, ANIM_KNOCKBACK_RECOVER_1, speedScale );
 		} else if ( ANIM_KNOCKBACK_RECOVER_2 == torsoAnimNum ) {
 			CG_RunLerpFrame( ci, &cent->pe.head, ANIM_KNOCKBACK_RECOVER_2, speedScale );
+		} else if ( BG_RushIsRushAnim( torsoAnimNum ) ) {
+			CG_RunLerpFrame( ci, &cent->pe.head, torsoAnimNum, speedScale );
 		} else if ( ANIM_KI_ATTACK1_PREPARE <= torsoAnimNum && ANIM_KI_ATTACK6_ALT_FIRE >= torsoAnimNum ) {
 			CG_RunLerpFrame( ci, &cent->pe.head, torsoAnimNum - ANIM_KI_ATTACK1_PREPARE + ANIM_KI_ATTACK1_PREPARE, speedScale );
 		} else {

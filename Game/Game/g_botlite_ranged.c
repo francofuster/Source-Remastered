@@ -277,6 +277,125 @@ qboolean BotLite_RunRangedPressure( gentity_t *bot, int clientNum, gentity_t *ta
 }
 
 /*
+ * Combate Rush -- remate al rival estrellado (niveles 2 y 3).
+ *
+ * Cuando el rival se estrella contra una pared el bot se aleja a esperarlo.
+ * Con probabilidad (rush_crash_finisher_pct, x1.5 si al rival le queda menos
+ * del 35 % de vida) en lugar de solo esperar lo remata con su tecnica de ki
+ * mas potente: se aleja un poco (600 ms o 350 unidades) y dispara mientras el
+ * rival sigue en el suelo. Una carga ya empezada se termina aunque el rival
+ * se levante; despues del disparo vuelve a la espera normal.
+ */
+static int BotLite_PickFinisherWeapon( gentity_t *bot, int clientNum, int *outMode ) {
+	int				i, mode, score, best, bestScore;
+	g_userWeapon_t	*weaponData;
+
+	best = 0;
+	bestScore = 0;
+	*outMode = 1;
+	for ( i = 1; i <= MAX_PLAYERWEAPONS; i++ ) {
+		if ( !( bot->client->ps.stats[stSkills] & ( 1 << i ) ) ) {
+			continue;
+		}
+		if ( BotLite_Skill2BotDisallowsWeapon( bot, i ) ) {
+			continue;
+		}
+		for ( mode = 1; mode <= 2; mode++ ) {
+			if ( mode == 2 && !BotLite_Skill2WeaponHasAlt( clientNum, i ) ) {
+				continue;
+			}
+			weaponData = ( mode == 1 ) ? G_FindUserWeaponData( clientNum, i ) : G_FindUserAltWeaponData( clientNum, i );
+			if ( !weaponData ) {
+				continue;
+			}
+			if ( weaponData->costs_health > 0 && BotLite_HealthPercent( clientNum ) < 40 ) {
+				continue;
+			}
+			score = weaponData->damage_damage + weaponData->damage_multiplier;
+			if ( score > bestScore ) {
+				bestScore = score;
+				best = i;
+				*outMode = mode;
+			}
+		}
+	}
+	return best;
+}
+
+qboolean BotLite_RunCrashFinisher( gentity_t *bot, int clientNum, gentity_t *target ) {
+	botlite_info_t				*info;
+	const botlite_rush_skill_t	*sk;
+	playerState_t				*tps;
+	float						chance;
+	int							key, weapon, mode, state;
+	qboolean					down, busy;
+
+	if ( !g_rushCombat.integer || !bot || !bot->client || !target || !target->client ) {
+		return qfalse;
+	}
+	info = &g_botlite[clientNum];
+	if ( info->skill < 2 ) {
+		return qfalse;
+	}
+	sk = BotLite_RushSkill( info->skill );
+	tps = &target->client->ps;
+	down = BotLite_TargetNeedsRecoveryWait( target );
+
+	/* una tirada por choque */
+	key = target->client->botCrashEventCounter + 1;
+	if ( down && info->rush.crashKey != key ) {
+		info->rush.crashKey = key;
+		info->rush.crashTime = level.time;
+		chance = sk->crashFinisherChance;
+		if ( tps->powerLevel[plMaximum] > 0 && tps->powerLevel[plHealth] < tps->powerLevel[plMaximum] * 0.35f ) {
+			chance *= 1.5f;
+		}
+		info->rush.crashFinisher = ( random() < chance ) ? qtrue : qfalse;
+		info->rush.crashFinisherStage = 0;
+		if ( info->rush.crashFinisher ) {
+			BotLite_DebugLog( bot, va( "Crash finisher planned target=%d", target->s.number ) );
+		}
+	}
+	if ( !info->rush.crashFinisher ) {
+		return qfalse;
+	}
+
+	state = bot->client->ps.weaponstate;
+	busy = ( state == WEAPON_CHARGING || state == WEAPON_ALTCHARGING || state == WEAPON_FIRING
+		|| state == WEAPON_ALTFIRING || state == WEAPON_GUIDING || state == WEAPON_ALTGUIDING ) ? qtrue : qfalse;
+	if ( busy ) {
+		info->rush.crashFinisherStage = 2;
+	}
+	else if ( info->rush.crashFinisherStage == 2 || ( !down && info->rush.crashFinisherStage == 0 ) ) {
+		/* ya disparo, o el rival se levanto antes de empezar */
+		info->rush.crashFinisher = qfalse;
+		return qfalse;
+	}
+
+	if ( info->rush.crashFinisherStage == 0 ) {
+		/* primero alejarse un poco: la espera normal se encarga */
+		if ( level.time - info->rush.crashTime < 600
+			&& Distance( bot->client->ps.origin, tps->origin ) < 350.0f ) {
+			return qfalse;
+		}
+		weapon = BotLite_PickFinisherWeapon( bot, clientNum, &mode );
+		if ( weapon <= 0 || !BotLite_StaminaAllowsSpend( clientNum, BOTLITE_SPEND_NORMAL ) ) {
+			info->rush.crashFinisher = qfalse;
+			return qfalse;
+		}
+		info->ranged.weapon = weapon;
+		info->ranged.attackMode = mode;
+		info->ranged.weaponSwitchTime = level.time + 5000;
+		info->ranged.holdUntil = 0;
+		info->melee.nextActionTime = 0;
+		info->rush.crashFinisherStage = 1;
+		BotLite_DebugLog( bot, va( "Crash finisher fires weapon=%d mode=%d", weapon, mode ) );
+	}
+	BotLite_RunRangedPressure( bot, clientNum, target, NULL );
+	return qtrue;
+}
+
+/*
  * Fase 7 -- contraataque durante la huida.
  *
  * Hasta ahora, huir para recargar energia era solo correr: si el rival seguia

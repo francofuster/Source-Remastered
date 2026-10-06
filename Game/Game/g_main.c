@@ -89,6 +89,9 @@ vmCvar_t	g_powerlevel;
 vmCvar_t	g_powerlevelMaximum;
 vmCvar_t	g_breakLimitRate;
 vmCvar_t	g_botStamina;
+vmCvar_t	g_rushCombat;
+vmCvar_t	g_rushDebug;
+vmCvar_t	g_healthBars;
 vmCvar_t	g_allowTiers;
 vmCvar_t	g_allowScoreboard;
 vmCvar_t	g_allowSoar;
@@ -194,6 +197,11 @@ static cvarTable_t		gameCvarTable[] = {
 	{ &g_breakLimitRate, "g_breakLimitRate", "1.0", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue  },
 	{ &g_botlite_targetBots, "g_botlite_targetBots", "1", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
 	{ &g_botStamina, "g_botStamina", "0", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
+	// Combate Rush: 1 = new strike-by-strike melee (bg_rush.c), 0 = old PM_Melee
+	{ &g_rushCombat, "g_rushCombat", "1", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
+	{ &g_rushDebug, "g_rushDebug", "0", 0, 0, qfalse },
+	// health bars (1 to 3): 3 = green, magenta and red bars and fights last 3 times longer, 1 = classic
+	{ &g_healthBars, "g_healthBars", "3", CVAR_ARCHIVE, 0, qtrue },
 	// END ADDING
 
 };
@@ -422,6 +430,7 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 
 	G_InitMemory();
 	BotLite_ResetAll();
+	BG_RushLoadConfig( "players/rushDefault.cfg" );
 
 	// set some level globals
 	memset( &level, 0, sizeof( level ) );

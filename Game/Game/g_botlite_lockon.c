@@ -91,6 +91,10 @@ void BotLite_SetLockOn( gentity_t *bot, gentity_t *target ) {
 	if ( !bot || !bot->client || !BotLite_TargetIsValid( bot, target ) ) {
 		return;
 	}
+	/* Lock-on por parejas: no fijar a quien ya esta en un lock-on con otro. */
+	if ( bot->client->ps.lockedTarget != target->s.number + 1 && !G_LockonAllowed( bot, target ) ) {
+		return;
+	}
 	/* Se llama cada frame: loguear solo el cambio real de objetivo, si no el
 		 * log queda inservible (era el 96% de las lineas). */
 	if ( bot->client->ps.lockedTarget != target->s.number + 1 ) {

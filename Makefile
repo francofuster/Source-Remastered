@@ -1759,6 +1759,7 @@ CGOBJ_ = \
   $(B)/Base/CGame/cg_main.o \
   $(B)/Base/CGame/bg_misc.o \
   $(B)/Base/CGame/bg_pmove.o \
+  $(B)/Base/CGame/bg_rush.o \
   $(B)/Base/CGame/bg_slidemove.o \
   $(B)/Base/CGame/bg_lib.o \
   $(B)/Base/CGame/cg_consolecmds.o \
@@ -1815,6 +1816,7 @@ GOBJ_ = \
   $(B)/Base/Game/g_main.o \
   $(B)/Base/Game/bg_misc.o \
   $(B)/Base/Game/bg_pmove.o \
+  $(B)/Base/Game/bg_rush.o \
   $(B)/Base/Game/bg_slidemove.o \
   $(B)/Base/Game/bg_lib.o \
   $(B)/Base/Game/g_active.o \
@@ -1858,6 +1860,7 @@ GOBJ_ = \
   $(B)/Base/Game/g_botlite_dodge.o \
   $(B)/Base/Game/g_botlite_engage.o \
   $(B)/Base/Game/g_botlite_zanzoken.o \
+  $(B)/Base/Game/g_botlite_rush.o \
   $(B)/Base/Game/g_weapPhysParser.o \
   $(B)/Base/Game/g_weapPhysScanner.o \
   $(B)/Base/Game/g_weapPhysAttributes.o \

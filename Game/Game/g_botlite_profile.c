@@ -471,6 +471,7 @@ static void BotLite_ResetSkillDefaults( void ) {
 	botlite_policies[1] = botlite_skill1_policy_default;
 	botlite_policies[2] = botlite_skill2_policy_default;
 	botlite_policies[3] = botlite_skill3_policy_default;
+	BotLite_RushResetSkillDefaults();
 }
 
 static void BotLite_ResetBotsysTables( void ) {
@@ -583,6 +584,11 @@ static void BotLite_ApplySkillKeyValue( int skill, const char *key, const char *
 	int i;
 
 	if ( skill < 1 || skill > 3 || !key || !value ) {
+		return;
+	}
+
+	/* Combate Rush: claves rush_* (g_botlite_rush.c) */
+	if ( BotLite_RushApplySkillKey( skill, key, value ) ) {
 		return;
 	}
 

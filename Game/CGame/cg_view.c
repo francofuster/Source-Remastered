@@ -1166,6 +1166,11 @@ static int CG_CalcFov( void ) {
 		}
 	}
 
+	// Combate Rush: short FOV punch on heavy impacts, easing out in 250 ms
+	if ( cg.rushFovKickTime && cg.time - cg.rushFovKickTime < 250 && cg.time >= cg.rushFovKickTime ) {
+		fov_x += cg.rushFovKick * ( 1.0f - ( cg.time - cg.rushFovKickTime ) / 250.0f );
+	}
+
 	fov_x = CG_WidescreenFovX( fov_x );
 
 	x = cg.refdef.width / tan( fov_x / 360 * M_PI );

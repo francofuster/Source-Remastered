@@ -10,6 +10,8 @@ if "%1"=="TA" goto TA
 @if errorlevel 1 goto quit
 %cc% ../../Game/bg_pmove.c
 @if errorlevel 1 goto quit
+%cc% ../../Game/bg_rush.c
+@if errorlevel 1 goto quit
 %cc% ../../Game/bg_slidemove.c
 @if errorlevel 1 goto quit
 %cc% ../../Game/bg_lib.c

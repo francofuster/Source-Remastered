@@ -1108,6 +1108,10 @@ typedef struct playerState_s {
 /* Puesto por el servidor cuando g_botStamina esta activo. bg_pmove.c se compila
  * tambien en el cgame, asi que no puede leer un cvar g_*: el puente es este bit. */
 #define PSO_BOT_STAMINA	0x00000002
+/* Combate Rush: puestos por el servidor segun g_rushCombat / g_rushDebug, por el
+ * mismo motivo que PSO_BOT_STAMINA (bg_pmove.c no puede leer cvars g_*). */
+#define PSO_RUSH_COMBAT	0x00000004
+#define PSO_RUSH_DEBUG	0x00000008
 
 typedef struct usercmd_s {
 	int				serverTime;

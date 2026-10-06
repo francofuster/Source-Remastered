@@ -575,6 +575,12 @@ qboolean BotLite_RunRecoveryWait( gentity_t *bot, int clientNum, gentity_t *targ
 
 	targetNeedsRecovery = ( target && target->client ) ? BotLite_TargetNeedsRecoveryWait( target ) : qfalse;
 
+	/* Combate Rush: en niveles 2-3, a veces remata al rival en el suelo con un
+	 * poder en vez de solo esperar (decide y espera a alejarse por si mismo). */
+	if ( target && BotLite_RunCrashFinisher( bot, clientNum, target ) ) {
+		return qtrue;
+	}
+
 	if ( level.time < info->recovery.retreatUntil ) {
 		VectorClear( angles );
 		angles[YAW] = info->recovery.retreatYaw;

@@ -250,7 +250,17 @@ typedef enum {
 	stTransformDuration,
 	stTransformFatigue,
 	stTransformHealth,
-	stTransformEffectMaximum
+	stTransformEffectMaximum,
+	// Combate Rush (bg_rush.c)
+	stRushMove,			// move index running (attacker side), 0 = none
+	stRushState,		// rushState_t
+	stRushChain,		// chain step of the running chain, or smash level
+	stRushFlags,		// RF_* bits
+	stRushCombo,		// hits received in the current combo (defender side)
+	stRushHits,			// hits dealt in the current combo (attacker side)
+	stRushStep,			// last chain step used in the current combo (attacker side)
+	stRushCount,		// chases used (low 4 bits) and vanish duel exchanges (next 4 bits)
+	stHealthBars		// health bars of the match (g_healthBars): damage is divided by it
 }statIndex_t;
 typedef enum {
 	stZanzokenCost,
@@ -317,7 +327,12 @@ typedef enum{
 	tmBlind,
 	tmSoar,
 	tmFall,
-	tmSafe
+	tmSafe,
+	// Combate Rush (bg_rush.c)
+	tmRushTime,			// time spent in the current move or charge
+	tmRushStun,			// remaining hitstun / blockstun / stun / clash
+	tmRushGuard,		// time since the last defensive press (parry, sway, vanish), 0 none
+	tmRushExposed		// the player cannot turn to face the lock-on target
 }timers_t;
 typedef enum {
 	PW_NONE,
@@ -434,6 +449,48 @@ typedef enum {
 	stMeleeChargingPower,
 	stMeleeChargingStun
 } melee_t;
+
+// Combate Rush states (stats[stRushState])
+typedef enum {
+	RS_NONE,
+	RS_STARTUP,			// attacker: winding up, moving to the move range
+	RS_ACTIVE,			// attacker: the hit has been resolved
+	RS_RECOVERY,		// attacker: can chain if the hit connected
+	RS_CHARGE,			// attacker: holding the smash button
+	RS_RUSHIN,			// attacker: dashing in with boost
+	RS_CHASE,			// attacker: teleported in front of a launched defender
+	RS_CLASH,			// both: two strikes met, picking an answer
+	RS_HITSTUN,			// defender: took a hit (every state from here is a defender state)
+	RS_BLOCKSTUN,		// defender: guarded a hit
+	RS_STUNNED,			// defender: crumple, broken guard, or a parried attacker
+	RS_DODGE			// defender: swaying out of a strike
+} rushState_t;
+
+// Combate Rush flags (stats[stRushFlags])
+#define RF_ATK_HELD		0x0001
+#define RF_ALT_HELD		0x0002
+#define RF_VARIANT		0x0004	// flips on every new animation so a repeat restarts it
+#define RF_CONNECTED	0x0008	// the running move hit or was guarded
+#define RF_RESOLVED		0x0010	// the running move already checked for contact
+#define RF_BUF_ATK		0x0020	// attack pressed early, run it when possible
+#define RF_BUF_ALT		0x0040	// finisher pressed early
+#define RF_HEAVY_USED	0x0080	// heavy finish already used in this combo
+#define RF_SIDE_CHAIN	0x0100	// running the side (kick) chain
+#define RF_FINISHER		0x0200	// running move ends the chain
+#define RF_EVENT		0x0400	// unused
+#define RF_BLK_HELD		0x0800
+#define RF_TELE_HELD	0x1000
+#define RF_COUNTER		0x2000	// the running strike started with forward held: super counter
+#define RF_CHASED		0x4000	// the running move comes from a chase: may hit a launched defender
+// server side only from here (stats travel as 16 bits)
+#define RF_INT_PARRY	0x00010000	// last defensive press: guard alone
+#define RF_INT_SWAY		0x00020000	// last defensive press: guard plus a direction
+#define RF_INT_VANISH	0x00040000	// last defensive press: zanzoken
+#define RF_INT_ANY		( RF_INT_PARRY | RF_INT_SWAY | RF_INT_VANISH )
+#define RF_CLASH_RAPID	0x00080000	// clash answer: attack
+#define RF_CLASH_CHARGE	0x00100000	// clash answer: alt attack
+#define RF_CLASH_GUARD	0x00200000	// clash answer: guard
+#define RF_CLASH_ANY	( RF_CLASH_RAPID | RF_CLASH_CHARGE | RF_CLASH_GUARD )
 
 
 // player_state->persistant[] indexes
@@ -583,8 +640,23 @@ typedef enum {
 	EV_HOVER_LONG,
 	// ADDING FOR ZEQ2
 	EV_BEAM_FADE,
-	EV_EARTHQUAKE
+	EV_EARTHQUAKE,
 	// END ADDING
+	// Combate Rush (parm = move index)
+	EV_RUSH_SWING,
+	EV_RUSH_HIT,
+	EV_RUSH_BLOCK,
+	EV_RUSH_WHIFF,
+	EV_RUSH_LAUNCH,
+	EV_RUSH_STUN,
+	EV_RUSH_GUARDBREAK,
+	EV_RUSH_CHARGE,
+	EV_RUSH_PARRY,
+	EV_RUSH_DODGE,
+	EV_RUSH_COUNTER,
+	EV_RUSH_CLASH,
+	EV_RUSH_REVENGE,
+	EV_RUSH_VANISH
 } entity_event_t;
 typedef enum {
 	// DEATH
@@ -704,8 +776,18 @@ typedef enum {
 	MAX_ANIMATIONS,
 	ANIM_BACKWALK,
 	ANIM_BACKRUN,
+	// Combate Rush: built in code from the SPEED_MELEE_* blocks (cg_players.c),
+	// 4 types x 6 poses, twice (A/B) so the same pose can restart.
+	ANIM_RUSH_FIRST,
+	ANIM_RUSH_LAST = ANIM_RUSH_FIRST + 47,
 	MAX_TOTALANIMATIONS
 } animNumber_t;
+
+#define RUSH_ANIM_SET		24	// one copy of the 4 x 6 poses
+#define RUSH_ANIM_STRIKE	0
+#define RUSH_ANIM_HIT		1
+#define RUSH_ANIM_BLOCK		2
+#define RUSH_ANIM_DODGE		3
 
 
 typedef struct animation_s {
@@ -827,3 +909,147 @@ int		BG_IntMergeBits( const int hi, const int lo );
 
 #define MAX_BOTS			1024
 #define MAX_BOTS_TEXT		8192
+
+/*
+==============================================================================
+
+COMBATE RUSH (bg_rush.c)
+
+Strike-by-strike melee. Every move comes from a table that has built-in
+defaults and can be overridden by players/rushDefault.cfg. Runs inside
+Pmove when the server sets PSO_RUSH_COMBAT (cvar g_rushCombat).
+
+==============================================================================
+*/
+#define RUSH_MAX_MOVES		32
+#define RUSH_CHAIN_MAX		6
+#define RUSH_NAME_LEN		24
+#define RUSH_SMASH_BASE		10		// stats[stRushChain] = base + level while a smash runs
+
+typedef enum {
+	RDIR_NEUTRAL,
+	RDIR_UP,
+	RDIR_DOWN,
+	RDIR_LEFT,
+	RDIR_RIGHT,
+	RDIR_BOOST,
+	RDIR_COUNT
+} rushDir_t;
+
+typedef enum {
+	RSND_NONE,
+	RSND_JAB,
+	RSND_JAB2,
+	RSND_KICK,
+	RSND_KICK2,
+	RSND_HEAVY,
+	RSND_POWER2,
+	RSND_POWER5,
+	RSND_POWER6,
+	RSND_COUNT
+} rushSound_t;
+
+typedef struct {
+	char	name[RUSH_NAME_LEN];
+	int		strike;			// 1..6: speed melee pose S1..S6 played by the attacker
+	int		anim;			// used when strike is 0 (ANIM_POWER_MELEE_x_HIT)
+	int		react;			// 1..6: paired reaction pose (hit / block / dodge), 0 generic
+	int		startup;		// ms before the hit is checked
+	int		active;			// ms
+	int		recovery;		// ms, the chain can continue here if the hit connected
+	int		range;			// ideal distance between origins when the hit lands
+	float	damage;			// fraction of the current power level
+	int		hitstun;		// ms
+	int		blockstun;		// ms
+	int		push;			// pushback speed given to the defender on hit
+	int		launch;			// knockback direction: 0 none, 1 up, 2 down, 3 right, 4 left, 5 away
+	float	launchSpeed;	// multiplier of the knockback speed
+	int		launchTime;		// ms of knockback flight
+	int		stun;			// ms of crumple (heavy finish), 0 none
+	float	cost;			// fatigue cost, fraction of the maximum power level
+	int		sound;			// rushSound_t
+	int		guardBreak;		// breaks the guard instead of being blocked
+} bgRushMove_t;
+
+typedef struct {
+	int				numMoves;					// moves[1..numMoves], 0 is "none"
+	bgRushMove_t	moves[RUSH_MAX_MOVES];
+	int				chain[2][RUSH_CHAIN_MAX];	// 0 default (punches), 1 side (kicks)
+	int				chainLen[2];
+	int				finisher[RDIR_COUNT];
+	int				finisherRepeat;				// neutral finisher once the heavy was used
+	int				revenge;					// move used by the revenge counter
+	int				smash[RDIR_COUNT];
+	int				engageRange;				// melee buttons take over below this distance
+	int				minSpacing;					// closest the magnet pulls (player boxes touch at 30)
+	int				reachSlack;					// extra distance accepted when the hit lands
+	int				magnetSpeed;				// max speed used to reach the move range
+	float			comboStep;					// damage lost per hit already taken in the combo
+	float			comboMin;					// lowest damage scale for strikes
+	float			finisherMin;				// lowest damage scale for finishers and smashes
+	float			lifeHealth;					// share of the damage returned as health pool
+	float			lifeMax;					// share of the damage returned as maximum pool
+	float			guardChip;					// share of the damage that goes through a guard
+	float			guardCost;					// fatigue lost per guarded hit, fraction of the maximum
+	float			guardBreakAt;				// the guard breaks below this fatigue fraction
+	int				guardBreakStun;				// ms
+	int				smashLevel2;				// ms of charge for level 2
+	int				smashLevel3;				// ms of charge for level 3
+	int				smashMax;					// the smash fires by itself at this charge
+	float			smashDamage[3];				// damage multiplier per level
+	float			smashSpeed[3];				// knockback speed multiplier per level
+	float			smashTime[3];				// knockback time multiplier per level
+	int				launchMinSpeed;				// knockback speed floor
+	int				launchRecover;				// ms of flight before the defender can recover
+	float			chainEndSpeed;				// the last hit of a chain knocks away: speed multiplier
+	int				chainEndTime;				// and flight time
+	// F3 defense
+	int				parryWindow;				// guard pressed this long before the hit parries it
+	int				parryRearm;					// a new defensive press needs this gap after the last one
+	int				parryStagger;				// the parried attacker reels this long
+	int				swayWindow;					// guard plus direction this long before the hit sways
+	float			swayCost;
+	int				swayTime;					// the dodge lasts this long
+	int				swayPunish;					// extra recovery for the attacker who missed
+	int				vanishWindow;				// zanzoken this long before the hit vanishes behind
+	int				vanishWindowStep;			// each vanish exchange in a row shortens the window
+	int				vanishWindowMin;
+	float			vanishCost;
+	float			vanishCostStep;				// and costs more
+	int				vanishDistance;				// how far behind the attacker the defender appears
+	int				vanishPunish;				// extra recovery for the attacker who missed
+	float			backDamage;					// hits from behind cannot be guarded and hurt more
+	int				counterWindow;				// forward plus attack this long before the hit counters
+	float			counterDamage;
+	float			revengeCost;				// guard plus attack while reeling breaks the combo
+	// F4 offense
+	int				rushInRange;				// boost plus attack below this distance dashes in
+	int				rushInSpeed;
+	int				rushInMax;					// the dash gives up after this long
+	float			rushInCost;
+	int				assaultWindow;				// zanzoken then attack within this time
+	int				assaultRange;
+	float			assaultCost;
+	int				assaultExposed;				// the defender cannot turn for this long
+	int				chaseRange;					// zanzoken on a launched defender below this distance
+	int				chaseLead;					// appear this far ahead of its flight
+	int				chaseWindow;				// time to pick the chase strike
+	int				chaseMax;					// chases per combo
+	float			chaseCost[3];
+	// F5 clash
+	int				clashWindow;				// both hits within this time clash
+	int				clashTime;					// time to answer the clash
+	// F7 walls
+	int				wallStun;					// crash time after a rush launch hits a wall
+	int				crashRecover;				// getting up after it
+} bgRushConfig_t;
+
+extern bgRushConfig_t bg_rush;
+
+void		BG_RushDefaults( void );
+void		BG_RushLoadConfig( const char *path );
+int			BG_RushAnim( int type, int pose, int variant );
+qboolean	BG_RushIsRushAnim( int anim );
+int			BG_RushStrikeLerp( int pose );
+const char	*BG_RushStateName( int state );
+int			BG_HealthBars( const playerState_t *ps );

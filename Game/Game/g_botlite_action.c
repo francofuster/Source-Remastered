@@ -12,7 +12,7 @@ static int BotLite_ClampMove( int value ) {
 }
 
 
-static int BotLite_SanitizeButtons( int buttons, qboolean allowBoostWithAttack ) {
+static int BotLite_SanitizeButtons( int buttons, qboolean allowBoostWithAttack, qboolean allowBlockWithAttack ) {
 	if ( buttons & BUTTON_TELEPORT ) {
 		buttons &= ~( BUTTON_BOOST | BUTTON_BLOCK | BUTTON_ATTACK | BUTTON_ALT_ATTACK | BUTTON_POWERLEVEL );
 		return buttons;
@@ -22,6 +22,10 @@ static int BotLite_SanitizeButtons( int buttons, qboolean allowBoostWithAttack )
 		return buttons;
 	}
 	if ( buttons & BUTTON_BLOCK ) {
+		if ( allowBlockWithAttack ) {
+			buttons &= ~( BUTTON_BOOST | BUTTON_ALT_ATTACK );
+			return buttons;
+		}
 		buttons &= ~( BUTTON_BOOST | BUTTON_ATTACK | BUTTON_ALT_ATTACK );
 		return buttons;
 	}
@@ -35,6 +39,27 @@ static int BotLite_SanitizeButtons( int buttons, qboolean allowBoostWithAttack )
 		}
 	}
 	return buttons;
+}
+
+/*
+ * Combate Rush (g_rushCombat 1): cada golpe sale de una PULSACION de ataque,
+ * no de mantenerlo. Hasta que los bots tengan tacticas propias del sistema
+ * nuevo, el ataque mantenido cerca del rival fijado se convierte en pulsos
+ * (uno si, uno no) para que encadenen la cadena de golpes. Lejos del rival no
+ * se toca: las tecnicas de ki que se cargan necesitan el boton mantenido.
+ */
+static int botlite_rushAttackHeld[MAX_CLIENTS];
+
+static qboolean BotLite_InRushRange( gentity_t *bot ) {
+	gentity_t *target;
+	if ( bot->client->ps.lockedTarget <= 0 ) {
+		return qfalse;
+	}
+	target = &g_entities[bot->client->ps.lockedTarget - 1];
+	if ( !target->client ) {
+		return qfalse;
+	}
+	return Distance( bot->client->ps.origin, target->client->ps.origin ) <= bg_rush.engageRange + 20 ? qtrue : qfalse;
 }
 
 void BotLite_ActionReset( int clientNum, int serverTime ) {
@@ -63,7 +88,16 @@ void BotLite_ActionCommit( gentity_t *bot, int clientNum, int serverTime ) {
 	cmd->forwardmove = BotLite_ClampMove( info->action.forwardmove );
 	cmd->rightmove = BotLite_ClampMove( info->action.rightmove );
 	cmd->upmove = BotLite_ClampMove( info->action.upmove );
-	cmd->buttons = BotLite_SanitizeButtons( info->action.buttons, info->action.allowBoostWithAttack );
+	cmd->buttons = BotLite_SanitizeButtons( info->action.buttons, info->action.allowBoostWithAttack, info->action.allowBlockWithAttack );
+	if ( g_rushCombat.integer && ( cmd->buttons & BUTTON_ATTACK ) && BotLite_InRushRange( bot ) ) {
+		if ( botlite_rushAttackHeld[clientNum] ) {
+			cmd->buttons &= ~BUTTON_ATTACK;
+		}
+		botlite_rushAttackHeld[clientNum] = !botlite_rushAttackHeld[clientNum];
+	}
+	else {
+		botlite_rushAttackHeld[clientNum] = ( cmd->buttons & BUTTON_ATTACK ) ? 1 : 0;
+	}
 	if ( info->action.weaponOverride ) {
 		cmd->weapon = info->action.weapon;
 	}
@@ -115,6 +149,13 @@ void BotLite_EA_Button( gentity_t *bot, int buttonMask ) {
 
 	action = &g_botlite[bot->s.number].action;
 	action->buttons |= buttonMask;
+}
+
+void BotLite_EA_AllowBlockWithAttack( gentity_t *bot ) {
+	if ( !bot || !bot->client ) {
+		return;
+	}
+	g_botlite[bot->s.number].action.allowBlockWithAttack = qtrue;
 }
 
 void BotLite_EA_AllowBoostWithAttack( gentity_t *bot ) {
