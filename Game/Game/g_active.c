@@ -369,21 +369,26 @@ void ClientEvents( gentity_t *ent, int oldEventSequence ) {
 			break;
 		case EV_MELEE_CHECK:
 			if(ps->lockedTarget>0){
-				if(!&g_entities[ps->lockedTarget-1].client || &g_entities[ps->lockedTarget-1].client->pers.connected == CON_DISCONNECTED){
+				gclient_t *lockedClient;
+				lockedClient = g_entities[ps->lockedTarget-1].client;
+				if(!lockedClient || lockedClient->pers.connected != CON_CONNECTED){
 					ps->lockedPosition = 0;
 					ps->lockedPlayer = 0;
 					ps->lockedTarget = 0;
 					break;
 				}
-				if(ps->lockedPlayer->bitFlags & isStruggling || ps->lockedPlayer->bitFlags & isDead || ps->lockedPlayer->bitFlags & isUnconcious ||
-				   ps->lockedPlayer->bitFlags & isTransforming || ps->lockedPlayer->bitFlags & isCrashed){
-					ps->lockedPosition = 0;
-					ps->lockedPlayer = 0;
-					ps->lockedTarget = 0;
-					break;
-				}
+				// set the pointers before reading them: on the first check after
+				// a new lock-on lockedPlayer was still NULL
 				ps->lockedPosition = &g_entities[ps->lockedTarget-1].r.currentOrigin;
-				ps->lockedPlayer = &g_entities[ps->lockedTarget-1].client->ps;
+				ps->lockedPlayer = &lockedClient->ps;
+				// the lock-on holds through crashes, knock-outs and transformations:
+				// only death (or the G key) ends it; a beam struggle uses the lock for the beam
+				if(ps->lockedPlayer->bitFlags & isStruggling || ps->lockedPlayer->bitFlags & isDead){
+					ps->lockedPosition = 0;
+					ps->lockedPlayer = 0;
+					ps->lockedTarget = 0;
+					break;
+				}
 			}
 			break;
 		case EV_MELEE_SPEED:
@@ -440,6 +445,41 @@ void ClientEvents( gentity_t *ent, int oldEventSequence ) {
 
 }
 void BotTestSolid(vec3_t origin);
+
+/*
+==============
+G_LockonAllowed
+
+Lock-on is strictly a pair: a third player cannot lock on to someone who is
+already locked on, or locked by somebody else. It can still shoot them.
+A player locked by somebody can only lock that same player back.
+==============
+*/
+qboolean G_LockonAllowed( gentity_t *ent, gentity_t *target ) {
+	int			i, me, it;
+	gclient_t	*cl;
+	if ( !ent || !ent->client || !target || !target->client ) {
+		return qfalse;
+	}
+	me = ent - g_entities;
+	it = target - g_entities;
+	if ( target->client->ps.lockedTarget > 0 && target->client->ps.lockedTarget != me + 1 ) {
+		return qfalse;
+	}
+	for ( i = 0 ; i < level.maxclients ; i++ ) {
+		if ( i == me || i == it ) {
+			continue;
+		}
+		cl = &level.clients[i];
+		if ( cl->pers.connected != CON_CONNECTED ) {
+			continue;
+		}
+		if ( cl->ps.lockedTarget == it + 1 || cl->ps.lockedTarget == me + 1 ) {
+			return qfalse;
+		}
+	}
+	return qtrue;
+}
 
 /*
 ==============
@@ -525,6 +565,7 @@ void ClientThink_real( gentity_t *ent ) {
 	gclient_t	*client;
 	pmove_t		pm;
 	int			oldEventSequence;
+	int			oldLockedTarget;
 	int			msec;
 	usercmd_t	*ucmd;
 	client = ent->client;
@@ -588,13 +629,39 @@ void ClientThink_real( gentity_t *ent ) {
 	pm.trace = trap_Trace;
 	pm.pointcontents = trap_PointContents;
 	pm.debugLevel = g_debugMove.integer;
+	pm.zanzokenDelay = g_zanzokenAppearDelay.integer;
 	pm.noFootsteps = ( g_dmflags.integer & DF_NO_FOOTSTEPS ) > 0;
 
 	pm.pmove_fixed = pmove_fixed.integer | client->pers.pmoveFixed;
 	pm.pmove_msec = pmove_msec.integer;
 
 	VectorCopy( client->ps.origin, client->oldOrigin );
+	// health bars of the server, read by PM_BurnPowerLevel and the HUD
+	client->ps.stats[stHealthBars] = g_healthBars.integer < 1 ? 1 : ( g_healthBars.integer > 3 ? 3 : g_healthBars.integer );
+	oldLockedTarget = client->ps.lockedTarget;
 	Pmove(&pm);
+	// lock-on by pairs: a new lock on someone already in a pair is undone
+	if ( client->ps.lockedTarget > 0 && client->ps.lockedTarget <= MAX_CLIENTS && client->ps.lockedTarget != oldLockedTarget
+		&& !G_LockonAllowed( ent, &g_entities[client->ps.lockedTarget - 1] ) ) {
+		int			i;
+		qboolean	selfBusy;
+		// tell apart "the target is taken" from "somebody else has you locked"
+		selfBusy = qfalse;
+		for ( i = 0 ; i < level.maxclients ; i++ ) {
+			if ( i != ent->s.number && i != client->ps.lockedTarget - 1
+				&& level.clients[i].pers.connected == CON_CONNECTED
+				&& level.clients[i].ps.lockedTarget == ent->s.number + 1 ) {
+				selfBusy = qtrue;
+			}
+		}
+		client->ps.lockedTarget = 0;
+		client->ps.lockedPlayer = NULL;
+		client->ps.lockedPosition = NULL;
+		if ( !( ent->r.svFlags & SVF_BOT ) ) {
+			trap_SendServerCommand( ent - g_entities, selfBusy ?
+				"cp \"Otro guerrero ya te tiene fijado\n\"" : "cp \"Ese guerrero ya esta en combate\n\"" );
+		}
+	}
 	if ( ent->client->ps.eventSequence != oldEventSequence ) {
 		ent->eventTime = level.time;
 	}
@@ -645,7 +712,15 @@ void ClientThink( int clientNum ) {
 	ent->client->lastCmdTime = level.time;
 
 	if ( !(ent->r.svFlags & SVF_BOT) && !g_synchronousClients.integer && !ent->client->ps.lockedTarget) {
+		ent->client->lockLatchedButtons = 0;
 		ClientThink_real( ent );
+	}
+	else if ( !(ent->r.svFlags & SVF_BOT) ) {
+		// Locked-on clients only think once per server frame with the last
+		// command received. Keep every press seen in between so a quick tap
+		// (Z, a click, G) is not lost (G_RunClient merges it).
+		ent->client->lockLatchedButtons |= ent->client->pers.cmd.buttons &
+			( BUTTON_ATTACK | BUTTON_ALT_ATTACK | BUTTON_BLOCK | BUTTON_GESTURE | BUTTON_TELEPORT );
 	}
 }
 
@@ -656,6 +731,10 @@ void G_RunClient( gentity_t *ent ) {
 	}
 	ent->client->pers.cmd.serverTime = level.time;
 	ent->client->lastCmdTime = level.time;
+	if ( !(ent->r.svFlags & SVF_BOT) ) {
+		ent->client->pers.cmd.buttons |= ent->client->lockLatchedButtons;
+		ent->client->lockLatchedButtons = 0;
+	}
 	ClientThink_real( ent );
 }
 

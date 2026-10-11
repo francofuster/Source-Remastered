@@ -18,6 +18,16 @@ void BotLite_ClearLock( gentity_t *bot ) {
 
 void BotLite_ApplyViewAngles( gentity_t *bot, const vec3_t angles ) {
 	vec3_t fixedAngles;
+	gentity_t *locked;
+
+	/* su rival fijado hizo un zanzoken y aun no reaparece: no sabe donde
+	 * fue, asi que sigue mirando hacia el mismo lado (PM_UpdateViewAngles) */
+	if ( bot->client->ps.lockedTarget > 0 && bot->client->ps.lockedTarget <= MAX_CLIENTS ) {
+		locked = &g_entities[bot->client->ps.lockedTarget - 1];
+		if ( locked->inuse && locked->client && locked->client->ps.timers[tmZanzokenVanish] > 0 ) {
+			return;
+		}
+	}
 
 	VectorCopy( angles, fixedAngles );
 	fixedAngles[ROLL] = 0;
@@ -89,6 +99,10 @@ void BotLite_FaceTargetLeveled( gentity_t *bot, gentity_t *target, float maxPitc
 void BotLite_SetLockOn( gentity_t *bot, gentity_t *target ) {
 
 	if ( !bot || !bot->client || !BotLite_TargetIsValid( bot, target ) ) {
+		return;
+	}
+	/* Lock-on por parejas: no fijar a quien ya esta en un lock-on con otro. */
+	if ( bot->client->ps.lockedTarget != target->s.number + 1 && !G_LockonAllowed( bot, target ) ) {
 		return;
 	}
 	/* Se llama cada frame: loguear solo el cambio real de objetivo, si no el

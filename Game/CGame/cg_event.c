@@ -396,8 +396,39 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 	case EV_ZANZOKEN_START:
 	case EV_ZANZOKEN_END:
 		DEBUGNAME("EV_ZANZOKEN");
-		CG_SpawnEffect( position );
 		CG_SpawnLightSpeedGhost( cent );
+		// a locked-on zanzoken (behind the opponent, in its flight path). A
+		// counter is like the Sparking vanish: the camera is already there and
+		// the body shows up a moment later (the server says when: it waits
+		// unseen that long, g_zanzokenAppearDelay), so the jump reads as a
+		// teleport; a dodge or a chase is there at once
+		if ( event == EV_ZANZOKEN_END && es->eventParm > 0 ) {
+			vec3_t	arrival;
+			int		unseen;
+			unseen = es->eventParm * ZANZOKEN_VANISH_STEP;
+			cg_zanzokenHideUntil[clientNum] = cg.time + unseen;
+			cg_zanzokenLinesAt[clientNum] = 0;
+			// the lines only where it shows up (two sets close together look
+			// wrong), a moment before the body like a classic zanzoken: CG_Player
+			// spawns them then
+			if ( unseen > cg_zanzokenLinesLead.integer ) {
+				cg_zanzokenLinesAt[clientNum] = cg_zanzokenHideUntil[clientNum] - cg_zanzokenLinesLead.integer;
+			}
+			else {
+				// right now: position is where the body was drawn until now, the
+				// place it left
+				if ( cg.snap && clientNum == cg.snap->ps.clientNum ) {
+					VectorCopy( cg.snap->ps.origin, arrival );
+				}
+				else {
+					VectorCopy( es->pos.trBase, arrival );
+				}
+				CG_SpawnEffect( arrival );
+			}
+		}
+		else {
+			CG_SpawnEffect( position );
+		}
 		break;
 	case EV_PLAYER_TELEPORT_IN:
 		DEBUGNAME("EV_PLAYER_TELEPORT_IN");

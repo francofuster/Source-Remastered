@@ -729,9 +729,112 @@ static void CG_DrawDiffGaugeMirrored( float x, float y, float width, float heigh
 }
 
 /*================
+CG_HealthBarGauge
+
+Health bars (g_healthBars, up to 3): every damage is divided by the number of
+bars on the server (PM_BurnPowerLevel), so each bar lasts as long as the whole
+classic gauge did. The power gauge keeps its concept: the health lost enters
+from the right, but measured inside the bar being spent and in the color of
+that bar: green for the first, magenta for the middle one, red for the last.
+When a bar is spent the lost part resets and the next color starts, with a
+flash over the gauge. Ki (light blue), ki over fatigue (orange) and fatigue
+(gray) keep their classic colors; where they overlap the lost health they mix
+inside the hue of the bar, so nothing turns orange.
+slot 0 is the own HUD, slot 1 the locked target.
+================*/
+static int		cg_healthBarLast[2];
+static int		cg_healthBarClient[2] = { -1, -1 };
+static int		cg_healthBarFlash[2];
+
+// [bar][layer][rgb]: bar 0 first (green), 1 middle (magenta), 2 last (red);
+// layers: health lost, fatigue in lost health, ki in lost health, ki over
+// fatigue in lost health
+static const float cg_healthBarPalette[3][4][3] = {
+	{ { 0.10f, 0.80f, 0.40f }, { 0.05f, 0.36f, 0.18f }, { 0.07f, 0.73f, 0.61f }, { 0.55f, 0.90f, 0.70f } },
+	{ { 0.90f, 0.18f, 0.78f }, { 0.41f, 0.08f, 0.35f }, { 0.59f, 0.32f, 0.86f }, { 0.95f, 0.59f, 0.89f } },
+	{ { 1.00f, 0.10f, 0.00f }, { 0.50f, 0.16f, 0.16f }, { 0.80f, 0.20f, 0.20f }, { 1.00f, 0.50f, 0.65f } }
+};
+
+// HUD rectangles use the same unstretched 640 space as the HUD pictures
+static void CG_HudFill( float x, float y, float w, float h, const float *color ) {
+	trap_R_SetColor( color );
+	CG_DrawPic( qfalse, x, y, w, h, cgs.media.whiteShader );
+	trap_R_SetColor( NULL );
+}
+
+static void CG_SetColor3( vec4_t color, const float *rgb ) {
+	color[0] = rgb[0];
+	color[1] = rgb[1];
+	color[2] = rgb[2];
+	color[3] = 1.0f;
+}
+
+// palette row of a bar: bar 1 (the last one left) is red, the full set first is green
+static int CG_HealthBarPaletteRow( int bar, int bars ) {
+	if ( bar <= 1 ) {
+		return 2;
+	}
+	if ( bar >= bars ) {
+		return 0;
+	}
+	return 1;
+}
+
+// Returns the health to draw in the power gauge and sets its four colors.
+// With one bar it returns the plain health and leaves the classic colors.
+static int CG_HealthBarGauge( int slot, int clientNum, int health, int maximum, vec4_t lost, vec4_t fatIn, vec4_t kiIn,
+							  vec4_t kiFatIn, int *bars ) {
+	float	frac, fill;
+	int		row, current;
+
+	*bars = cg.snap ? BG_HealthBars( &cg.snap->ps ) : 1;
+	if ( *bars <= 1 || maximum <= 0 ) {
+		*bars = 1;
+		return health;
+	}
+	frac = (float)health / (float)maximum;
+	if ( frac < 0 ) { frac = 0; }
+	if ( frac > 1 ) { frac = 1; }
+	current = frac > 0 ? (int)( frac * *bars + 0.9999f ) : 0;
+	if ( current > *bars ) { current = *bars; }
+	fill = current > 0 ? frac * *bars - ( current - 1 ) : 0;
+	if ( fill > 1 ) { fill = 1; }
+
+	// a bar broke: flash and sound (not when the target just changed)
+	if ( cg_healthBarClient[slot] != clientNum ) {
+		cg_healthBarClient[slot] = clientNum;
+		cg_healthBarLast[slot] = current;
+	}
+	else if ( current < cg_healthBarLast[slot] ) {
+		cg_healthBarFlash[slot] = cg.time;
+		trap_S_StartLocalSound( cgs.media.powerStunSound1, CHAN_LOCAL_SOUND );
+	}
+	cg_healthBarLast[slot] = current;
+
+	row = CG_HealthBarPaletteRow( current > 0 ? current : 1, *bars );
+	CG_SetColor3( lost, cg_healthBarPalette[row][0] );
+	CG_SetColor3( fatIn, cg_healthBarPalette[row][1] );
+	CG_SetColor3( kiIn, cg_healthBarPalette[row][2] );
+	CG_SetColor3( kiFatIn, cg_healthBarPalette[row][3] );
+	return (int)( fill * maximum );
+}
+
+// White flash over the gauge when a bar breaks.
+static void CG_DrawHealthBarFlash( int slot, float gaugeX, float gaugeY, int bars, float alpha ) {
+	vec4_t color;
+	if ( bars <= 1 || !cg_healthBarFlash[slot] || cg.time - cg_healthBarFlash[slot] >= 300 ) {
+		return;
+	}
+	color[0] = color[1] = color[2] = 1.0f;
+	color[3] = alpha * 0.85f * ( 1.0f - ( cg.time - cg_healthBarFlash[slot] ) / 300.0f );
+	CG_HudFill( gaugeX, gaugeY, 200, 16, color );
+}
+
+/*================
 CG_HUD
 ================*/
-void CG_DrawHUD(playerState_t *ps,int clientNum,int x,int y,qboolean flipped){
+// alpha fades the whole HUD (the lock-on swap, CG_DrawStatusBar)
+void CG_DrawHUD(playerState_t *ps,int clientNum,int x,int y,qboolean flipped,float alpha){
 	const char	*powerLevelString;
 	int 		powerLevelOffset;
 	long	 	powerLevelDisplay;
@@ -746,41 +849,67 @@ void CG_DrawHUD(playerState_t *ps,int clientNum,int x,int y,qboolean flipped){
 	vec4_t	healthFatigueColor = {1.0f,0.4f,0.2f,1.0f};
 	vec4_t	plFatigueHealthColor = {0.5f,0.16f,0.16f,1.0f};
 	vec4_t	plFatigueColor = {0.4f,0.4f,0.5f,1.0f};
+	vec4_t	picColor;
 	vec3_t	angles;
+	int		health, bars;
 
+	if ( alpha <= 0.0f ) {
+		return;
+	}
 	CG_BeginUniformHudScale( &oldScreenXScale, &oldScreenXBias );
+	// health bars: the gauge shows the bar being spent, in its color
+	health = CG_HealthBarGauge( flipped ? 1 : 0, clientNum, ps->powerLevel[plHealth], ps->powerLevel[plMaximum],
+		limitColor, plFatigueHealthColor, beyondHealthColor, healthFatigueColor, &bars );
+	if ( alpha < 1.0f ) {
+		powerColor[3] *= alpha;
+		dullColor[3] *= alpha;
+		limitColor[3] *= alpha;
+		beyondFatigueColor[3] *= alpha;
+		beyondHealthColor[3] *= alpha;
+		healthFatigueColor[3] *= alpha;
+		plFatigueHealthColor[3] *= alpha;
+		plFatigueColor[3] *= alpha;
+	}
+	picColor[0] = picColor[1] = picColor[2] = 1.0f;
+	picColor[3] = alpha;
 
 	if ( !flipped ) {
 		CG_DrawHorGauge(x+60,y+41,200,16,powerColor,dullColor,ps->powerLevel[plCurrent],ps->powerLevel[plMaximum],qfalse);	
 		CG_DrawRightGauge(x+60,y+41,200,16,plFatigueColor,plFatigueColor,ps->powerLevel[plFatigue],ps->powerLevel[plMaximum]);
-		CG_DrawRightGauge(x+60,y+41,200,16,limitColor,limitColor,ps->powerLevel[plHealth],ps->powerLevel[plMaximum]);
+		CG_DrawRightGauge(x+60,y+41,200,16,limitColor,limitColor,health,ps->powerLevel[plMaximum]);
 		CG_DrawDiffGauge(x+60,y+41,200,16,beyondFatigueColor,beyondFatigueColor,ps->powerLevel[plCurrent],ps->powerLevel[plFatigue],ps->powerLevel[plMaximum],1);
-		CG_DrawDiffGauge(x+60,y+41,200,16,plFatigueHealthColor,plFatigueHealthColor,ps->powerLevel[plFatigue],ps->powerLevel[plHealth],ps->powerLevel[plMaximum],1);
-		CG_DrawDiffGauge(x+60,y+41,200,16,beyondHealthColor,beyondHealthColor,ps->powerLevel[plCurrent],ps->powerLevel[plHealth],ps->powerLevel[plMaximum],1);
-		if((ps->powerLevel[plCurrent] > ps->powerLevel[plFatigue]) && (ps->powerLevel[plFatigue] > ps->powerLevel[plHealth])){
+		CG_DrawDiffGauge(x+60,y+41,200,16,plFatigueHealthColor,plFatigueHealthColor,ps->powerLevel[plFatigue],health,ps->powerLevel[plMaximum],1);
+		CG_DrawDiffGauge(x+60,y+41,200,16,beyondHealthColor,beyondHealthColor,ps->powerLevel[plCurrent],health,ps->powerLevel[plMaximum],1);
+		if((ps->powerLevel[plCurrent] > ps->powerLevel[plFatigue]) && (ps->powerLevel[plFatigue] > health)){
 			CG_DrawDiffGauge(x+60,y+41,200,16,healthFatigueColor,healthFatigueColor,ps->powerLevel[plCurrent],ps->powerLevel[plFatigue],ps->powerLevel[plMaximum],1);
 		}
+		CG_DrawHealthBarFlash(0,x+60,y+41,bars,alpha);
+		trap_R_SetColor( picColor );
 		CG_DrawPic(qfalse,x,y,288,72,cgs.media.hudShader);
 		CG_DrawHead(x+6,y+22,50,50,clientNum,angles);
 		if(ps->powerLevel[plCurrent] == ps->powerLevel[plMaximum] && ps->bitFlags & usingAlter){
 			CG_DrawPic(qfalse,x+243,y+25,40,44,cgs.media.breakLimitShader);
 		}
+		trap_R_SetColor( NULL );
 	} else {
 		CG_DrawHorGauge(x+28,y+41,200,16,powerColor,dullColor,ps->powerLevel[plCurrent],ps->powerLevel[plMaximum],qtrue);
 		CG_DrawLeftGauge(x+28,y+41,200,16,plFatigueColor,plFatigueColor,ps->powerLevel[plFatigue],ps->powerLevel[plMaximum]);
-		CG_DrawLeftGauge(x+28,y+41,200,16,limitColor,limitColor,ps->powerLevel[plHealth],ps->powerLevel[plMaximum]);
+		CG_DrawLeftGauge(x+28,y+41,200,16,limitColor,limitColor,health,ps->powerLevel[plMaximum]);
 		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,beyondFatigueColor,beyondFatigueColor,ps->powerLevel[plCurrent],ps->powerLevel[plFatigue],ps->powerLevel[plMaximum],1);
-		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,plFatigueHealthColor,plFatigueHealthColor,ps->powerLevel[plFatigue],ps->powerLevel[plHealth],ps->powerLevel[plMaximum],1);
-		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,beyondHealthColor,beyondHealthColor,ps->powerLevel[plCurrent],ps->powerLevel[plHealth],ps->powerLevel[plMaximum],1);
-		if((ps->powerLevel[plCurrent] > ps->powerLevel[plFatigue]) && (ps->powerLevel[plFatigue] > ps->powerLevel[plHealth])){
+		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,plFatigueHealthColor,plFatigueHealthColor,ps->powerLevel[plFatigue],health,ps->powerLevel[plMaximum],1);
+		CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,beyondHealthColor,beyondHealthColor,ps->powerLevel[plCurrent],health,ps->powerLevel[plMaximum],1);
+		if((ps->powerLevel[plCurrent] > ps->powerLevel[plFatigue]) && (ps->powerLevel[plFatigue] > health)){
 			CG_DrawDiffGaugeMirrored(x+28,y+41,200,16,healthFatigueColor,healthFatigueColor,ps->powerLevel[plCurrent],ps->powerLevel[plFatigue],ps->powerLevel[plMaximum],1);
 		}
+		CG_DrawHealthBarFlash(1,x+28,y+41,bars,alpha);
+		trap_R_SetColor( picColor );
 		CG_DrawPicMirrored(x,y,288,72,cgs.media.hudShader);
 		CG_DrawHead(x+232,y+22,50,50,clientNum,angles);
 		// CG_DrawPicMirrored(x+232,y+22,50,50,cgs.clientinfo[clientNum].tierConfig[cgs.clientinfo[clientNum].tierCurrent].icon);
 		if(ps->powerLevel[plCurrent] == ps->powerLevel[plMaximum] && ps->bitFlags & usingAlter){
 			CG_DrawPicMirrored(x+5,y+25,40,44,cgs.media.breakLimitShader);
 		}
+		trap_R_SetColor( NULL );
 	}
 
 	if(ps->powerLevel[plCurrent] == 9001){
@@ -794,18 +923,34 @@ void CG_DrawHUD(playerState_t *ps,int clientNum,int x,int y,qboolean flipped){
 	powerLevelString = powerLevelDisplay >= 1000000 ? va("%.1f ^3mil",(float)powerLevelDisplay / 1000000.0) : va("%i",powerLevelDisplay);
 	powerLevelOffset = (Q_PrintStrlen(powerLevelString)-2)*8;
 	if ( !flipped ) {
-		CG_DrawSmallStringHalfHeight(x+239-powerLevelOffset,y+44,powerLevelString,1.0F);
+		CG_DrawSmallStringHalfHeight(x+239-powerLevelOffset,y+44,powerLevelString,alpha);
 	} else {
-		CG_DrawSmallStringHalfHeight(x+33,y+44,powerLevelString,1.0F);
+		CG_DrawSmallStringHalfHeight(x+33,y+44,powerLevelString,alpha);
 	}
 
 	CG_EndUniformHudScale( oldScreenXScale, oldScreenXBias );
 }
+/*
+Lock-on swap: when a lock-on starts, the lock-on HUDs (own and target, at the
+top) come down from above while fading in, and the normal HUD (at the bottom)
+leaves downwards fading out; when it ends, the other way round. Both move at
+once, and a swap reversed halfway turns back from where it is.
+*/
+#define HUD_LOCK_FADE	350		// ms
+#define HUD_LOCK_SLIDE	56		// virtual pixels travelled while fading
+
+static float			cg_hudLockBlend;		// 0 = normal HUD, 1 = lock-on HUDs
+static int				cg_hudLockTime;
+static playerState_t	cg_hudTargetPS;			// the last target, kept while its HUD leaves
+static qboolean			cg_hudHaveTarget;
+
 static void CG_DrawStatusBar( void ) {
 	centity_t		*cent;
 	playerState_t	*ps;
-	float			tierLast,tierNext,tier;
-	int				base;
+	float			tierLast,tierNext,tier,ease,alpha;
+	int				base,offset;
+	qboolean		locked;
+	vec4_t			markerColor;
 	clientInfo_t	*ci;
 	cg_userWeapon_t	*weaponGraphics;
 	tierConfig_cg	*activeTier;
@@ -822,18 +967,46 @@ static void CG_DrawStatusBar( void ) {
 	cent = &cg_entities[cg.snap->ps.clientNum];
 	tier = (float)ps->powerLevel[plTierCurrent];
 	CG_CheckChat();
-	if(ps->lockedTarget > 0 && cgs.clientinfo[ps->lockedTarget-1].infoValid){
+	locked = ( ps->lockedTarget > 0 && ps->lockedTarget <= MAX_CLIENTS && cgs.clientinfo[ps->lockedTarget-1].infoValid ) ? qtrue : qfalse;
+	if(locked){
 		lockedTargetPS.clientNum = ps->lockedTarget-1;
 		lockedTargetPS.powerLevel[plCurrent] = ps->lockedPlayerData[lkPowerCurrent];
 		lockedTargetPS.powerLevel[plHealth] = ps->lockedPlayerData[lkPowerHealth];
 		lockedTargetPS.powerLevel[plMaximum] = ps->lockedPlayerData[lkPowerMaximum];
 		lockedTargetPS.powerLevel[plFatigue] = lockedTargetPS.powerLevel[plMaximum];
 		lockedTargetPS.powerLevel[plTierCurrent] = cgs.clientinfo[lockedTargetPS.clientNum].tierCurrent;
-		CG_DrawHUD(ps,ps->clientNum,0,0,qfalse);
-		CG_DrawHUD(&lockedTargetPS,lockedTargetPS.clientNum,CG_WideVirtualWidth() - 286,0,qtrue);
+		cg_hudTargetPS = lockedTargetPS;
+		cg_hudHaveTarget = qtrue;
 	}
-	else{
-		CG_DrawHUD(ps,ps->clientNum,0,408,qfalse);
+	// advance the swap (no animation on the first frame or after a time reset)
+	if ( !cg_hudLockTime || cg.time < cg_hudLockTime ) {
+		cg_hudLockBlend = locked ? 1.0f : 0.0f;
+	}
+	else {
+		ease = ( cg.time - cg_hudLockTime ) / (float)HUD_LOCK_FADE;
+		cg_hudLockBlend += locked ? ease : -ease;
+		if ( cg_hudLockBlend < 0.0f ) { cg_hudLockBlend = 0.0f; }
+		if ( cg_hudLockBlend > 1.0f ) { cg_hudLockBlend = 1.0f; }
+	}
+	cg_hudLockTime = cg.time;
+	ease = cg_hudLockBlend * cg_hudLockBlend * ( 3.0f - 2.0f * cg_hudLockBlend );
+	if ( !locked && cg_hudLockBlend <= 0.0f ) {
+		cg_hudHaveTarget = qfalse;
+	}
+	// lock-on HUDs: down from above, back up when the lock-on ends
+	if ( ease > 0.0f && cg_hudHaveTarget && cgs.clientinfo[cg_hudTargetPS.clientNum].infoValid ) {
+		offset = -(int)( ( 1.0f - ease ) * HUD_LOCK_SLIDE );
+		CG_DrawHUD(ps,ps->clientNum,0,offset,qfalse,ease);
+		CG_DrawHUD(&cg_hudTargetPS,cg_hudTargetPS.clientNum,CG_WideVirtualWidth() - 286,offset,qtrue,ease);
+	}
+	// normal HUD: down and out while locked on, back up from below afterwards
+	if ( ease < 1.0f ) {
+		alpha = 1.0f - ease;
+		offset = (int)( ease * HUD_LOCK_SLIDE );
+		CG_DrawHUD(ps,ps->clientNum,0,408+offset,qfalse,alpha);
+		markerColor[0] = markerColor[1] = markerColor[2] = 1.0f;
+		markerColor[3] = alpha;
+		trap_R_SetColor( markerColor );
 		if(tier){
 			activeTier = &ci->tierConfig[ci->tierCurrent];
 			tierLast = 32767;
@@ -843,7 +1016,7 @@ static void CG_DrawStatusBar( void ) {
 			if(activeTier->sustainMaximum && activeTier->sustainMaximum < tierLast){tierLast = (float)activeTier->sustainMaximum;}
 			if(tierLast < 32767){
 				tierLast = tierLast / (float)ps->powerLevel[plMaximum];
-				CG_DrawPicHud((187*tierLast)+60,428,13,38,cgs.media.markerDescendShader);
+				CG_DrawPicHud((187*tierLast)+60,428+offset,13,38,cgs.media.markerDescendShader);
 			}
 		}
 		if(tier < ps->powerLevel[plTierTotal]){
@@ -856,10 +1029,11 @@ static void CG_DrawStatusBar( void ) {
 			if(tierNext){
 				tierNext = tierNext / (float)ps->powerLevel[plMaximum];
 				if(tierNext < 1.0){
-					CG_DrawPicHud((187*tierNext)+60,428,13,38,cgs.media.markerAscendShader);
+					CG_DrawPicHud((187*tierNext)+60,428+offset,13,38,cgs.media.markerAscendShader);
 				}
 			}
 		}
+		trap_R_SetColor( NULL );
 	}
 }
 

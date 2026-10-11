@@ -118,6 +118,11 @@ static float	lockcam_colVel		= 0.0f;
 // above/below the player and the horizontal direction is undefined.
 static float	lockcam_lastBaseYaw	= 0.0f;
 
+// where the target was last seen: while a locked-on zanzoken keeps it unseen
+// the camera keeps framing that place, as if it did not know where it went
+static int		lockcam_seenNum		= -1;
+static vec3_t	lockcam_seenEnemy;
+
 // Shoulder side: +1 = camera over the right shoulder (player on the left of
 // the screen, target on the right), -1 = mirrored. lockcam_sideBlend eases
 // between the two.
@@ -439,7 +444,14 @@ qboolean CG_OffsetLockedCombatView( void ) {
 
 	VectorCopy( ps->origin, player );
 	player[2] += LOCKCAM_BODY_HEIGHT;
-	VectorCopy( targetCent->lerpOrigin, enemy );
+	if ( CG_ZanzokenUnseen( targetNum ) && lockcam_seenNum == targetNum ) {
+		VectorCopy( lockcam_seenEnemy, enemy );
+	}
+	else {
+		VectorCopy( targetCent->lerpOrigin, enemy );
+		VectorCopy( enemy, lockcam_seenEnemy );
+		lockcam_seenNum = targetNum;
+	}
 	enemy[2] += LOCKCAM_BODY_HEIGHT;
 
 	VectorCopy( ps->origin, playerPoints[0] );

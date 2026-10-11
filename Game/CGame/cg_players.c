@@ -1883,6 +1883,20 @@ int CG_LightVerts( vec3_t normal, int numVerts, polyVert_t *verts )
 CG_Player
 ===============
 */
+int cg_zanzokenHideUntil[MAX_CLIENTS];		// locked-on zanzoken: no body until then (cg_event.c)
+int cg_zanzokenLinesAt[MAX_CLIENTS];		// and its lines at this time, a moment before
+
+// Unseen after a locked-on zanzoken (a time far ahead is a time reset, a map
+// restart).
+qboolean CG_ZanzokenUnseen( int clientNum ) {
+	int left;
+	if ( clientNum < 0 || clientNum >= MAX_CLIENTS ) {
+		return qfalse;
+	}
+	left = cg_zanzokenHideUntil[clientNum] - cg.time;
+	return ( left > 0 && left <= 255 * ZANZOKEN_VANISH_STEP ) ? qtrue : qfalse;
+}
+
 void CG_Player( centity_t *cent ) {
 	clientInfo_t	*ci;
 	refEntity_t		legs,torso,head;
@@ -1923,6 +1937,21 @@ void CG_Player( centity_t *cent ) {
 		cg_thirdPersonSlide.value = ci->cameraBackup[3];
 	}
 	onBodyQue = (cent->currentState.number != cent->currentState.clientNum);
+	// the lines of a locked-on zanzoken, where the body is about to show up; a
+	// time far ahead is a time reset (map restart), one long past was missed
+	if ( !onBodyQue && cg_zanzokenLinesAt[clientNum] ) {
+		int wait = cg_zanzokenLinesAt[clientNum] - cg.time;
+		if ( wait <= 0 || wait > 255 * ZANZOKEN_VANISH_STEP ) {
+			if ( wait <= 0 && wait > -250 ) {
+				CG_SpawnEffect( cent->lerpOrigin );
+			}
+			cg_zanzokenLinesAt[clientNum] = 0;
+		}
+	}
+	// just teleported by a locked-on zanzoken: the body is not there yet
+	if ( !onBodyQue && CG_ZanzokenUnseen( clientNum ) ) {
+		return;
+	}
 	if(onBodyQue){tier = 0;}
 	else{
 		tier = cent->currentState.tier;

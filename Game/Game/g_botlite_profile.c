@@ -120,7 +120,11 @@ static const botlite_profile_t botlite_skill1_profile_default = {
 	500.0f,	/* hideSpotMinDist */
 	150.0f,	/* hideSpotArriveDist */
 	1000,		/* hideSpotReevalMs */
-	400		/* recoverDisengageConfirmMs */
+	400,		/* recoverDisengageConfirmMs */
+	35,		/* zanzokenCounterPct (sin uso: uses_zanzoken_counter=0) */
+	150,		/* zanzokenCounterMinMs */
+	450,		/* zanzokenCounterMaxMs */
+	4000		/* zanzokenCounterCooldownMs */
 };
 
 static const botlite_profile_t botlite_skill2_profile_default = {
@@ -214,7 +218,11 @@ static const botlite_profile_t botlite_skill2_profile_default = {
 	500.0f,	/* hideSpotMinDist */
 	150.0f,	/* hideSpotArriveDist */
 	1000,		/* hideSpotReevalMs */
-	400		/* recoverDisengageConfirmMs */
+	400,		/* recoverDisengageConfirmMs */
+	35,		/* zanzokenCounterPct (sin uso: uses_zanzoken_counter=0) */
+	150,		/* zanzokenCounterMinMs */
+	450,		/* zanzokenCounterMaxMs */
+	4000		/* zanzokenCounterCooldownMs */
 };
 
 static const botlite_profile_t botlite_skill3_profile_default = {
@@ -308,7 +316,11 @@ static const botlite_profile_t botlite_skill3_profile_default = {
 	500.0f,	/* hideSpotMinDist */
 	150.0f,	/* hideSpotArriveDist */
 	1000,		/* hideSpotReevalMs */
-	400		/* recoverDisengageConfirmMs */
+	400,		/* recoverDisengageConfirmMs */
+	35,		/* zanzokenCounterPct */
+	150,		/* zanzokenCounterMinMs */
+	450,		/* zanzokenCounterMaxMs */
+	4000		/* zanzokenCounterCooldownMs */
 };
 
 static const botlite_combat_policy_t botlite_skill1_policy_default = {
@@ -337,7 +349,8 @@ static const botlite_combat_policy_t botlite_skill1_policy_default = {
 	qtrue,	/* allowsBoost */
 	qfalse,	/* allowsKnockbackPunish (skill1: no) */
 	qfalse,	/* allowsRetreatCounterAttack (skill1: no tiene ranged) */
-	qfalse	/* allowsHideSeek (skill1: no tiene recover mode) */
+	qfalse,	/* allowsHideSeek (skill1: no tiene recover mode) */
+	qfalse	/* allowsZanzokenCounter (solo skill3) */
 };
 
 static const botlite_combat_policy_t botlite_skill2_policy_default = {
@@ -366,7 +379,8 @@ static const botlite_combat_policy_t botlite_skill2_policy_default = {
 	qtrue,	/* allowsBoost */
 	qfalse,	/* allowsKnockbackPunish (skill2: no) */
 	qtrue,	/* allowsRetreatCounterAttack */
-	qtrue	/* allowsHideSeek */
+	qtrue,	/* allowsHideSeek */
+	qfalse	/* allowsZanzokenCounter (solo skill3) */
 };
 
 static const botlite_combat_policy_t botlite_skill3_policy_default = {
@@ -395,7 +409,8 @@ static const botlite_combat_policy_t botlite_skill3_policy_default = {
 	qtrue,	/* allowsBoost */
 	qtrue,	/* allowsKnockbackPunish */
 	qtrue,	/* allowsRetreatCounterAttack */
-	qtrue	/* allowsHideSeek */
+	qtrue,	/* allowsHideSeek */
+	qtrue	/* allowsZanzokenCounter (skill3: si) */
 };
 
 static botlite_profile_t botlite_profiles[4];
@@ -772,6 +787,16 @@ static void BotLite_ApplySkillKeyValue( int skill, const char *key, const char *
 		profile->hideSpotReevalMs = i;
 	} else if ( !Q_stricmp( key, "recover_disengage_confirm_ms" ) ) {
 		profile->recoverDisengageConfirmMs = i;
+	} else if ( !Q_stricmp( key, "uses_zanzoken_counter" ) ) {
+		policy->allowsZanzokenCounter = BotLite_ParseBool( value );
+	} else if ( !Q_stricmp( key, "zanzoken_counter_pct" ) ) {
+		profile->zanzokenCounterPct = i;
+	} else if ( !Q_stricmp( key, "zanzoken_counter_min_ms" ) ) {
+		profile->zanzokenCounterMinMs = i;
+	} else if ( !Q_stricmp( key, "zanzoken_counter_max_ms" ) ) {
+		profile->zanzokenCounterMaxMs = i;
+	} else if ( !Q_stricmp( key, "zanzoken_counter_cooldown_ms" ) ) {
+		profile->zanzokenCounterCooldownMs = i;
 	}
 }
 
@@ -978,10 +1003,92 @@ static int BotLite_ParseSkillFromString( const char *value ) {
 	return BotLite_ProfileClampSkill( atoi( value ) );
 }
 
+/*
+ * Personajes nuevos: cada carpeta de players/ con animation.cfg que no figure en
+ * bots.txt (por id ni por player) se agrega al archivo con un archetype y un
+ * skill al azar. Se lee primero el archivo entero y se reescribe completo: un
+ * append sobre un bots.txt que solo existe en la carpeta base crearia uno nuevo
+ * con una sola linea que taparia al original.
+ */
+static qboolean BotLite_BotsysHasCharacter( const char *dir ) {
+	const char *scan;
+	int dl;
+
+	dl = (int)strlen( dir );
+	scan = botlite_botDefsBuffer;
+	while ( ( scan = strstr( scan, dir ) ) != NULL ) {
+		qboolean wordEnd;
+
+		wordEnd = ( scan[dl] == ';' || scan[dl] == '\r' || scan[dl] == '\n' || scan[dl] == 0 || scan[dl] == ' ' ) ? qtrue : qfalse;
+		if ( wordEnd && scan >= botlite_botDefsBuffer + 4 && !Q_stricmpn( scan - 4, "bot=", 4 ) ) {
+			return qtrue;
+		}
+		if ( wordEnd && scan >= botlite_botDefsBuffer + 7 && !Q_stricmpn( scan - 7, "player=", 7 ) ) {
+			return qtrue;
+		}
+		scan += dl;
+	}
+	return qfalse;
+}
+
+static void BotLite_AppendNewCharacters( void ) {
+	static const char *archetypes[] = { "balanced.cfg", "aggressive.cfg", "tactical.cfg", "keepaway.cfg", "mobile.cfg", "bruiser.cfg" };
+	char dirs[4096];
+	char line[256];
+	char path[MAX_QPATH];
+	char *dir;
+	int numDirs, i, len, added, count;
+	fileHandle_t file;
+
+	if ( !BotLite_ReadTextFile( "botsys/bots/bots.txt", botlite_botDefsBuffer, sizeof( botlite_botDefsBuffer ) ) ) {
+		return;
+	}
+	count = (int)( sizeof( archetypes ) / sizeof( archetypes[0] ) );
+	numDirs = trap_FS_GetFileList( "players", "/", dirs, sizeof( dirs ) );
+	dir = dirs;
+	added = 0;
+	for ( i = 0; i < numDirs; i++, dir += strlen( dir ) + 1 ) {
+		if ( !dir[0] || dir[0] == '.' ) {
+			continue;
+		}
+		Com_sprintf( path, sizeof( path ), "players/%s/animation.cfg", dir );
+		len = trap_FS_FOpenFile( path, &file, FS_READ );
+		if ( len <= 0 ) {
+			continue;
+		}
+		trap_FS_FCloseFile( file );
+		if ( BotLite_BotsysHasCharacter( dir ) ) {
+			continue;
+		}
+		Com_sprintf( line, sizeof( line ), "bot=%s;name=[BOT]%s;player=%s;archetype=%s;skill=skill%d.cfg\n", dir, dir, dir,
+			archetypes[(int)( random() * count ) % count], 1 + (int)( random() * 3 ) % 3 );
+		if ( strlen( botlite_botDefsBuffer ) + strlen( line ) + 2 >= sizeof( botlite_botDefsBuffer ) ) {
+			break;
+		}
+		if ( botlite_botDefsBuffer[0] && botlite_botDefsBuffer[strlen( botlite_botDefsBuffer ) - 1] != '\n' ) {
+			Q_strcat( botlite_botDefsBuffer, sizeof( botlite_botDefsBuffer ), "\n" );
+		}
+		Q_strcat( botlite_botDefsBuffer, sizeof( botlite_botDefsBuffer ), line );
+		G_Printf( "Botsys: new character added to bots.txt: %s", line );
+		added++;
+	}
+	if ( !added ) {
+		return;
+	}
+	len = trap_FS_FOpenFile( "botsys/bots/bots.txt", &file, FS_WRITE );
+	if ( len < 0 || !file ) {
+		G_Printf( "Botsys: could not write botsys/bots/bots.txt\n" );
+		return;
+	}
+	trap_FS_Write( botlite_botDefsBuffer, strlen( botlite_botDefsBuffer ), file );
+	trap_FS_FCloseFile( file );
+}
+
 static void BotLite_LoadBotDefinitions( void ) {
 	char *cursor;
 	int count;
 
+	BotLite_AppendNewCharacters();
 	if ( !BotLite_ReadTextFile( "botsys/bots/bots.txt", botlite_botDefsBuffer, sizeof( botlite_botDefsBuffer ) ) ) {
 		return;
 	}

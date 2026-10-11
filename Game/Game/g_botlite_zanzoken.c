@@ -152,3 +152,120 @@ qboolean BotLite_RunZanzokenHold( gentity_t *bot, int clientNum, const botlite_s
 	BotLite_EA_MoveUp( bot, info->melee.zanzokenMoveUp );
 	return qtrue;
 }
+
+/*
+ * ============================================================================
+ * Contraataque con zanzoken
+ * ============================================================================
+ *
+ * Con el lock-on puesto en los dos, Z mientras el rival lo golpea en melee es
+ * el contraataque de PM_LockedZanzoken: el bot desaparece, reaparece detras
+ * del atacante (g_zanzokenAppearDelay mas tarde) y lo manda a volar. Las
+ * condiciones copian las de PM_ZanzokenBeingHit, para no apretar Z cuando el
+ * motor lo tomaria como otra cosa.
+ *
+ * A proposito pero no siempre: una sola tirada por racha de golpes recibidos
+ * (zanzoken_counter_pct), un tiempo de reaccion antes de apretar
+ * (zanzoken_counter_min_ms / max_ms) y una espera entre contraataques
+ * (zanzoken_counter_cooldown_ms). Solo con uses_zanzoken_counter=1.
+ */
+
+#define BOTLITE_COUNTER_RANGE		96		/* distancia de PM_ZanzokenBeingHit */
+#define BOTLITE_COUNTER_COST_PCT	5		/* ZAN_COUNTER_COST: 5% de la fatiga maxima */
+#define BOTLITE_COUNTER_STREAK_GAP	600		/* sin golpes este tiempo: la racha termino */
+#define BOTLITE_COUNTER_PRESS_MS	100		/* Z se sostiene un par de frames (varios think por frame) */
+
+static qboolean BotLite_BeingHitInMelee( gentity_t *bot, gentity_t *target ) {
+	playerState_t *ps;
+	playerState_t *tps;
+	int myState;
+	int foeState;
+
+	ps = &bot->client->ps;
+	tps = &target->client->ps;
+	if ( ps->lockedTarget != target->s.number + 1 || tps->lockedTarget != bot->s.number + 1 ) {
+		return qfalse;
+	}
+	if ( Distance( ps->origin, tps->origin ) > BOTLITE_COUNTER_RANGE ) {
+		return qfalse;
+	}
+	myState = ps->stats[stMeleeState];
+	foeState = tps->stats[stMeleeState];
+	if ( myState == stMeleeStartHit ) {
+		return qtrue;
+	}
+	if ( myState == stMeleeUsingBlock || myState == stMeleeUsingEvade || myState == stMeleeUsingSpeed ) {
+		return qfalse;
+	}
+	return ( foeState == stMeleeStartAttack || foeState == stMeleeUsingSpeed || foeState == stMeleeUsingStun ||
+		foeState == stMeleeUsingSpeedBreaker || foeState == stMeleeUsingChargeBreaker ) ? qtrue : qfalse;
+}
+
+/* Devuelve qtrue mientras aprieta Z (se lleva el frame). */
+qboolean BotLite_RunZanzokenCounter( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot ) {
+	botlite_info_t *info;
+	const botlite_combat_policy_t *policy;
+	const botlite_profile_t *profile;
+	gentity_t *target;
+	playerState_t *ps;
+	int spread;
+	int reaction;
+
+	if ( !bot || !bot->client || !snapshot || clientNum < 0 || clientNum >= BOTLITE_MAX_BOTS ) {
+		return qfalse;
+	}
+	info = &g_botlite[clientNum];
+	policy = BotLite_GetCombatPolicy( info->skill );
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+	if ( !policy || !profile || !policy->allowsZanzokenCounter ) {
+		return qfalse;
+	}
+
+	/* Z ya apretado: se sostiene hasta que vence, sin volver a decidir. */
+	if ( info->melee.counterPressUntil > level.time ) {
+		BotLite_EA_Button( bot, BUTTON_TELEPORT );
+		return qtrue;
+	}
+
+	target = snapshot->target;
+	if ( !target || !target->client || !BotLite_BeingHitInMelee( bot, target ) ) {
+		if ( level.time - info->melee.counterSeenTime > BOTLITE_COUNTER_STREAK_GAP ) {
+			info->melee.counterRolled = qfalse;
+			info->melee.counterCommitted = qfalse;
+		}
+		return qfalse;
+	}
+	info->melee.counterSeenTime = level.time;
+
+	/* Una sola tirada por racha: evaluarla cada frame lo haria contraatacar
+	 * casi siempre. */
+	if ( !info->melee.counterRolled ) {
+		info->melee.counterRolled = qtrue;
+		info->melee.counterCommitted = ( level.time >= info->melee.counterNextTime &&
+			( rand() % 100 ) < profile->zanzokenCounterPct ) ? qtrue : qfalse;
+		spread = profile->zanzokenCounterMaxMs - profile->zanzokenCounterMinMs;
+		reaction = profile->zanzokenCounterMinMs + ( spread > 0 ? rand() % ( spread + 1 ) : 0 );
+		info->melee.counterPressTime = level.time + reaction;
+		BotLite_DebugLog( bot, va( "Zanzoken counter: target=%s chance=%d%% -> %s (reaccion %dms)",
+			BotLite_MeleeStateName( snapshot->targetMeleeState ), profile->zanzokenCounterPct,
+			info->melee.counterCommitted ? "CONTRAATACAR" : "ignorar", reaction ) );
+	}
+	if ( !info->melee.counterCommitted || level.time < info->melee.counterPressTime ) {
+		return qfalse;
+	}
+
+	/* Lo que el motor exige: rearmado y fatiga para pagarlo. Si no alcanza, se
+	 * deja pasar esta racha. */
+	info->melee.counterCommitted = qfalse;
+	ps = &bot->client->ps;
+	if ( ps->timers[tmZanzokenRearm] > 0 ||
+		ps->powerLevel[plFatigue] < ps->powerLevel[plMaximum] / 100 * BOTLITE_COUNTER_COST_PCT ) {
+		BotLite_DebugLog( bot, "Zanzoken counter: sin fatiga o sin rearmar" );
+		return qfalse;
+	}
+	info->melee.counterNextTime = level.time + profile->zanzokenCounterCooldownMs;
+	info->melee.counterPressUntil = level.time + BOTLITE_COUNTER_PRESS_MS;
+	BotLite_DebugLog( bot, "Zanzoken counter: Z" );
+	BotLite_EA_Button( bot, BUTTON_TELEPORT );
+	return qtrue;
+}

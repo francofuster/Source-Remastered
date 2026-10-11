@@ -1196,6 +1196,10 @@ extern  vmCvar_t		cg_particlesMaximum;
 // LOCK CAMERA (dynamic combat camera, see cg_lockcam.c)
 extern	vmCvar_t		cg_lockCam;
 extern	vmCvar_t		cg_lockCamDebug;
+extern	int				cg_zanzokenHideUntil[MAX_CLIENTS];
+extern	vmCvar_t		cg_zanzokenLinesLead;
+extern	int				cg_zanzokenLinesAt[MAX_CLIENTS];
+qboolean CG_ZanzokenUnseen( int clientNum );
 extern	vmCvar_t		cg_lockCamRange;
 extern	vmCvar_t		cg_lockCamRangeMelee;
 extern	vmCvar_t		cg_lockCamFrameX;

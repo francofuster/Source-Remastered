@@ -374,6 +374,23 @@ void BG_TouchJumpPad( playerState_t *ps, entityState_t *jumppad ) {
 
 /*
 ========================
+BG_HealthBars
+
+Health bars (g_healthBars): the health gauge is split in this many bars and
+every damage is divided by it (PM_BurnPowerLevel), so a fight lasts that many
+times longer. The server sends the count in stats[stHealthBars].
+========================
+*/
+int BG_HealthBars( const playerState_t *ps ) {
+	int bars;
+	bars = ps->stats[stHealthBars];
+	if ( bars < 1 ) { bars = 1; }
+	if ( bars > 3 ) { bars = 3; }	// green, magenta and red: no fourth color stays clear of the HUD ones
+	return bars;
+}
+
+/*
+========================
 BG_PlayerStateToEntityState
 
 This is done after each set of usercmd_t on the server,

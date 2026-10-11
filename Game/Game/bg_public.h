@@ -200,6 +200,7 @@ typedef struct {
 	usercmd_t	cmd;
 	int			tracemask;			// collide against these types of surfaces
 	int			debugLevel;			// if set, diagnostic output will be printed
+	int			zanzokenDelay;		// ms unseen after a locked-on counter (g_zanzokenAppearDelay)
 	qboolean	noFootsteps;		// if the game is setup for no footsteps by the server
 	qboolean	gauntletHit;		// true if a gauntlet attack would actually hit something
 	int			framecount;
@@ -250,8 +251,20 @@ typedef enum {
 	stTransformDuration,
 	stTransformFatigue,
 	stTransformHealth,
-	stTransformEffectMaximum
+	stTransformEffectMaximum,
+	stHealthBars,			// health bars of the server (g_healthBars, 1..3)
+	stZanzokenChain			// locked-on zanzoken: chases used (ZC_CHASES) and keys held last step
 }statIndex_t;
+#define ZC_CHASES		0x0003	// chases used in the running combo (0..3)
+#define ZC_TELE_HELD	0x0004
+#define ZC_FWD_HELD		0x0008
+#define ZC_ALT_HELD		0x0010
+#define ZC_STRIKE		0x0020	// a counter strikes once the body shows up again
+#define ZC_CAUGHT		0x0040	// countered: nothing until the one that vanished shows up and strikes
+// eventParm of EV_ZANZOKEN_END above 0: a locked-on zanzoken teleport, the
+// body shows up eventParm times this many ms later (cgame hides it meanwhile;
+// 1 for a dodge or a chase, there at once)
+#define ZANZOKEN_VANISH_STEP	10
 typedef enum {
 	stZanzokenCost,
 	stEnergyAttackCost,
@@ -317,7 +330,11 @@ typedef enum{
 	tmBlind,
 	tmSoar,
 	tmFall,
-	tmSafe
+	tmSafe,
+	tmZanzokenRearm,		// no locked-on dodge or counter until this runs out
+	tmZanzokenChase,		// after a chase: W catches the flying opponent, MOUSE2 launches it back
+	tmZanzokenStrike,		// the strike pose of a counter or a launch back holds this long
+	tmZanzokenVanish		// unseen after a locked-on counter: it waits there until this runs out, then strikes
 }timers_t;
 typedef enum {
 	PW_NONE,
@@ -816,6 +833,8 @@ void	BG_AddPredictableEventToPlayerstate( int newEvent, int eventParm, playerSta
 void	BG_TouchJumpPad( playerState_t *ps, entityState_t *jumppad );
 
 void	BG_PlayerStateToEntityState( playerState_t *ps, entityState_t *s,qboolean snap );
+
+int		BG_HealthBars( const playerState_t *ps );
 
 int		BG_IntLoBits( const int i );
 int		BG_IntHiBits( const int i );

@@ -107,6 +107,9 @@ typedef struct {
 	/* Fase 8: buscar un punto donde el target no vea al bot en vez de solo
 	 * retroceder en linea recta hacia atras. */
 	qboolean allowsHideSeek;
+	/* Contraataque con zanzoken (Z mientras el rival lo golpea en melee, con
+	 * el lock-on puesto). */
+	qboolean allowsZanzokenCounter;
 } botlite_combat_policy_t;
 
 typedef struct {
@@ -221,6 +224,13 @@ typedef struct {
 	 * confiar en la transicion. Sin esto un solo tick ruidoso de distancia/LOS
 	 * cortaba la huida a mitad de camino. */
 	int recoverDisengageConfirmMs;
+
+	/* Contraataque con zanzoken: probabilidad por racha de golpes recibidos,
+	 * tiempo de reaccion antes de apretar Z y espera entre contraataques. */
+	int zanzokenCounterPct;
+	int zanzokenCounterMinMs;
+	int zanzokenCounterMaxMs;
+	int zanzokenCounterCooldownMs;
 } botlite_profile_t;
 
 typedef struct {
@@ -312,6 +322,13 @@ typedef struct {
 	int zanzokenMoveForward;
 	int zanzokenMoveRight;
 	int zanzokenMoveUp;
+	/* Contraataque con zanzoken: una tirada por racha de golpes recibidos. */
+	int counterSeenTime;
+	qboolean counterRolled;
+	qboolean counterCommitted;
+	int counterPressTime;
+	int counterPressUntil;
+	int counterNextTime;
 } botlite_melee_state_t;
 
 typedef struct {
@@ -644,6 +661,7 @@ qboolean BotLite_RunDodgeIncoming( gentity_t *bot, int clientNum, const botlite_
 /* Fase 6.2 -- zanzoken sostenido (compartido por escape, esquive y aproximacion) */
 int BotLite_ZanzokenDurationMs( gentity_t *bot );
 void BotLite_StartZanzoken( gentity_t *bot, int clientNum, int moveForward, int moveRight, int moveUp );
+qboolean BotLite_RunZanzokenCounter( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot );
 qboolean BotLite_RunZanzokenHold( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot );
 qboolean BotLite_RunKiCharge( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot );
 

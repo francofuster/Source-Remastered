@@ -303,6 +303,7 @@ extern struct gclient_s {
 	qboolean	noclip;
 
 	int			lastCmdTime;		// level.time of last usercmd_t, for EF_CONNECTION
+	int			lockLatchedButtons;	// presses seen between server frames while locked on (G_RunClient)
 									// we can't just use pers.lastCommand.time, because
 									// of the g_sycronousclients case
 	int			buttons;
@@ -779,6 +780,9 @@ extern	vmCvar_t	g_powerlevel;
 extern	vmCvar_t	g_powerlevelMaximum;
 extern	vmCvar_t	g_breakLimitRate;
 extern	vmCvar_t	g_botStamina;
+extern	vmCvar_t	g_healthBars;
+extern	vmCvar_t	g_zanzokenAppearDelay;
+qboolean	G_LockonAllowed( gentity_t *ent, gentity_t *target );
 extern	vmCvar_t	g_allowTiers;
 extern	vmCvar_t	g_allowScoreboard;
 extern	vmCvar_t	g_allowSoar;

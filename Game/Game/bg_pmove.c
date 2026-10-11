@@ -77,6 +77,8 @@ void PM_StopMelee(void);
 void PM_StopDirections(void);
 void PM_StopLockon(void);
 void PM_EndDrift(void);
+void PM_SetView(void);
+qboolean PM_LockedZanzoken(void);
 void PM_Crash(qboolean vertical);
 void PM_ContinueLegsAnim(int anim);
 void PM_ContinueTorsoAnim(int anim);
@@ -270,7 +272,15 @@ void PM_CheckKnockback(void){
 			speed /= 2;
 		}
 		VectorScale(pm->ps->velocity,speed,pm->ps->velocity);
-		PM_StepSlideMove(qfalse);
+		// The flight goes through bodies: a launched player stopped against the
+		// opponent (standing in its path) stayed in the knockback and was hit
+		// again and again. Walls still stop it (PM_CheckDirection).
+		{
+			int oldMask = pm->tracemask;
+			pm->tracemask &= ~CONTENTS_BODY;
+			PM_StepSlideMove(qfalse);
+			pm->tracemask = oldMask;
+		}
 		VectorNormalize2(pm->ps->velocity,post_vel);
 		if(PM_CheckDirection(direction,qfalse)){PM_Crash(vertical);}
 	}
@@ -349,6 +359,382 @@ void PM_CheckZanzoken(void){
 		pm->ps->powerLevel[plUseFatigue] += cost;
 		PM_AddEvent(EV_ZANZOKEN_START);
 	}	
+}
+/*===============
+LOCKED-ON ZANZOKEN
+
+The Z key with an opponent locked on, on top of the classic melee:
+- counter: while its melee hits you, appear behind it and launch it
+- dodge: when it comes at you (closing in to open the melee, or charging a
+  power or stun hit), appear behind it; it is left open for a moment
+- chase: while it flies from a knockback, appear ahead in its flight path;
+  then W catches it into a new melee and MOUSE2 launches it back. Up to
+  three chases, until it gets free again, so it can always escape.
+Everything is paid with fatigue. Anywhere else Z is the classic zanzoken.
+===============*/
+#define ZAN_BEHIND			50		// distance behind the opponent
+#define ZAN_DODGE_COST		0.10f	// fatigue share
+#define ZAN_DODGE_RANGE		200		// an opponent coming at you from this close can be dodged
+#define ZAN_DODGE_EXPOSED	450		// the dodged opponent cannot act this long
+#define ZAN_DODGE_REARM		600
+#define ZAN_COUNTER_COST	0.05f
+#define ZAN_COUNTER_REARM	1500
+#define ZAN_CHASE_MAX		3
+#define ZAN_CHASE_RANGE		4000
+#define ZAN_CHASE_LEAD		60		// gap ahead of the flight, plus its speed times ZAN_CHASE_LEAD_TIME
+#define ZAN_CHASE_LEAD_TIME	0.10f
+#define ZAN_CHASE_SIDE		40		// beside the flight path, so it flies past instead of into you
+#define ZAN_CHASE_WINDOW	700		// time to catch it (W) or launch it back (MOUSE2)
+#define ZAN_STRIKE_TIME		300
+#define ZAN_CAUGHT_MARGIN	100		// the countered one is held this much past the strike time (the strike
+									// ends it): the two players do not move in step
+
+static const float zan_chaseCost[ZAN_CHASE_MAX] = { 0.10f, 0.10f, 0.10f };
+
+static playerState_t *PM_ZanzokenFoe(void){
+	playerState_t *foe;
+	if(pm->ps->lockedTarget <= 0 || pm->ps->lockedTarget > MAX_CLIENTS || !pm->ps->lockedPlayer || !pm->ps->lockedPosition){return NULL;}
+	foe = pm->ps->lockedPlayer;
+	// the pointer is refreshed by EV_MELEE_CHECK, reject it while stale
+	if(foe == pm->ps || foe->clientNum != pm->ps->lockedTarget - 1){return NULL;}
+	return foe;
+}
+static qboolean PM_ZanzokenAffords(float share){
+	return pm->ps->powerLevel[plFatigue] >= pm->ps->powerLevel[plMaximum] * share ? qtrue : qfalse;
+}
+static void PM_ZanzokenPay(float share){
+	pm->ps->powerLevel[plUseFatigue] += pm->ps->powerLevel[plMaximum] * share;
+}
+// g_debugMove 1 traces the locked-on zanzoken
+static void PM_ZanzokenDebug(const char *text){
+	if(pm->debugLevel){Com_Printf("[zanzoken %i] cl%i %s\n", pm->ps->commandTime, pm->ps->clientNum, text);}
+}
+static void PM_ZanzokenTimer(int timer){
+	if(pm->ps->timers[timer] > 0){
+		pm->ps->timers[timer] -= pml.msec;
+		if(pm->ps->timers[timer] < 0){pm->ps->timers[timer] = 0;}
+	}
+}
+// Puts the player at around + offset, unless a wall leaves no room there.
+static qboolean PM_ZanzokenTeleport(const vec3_t around, const vec3_t offset, int passEntityNum){
+	trace_t	trace;
+	vec3_t	end;
+	VectorAdd(around, offset, end);
+	pm->trace(&trace, around, pm->mins, pm->maxs, end, passEntityNum, MASK_PLAYERSOLID & ~CONTENTS_BODY);
+	if(trace.allsolid || trace.startsolid || trace.fraction < 0.75f){return qfalse;}
+	VectorCopy(trace.endpos, pm->ps->origin);
+	VectorClear(pm->ps->velocity);
+	pm->ps->bitFlags &= ~usingZanzoken;
+	// a teleport: clients cut to the new place instead of sliding there, so
+	// the camera jumps at once (the body shows up a moment later, cgame)
+	pm->ps->eFlags ^= EF_TELEPORT_BIT;
+	return qtrue;
+}
+// Behind its back, or beside it when a wall is there.
+static qboolean PM_ZanzokenBehind(playerState_t *foe){
+	vec3_t	angles, forward, right, offset;
+	int		i;
+	VectorSet(angles, 0, foe->viewangles[YAW], 0);
+	AngleVectors(angles, forward, right, NULL);
+	for(i = 0; i < 3; i++){
+		if(i == 0){VectorScale(forward, -ZAN_BEHIND, offset);}
+		else{VectorScale(right, i == 1 ? ZAN_BEHIND : -ZAN_BEHIND, offset);}
+		if(PM_ZanzokenTeleport(foe->origin, offset, foe->clientNum)){return qtrue;}
+	}
+	return qfalse;
+}
+// Ahead in its flight path and a little aside; beside it when a wall is there.
+static qboolean PM_ZanzokenChase(playerState_t *foe){
+	vec3_t	dir, side, offset;
+	float	speed;
+	int		i;
+	VectorCopy(foe->velocity, dir);
+	speed = VectorNormalize(dir);
+	if(speed < 1.0f){
+		VectorSubtract(foe->origin, pm->ps->origin, dir);
+		VectorNormalize(dir);
+	}
+	VectorSet(side, -dir[1], dir[0], 0);
+	if(VectorNormalize(side) < 0.1f){VectorSet(side, 1, 0, 0);}	// a vertical flight: any side
+	for(i = 0; i < 4; i++){
+		if(i < 2){
+			VectorScale(dir, ZAN_CHASE_LEAD + speed * ZAN_CHASE_LEAD_TIME, offset);
+			VectorMA(offset, i == 0 ? ZAN_CHASE_SIDE : -ZAN_CHASE_SIDE, side, offset);
+		}
+		else{
+			VectorScale(side, i == 2 ? ZAN_CHASE_LEAD : -ZAN_CHASE_LEAD, offset);
+		}
+		if(PM_ZanzokenTeleport(foe->origin, offset, foe->clientNum)){return qtrue;}
+	}
+	return qfalse;
+}
+// A power hit that launches the opponent away, toward the direction held
+// (the classic power melee directions and damage).
+static void PM_ZanzokenStrike(playerState_t *foe){
+	vec3_t	dir;
+	int		damage, direction, anim;
+	direction = 5;
+	anim = ANIM_POWER_MELEE_1_HIT;
+	if(pm->cmd.upmove > 0){direction = 1; anim = ANIM_POWER_MELEE_4_HIT;}
+	else if(pm->cmd.upmove < 0){direction = 2; anim = ANIM_POWER_MELEE_2_HIT;}
+	else if(pm->cmd.rightmove > 0){direction = 3; anim = ANIM_POWER_MELEE_6_HIT;}
+	else if(pm->cmd.rightmove < 0){direction = 4; anim = ANIM_POWER_MELEE_5_HIT;}
+	// the flight reads the view of the one launched (PM_CheckKnockback): it
+	// faces us, level, so away, up, down, left and right are the ones we see
+	VectorSubtract(pm->ps->origin, foe->origin, dir);
+	vectoangles(dir, foe->viewangles);
+	foe->viewangles[PITCH] = 0;
+	foe->viewangles[ROLL] = 0;
+	damage = (pm->ps->powerLevel[plCurrent] * 0.15) * pm->ps->stats[stMeleeAttack];
+	pm->ps->powerLevel[plHealthPool] += damage;
+	pm->ps->powerLevel[plMaximumPool] += damage * 0.8;
+	foe->powerLevel[plDamageFromMelee] += damage;
+	foe->powerups[PW_KNOCKBACK_SPEED] = (pm->ps->powerLevel[plCurrent] / 21.84) + pm->ps->stats[stKnockbackPower];
+	foe->knockBackDirection = direction;
+	foe->timers[tmKnockback] = 5000;
+	foe->timers[tmFreeze] = 0;
+	foe->stats[stZanzokenChain] &= ~ZC_CAUGHT;
+	foe->timers[tmMeleeCharge] = 0;
+	foe->bitFlags &= ~usingZanzoken;
+	foe->timers[tmZanzoken] = 0;
+	foe->weaponstate = WEAPON_READY;
+	PM_ForceLegsAnim(anim);
+	PM_ForceTorsoAnim(anim);
+	pm->ps->timers[tmZanzokenStrike] = ZAN_STRIKE_TIME;
+	pm->ps->timers[tmFreeze] = ZAN_STRIKE_TIME;
+	PM_AddEvent(EV_MELEE_KNOCKBACK);
+}
+// The teleport of a dodge or a chase: the body is there at once (the
+// smallest step of the event: cgame draws the lines where it arrives).
+static void PM_ZanzokenArrive(void){
+	BG_AddPredictableEventToPlayerstate(EV_ZANZOKEN_END, 1, pm->ps);
+}
+// The counter, like the Sparking vanish: the camera is already behind the
+// opponent and the body shows up g_zanzokenAppearDelay ms later (rounded to
+// the steps the event carries, so cgame shows it at the same time), then it
+// strikes (PM_ZanzokenAppear). Until then it waits there, still, and the
+// opponent can do nothing either (PM_ZanzokenCaught) and keeps facing the
+// same way (PM_UpdateViewAngles).
+static void PM_ZanzokenVanish(playerState_t *foe){
+	int parm;
+	parm = (pm->zanzokenDelay + ZANZOKEN_VANISH_STEP / 2) / ZANZOKEN_VANISH_STEP;
+	if(parm < 1){parm = 1;}
+	if(parm > 255){parm = 255;}
+	pm->ps->timers[tmZanzokenVanish] = parm * ZANZOKEN_VANISH_STEP;
+	pm->ps->timers[tmFreeze] = parm * ZANZOKEN_VANISH_STEP;
+	pm->ps->stats[stZanzokenChain] |= ZC_STRIKE;
+	foe->timers[tmFreeze] = parm * ZANZOKEN_VANISH_STEP + ZAN_CAUGHT_MARGIN;
+	foe->stats[stZanzokenChain] |= ZC_CAUGHT;
+	// the view hold reads us through its pointer, which a melee start may have
+	// cleared (PM_SyncMelee) until the next EV_MELEE_CHECK
+	if(foe->lockedTarget == pm->ps->clientNum + 1){foe->lockedPlayer = pm->ps;}
+	BG_AddPredictableEventToPlayerstate(EV_ZANZOKEN_END, parm, pm->ps);
+}
+// Nothing this step: no moving and only the keys kept (a charge is dropped,
+// not fired).
+static void PM_ZanzokenNoActions(int keepButtons){
+	PM_StopDirections();
+	pm->cmd.buttons &= keepButtons;
+	if(pm->ps->weaponstate == WEAPON_CHARGING || pm->ps->weaponstate == WEAPON_ALTCHARGING){PM_WeaponRelease();}
+}
+// Unseen after a counter: no moving, no attacking (the keys still held count
+// as pressed when it shows up). It strikes as it shows up.
+static void PM_ZanzokenAppear(void){
+	playerState_t	*foe;
+	int				*chain;
+	if(pm->ps->timers[tmZanzokenVanish] <= 0){return;}
+	pm->ps->timers[tmZanzokenVanish] -= pml.msec;
+	if(pm->ps->timers[tmZanzokenVanish] > 0){
+		PM_ZanzokenNoActions(BUTTON_TELEPORT | BUTTON_TALK | BUTTON_GESTURE);
+		return;
+	}
+	pm->ps->timers[tmZanzokenVanish] = 0;
+	chain = &pm->ps->stats[stZanzokenChain];
+	if(*chain & ZC_STRIKE){
+		*chain &= ~ZC_STRIKE;
+		foe = PM_ZanzokenFoe();
+		if(foe && !(foe->bitFlags & isDead)){
+			PM_ZanzokenStrike(foe);
+			PM_ZanzokenDebug("shows up: strike");
+		}
+		else{
+			PM_ZanzokenDebug("shows up: no opponent left to strike");
+		}
+	}
+}
+// Countered: the one that vanished shows up behind and strikes (that ends it,
+// PM_ZanzokenStrike); until then nothing at all, it does not even know where
+// it went. Held only while frozen, so a strike that never comes frees it.
+static void PM_ZanzokenCaught(void){
+	int *chain;
+	chain = &pm->ps->stats[stZanzokenChain];
+	if(!(*chain & ZC_CAUGHT)){return;}
+	if(pm->ps->timers[tmFreeze] <= 0 || pm->ps->timers[tmKnockback] || (pm->ps->bitFlags & isDead)){
+		*chain &= ~ZC_CAUGHT;
+		return;
+	}
+	PM_ZanzokenNoActions(BUTTON_TALK);
+}
+// Its melee is hitting us: the opening hit that freezes us, or the speed,
+// stun and breaker hits while we neither block nor evade.
+static qboolean PM_ZanzokenBeingHit(playerState_t *foe, int foeState, int myState, float dist){
+	if(foe->lockedTarget != pm->ps->clientNum + 1 || dist > 96){return qfalse;}
+	if(myState == stMeleeStartHit){return qtrue;}
+	if(myState == stMeleeUsingBlock || myState == stMeleeUsingEvade || myState == stMeleeUsingSpeed){return qfalse;}
+	if(foeState == stMeleeStartAttack || foeState == stMeleeUsingSpeed || foeState == stMeleeUsingStun ||
+		foeState == stMeleeUsingSpeedBreaker || foeState == stMeleeUsingChargeBreaker){return qtrue;}
+	return qfalse;
+}
+// It comes at us: closing in to open the melee, or charging a hit.
+static qboolean PM_ZanzokenIncoming(playerState_t *foe, int foeState, float dist){
+	if(foe->lockedTarget != pm->ps->clientNum + 1 || foe->timers[tmKnockback] || foe->timers[tmFreeze]){return qfalse;}
+	if(foe->bitFlags & (isCrashed | isUnconcious | isStruggling | isDead)){return qfalse;}
+	if((foeState == stMeleeChargingPower || foeState == stMeleeChargingStun) && dist <= 96){return qtrue;}
+	if(foeState == stMeleeAggressing && dist <= ZAN_DODGE_RANGE && !(foe->bitFlags & usingMelee)){return qtrue;}
+	return qfalse;
+}
+qboolean PM_LockedZanzoken(void){
+	playerState_t	*foe;
+	vec3_t			line;
+	int				*chain, foeState, myState, count;
+	qboolean		telePress, fwdPress, altPress;
+	float			dist;
+
+	chain = &pm->ps->stats[stZanzokenChain];
+	telePress = ((pm->cmd.buttons & BUTTON_TELEPORT) && !(*chain & ZC_TELE_HELD)) ? qtrue : qfalse;
+	fwdPress = (pm->cmd.forwardmove > 0 && !(*chain & ZC_FWD_HELD)) ? qtrue : qfalse;
+	altPress = ((pm->cmd.buttons & BUTTON_ALT_ATTACK) && !(*chain & ZC_ALT_HELD)) ? qtrue : qfalse;
+	*chain &= ZC_CHASES | ZC_STRIKE | ZC_CAUGHT;
+	if(pm->cmd.buttons & BUTTON_TELEPORT){*chain |= ZC_TELE_HELD;}
+	if(pm->cmd.forwardmove > 0){*chain |= ZC_FWD_HELD;}
+	if(pm->cmd.buttons & BUTTON_ALT_ATTACK){*chain |= ZC_ALT_HELD;}
+	PM_ZanzokenTimer(tmZanzokenRearm);
+	PM_ZanzokenTimer(tmZanzokenChase);
+	PM_ZanzokenTimer(tmZanzokenStrike);
+
+	// still unseen after the last one: nothing until it shows up (nor the
+	// classic zanzoken)
+	if(pm->ps->timers[tmZanzokenVanish] > 0){return telePress;}
+
+	foe = PM_ZanzokenFoe();
+	if(!foe || pm->ps->persistant[PERS_TEAM] == TEAM_SPECTATOR || (pm->ps->bitFlags & isStruggling) || (foe->bitFlags & isDead)){
+		*chain &= ~ZC_CHASES;
+		pm->ps->timers[tmZanzokenChase] = 0;
+		return qfalse;
+	}
+	PM_SetView();		// the bounding box for the teleport traces
+	dist = Distance(pm->ps->origin, foe->origin);
+	foeState = foe->stats[stMeleeState];
+	myState = pm->ps->stats[stMeleeState];
+
+	// the combo is over once the opponent is free again: the chases count anew
+	if(!foe->timers[tmKnockback] && !foe->timers[tmFreeze] && !(foe->bitFlags & (isCrashed | usingMelee)) && !pm->ps->timers[tmZanzokenChase]){
+		*chain &= ~ZC_CHASES;
+	}
+
+	// it vanished itself: it is nowhere to be seen until it shows up
+	if(foe->timers[tmZanzokenVanish] > 0){return telePress;}
+
+	// after a chase: W catches it, MOUSE2 launches it back (it may have flown
+	// past already: the strike comes next to it)
+	if(pm->ps->timers[tmZanzokenChase] > 0){
+		if(fwdPress || altPress){
+			PM_ZanzokenDebug(va("chase window %i: key, foe knockback %i freeze %i crashed %i dist %i", pm->ps->timers[tmZanzokenChase],
+				foe->timers[tmKnockback], foe->timers[tmFreeze], (foe->bitFlags & isCrashed) ? 1 : 0, (int)dist));
+		}
+		if(foe->timers[tmKnockback] <= 0 || (foe->bitFlags & isCrashed)){
+			PM_ZanzokenDebug(va("chase window closed: foe knockback %i crashed %i", foe->timers[tmKnockback], (foe->bitFlags & isCrashed) ? 1 : 0));
+			pm->ps->timers[tmZanzokenChase] = 0;
+		}
+		else if((fwdPress || altPress) && dist <= ZAN_CHASE_RANGE){
+			VectorSubtract(pm->ps->origin, foe->origin, line);
+			if(VectorNormalize(line) < 0.1f){VectorSet(line, 1, 0, 0);}
+			VectorScale(line, 40, line);
+			PM_ZanzokenTeleport(foe->origin, line, foe->clientNum);
+			pm->ps->timers[tmZanzokenChase] = 0;
+			pm->ps->timers[tmFreeze] = 0;
+			if(altPress){
+				PM_ZanzokenStrike(foe);
+				PM_ZanzokenDebug("chase: launched back");
+			}
+			else{
+				PM_ZanzokenDebug("chase: caught");
+				// caught: the flight stops and W opens the classic melee in this step
+				foe->timers[tmKnockback] = 0;
+				foe->knockBackDirection = 0;
+				foe->powerups[PW_KNOCKBACK_SPEED] = 0;
+				VectorClear(foe->velocity);
+			}
+			return qfalse;
+		}
+	}
+
+	if(!telePress){return qfalse;}
+
+	// flying from a knockback while it chases us (it has appeared in our
+	// flight path): Z counters its chase, behind it, and ends our flight
+	if(pm->ps->timers[tmKnockback] > 0){
+		if(foe->timers[tmZanzokenChase] > 0 && foe->lockedTarget == pm->ps->clientNum + 1 && pm->ps->timers[tmZanzokenRearm] <= 0
+			&& PM_ZanzokenAffords(ZAN_COUNTER_COST) && PM_ZanzokenBehind(foe)){
+			PM_ZanzokenPay(ZAN_COUNTER_COST);
+			PM_StopKnockback();
+			foe->timers[tmZanzokenChase] = 0;
+			pm->ps->timers[tmZanzokenRearm] = ZAN_COUNTER_REARM;
+			PM_ZanzokenStrike(foe);
+			PM_ZanzokenArrive();
+			PM_ZanzokenDebug("counter to its chase: behind the chaser, launched");
+			return qtrue;
+		}
+		return qfalse;
+	}
+
+	// counter: while being hit, Z never becomes the classic zanzoken
+	if(PM_ZanzokenBeingHit(foe, foeState, myState, dist)){
+		if(pm->ps->timers[tmZanzokenRearm] <= 0 && PM_ZanzokenAffords(ZAN_COUNTER_COST) && PM_ZanzokenBehind(foe)){
+			PM_ZanzokenPay(ZAN_COUNTER_COST);
+			PM_StopMelee();
+			pm->ps->timers[tmZanzokenRearm] = ZAN_COUNTER_REARM;
+			// the launch comes when we show up behind it
+			PM_ZanzokenVanish(foe);
+			PM_ZanzokenDebug("counter: behind the attacker");
+		}
+		else{
+			PM_ZanzokenDebug("counter refused (rearm, fatigue or no room)");
+		}
+		return qtrue;
+	}
+
+	// chase: it flies from a knockback
+	if(foe->timers[tmKnockback] > 0 && !(foe->bitFlags & isCrashed)){
+		count = *chain & ZC_CHASES;
+		if(count < ZAN_CHASE_MAX && dist <= ZAN_CHASE_RANGE && PM_ZanzokenAffords(zan_chaseCost[count]) && PM_ZanzokenChase(foe)){
+			PM_ZanzokenPay(zan_chaseCost[count]);
+			*chain = (*chain & ~ZC_CHASES) | (count + 1);
+			pm->ps->timers[tmZanzokenChase] = ZAN_CHASE_WINDOW;
+			pm->ps->timers[tmFreeze] = 0;
+			PM_ZanzokenArrive();
+			PM_ZanzokenDebug(va("chase %i, %i units from the flight (foe knockback %i freeze %i speed %i)", count + 1, (int)Distance(pm->ps->origin, foe->origin), foe->timers[tmKnockback], foe->timers[tmFreeze], (int)VectorLength(foe->velocity)));
+			return qtrue;
+		}
+		return qfalse;
+	}
+
+	// dodge: it comes at us
+	if(pm->ps->timers[tmZanzokenRearm] <= 0 && !pm->ps->timers[tmFreeze] && PM_ZanzokenIncoming(foe, foeState, dist)){
+		if(PM_ZanzokenAffords(ZAN_DODGE_COST) && PM_ZanzokenBehind(foe)){
+			PM_ZanzokenPay(ZAN_DODGE_COST);
+			PM_StopMelee();
+			// it swings at nothing and is left open
+			foe->timers[tmFreeze] = ZAN_DODGE_EXPOSED;
+			foe->timers[tmMeleeCharge] = 0;
+			BG_AddPredictableEventToPlayerstate(EV_MELEE_MISS, 0, foe);
+			pm->ps->timers[tmZanzokenRearm] = ZAN_DODGE_REARM;
+			PM_ZanzokenArrive();
+			PM_ZanzokenDebug(va("dodge: behind the attacker (its state %i)", foeState));
+			return qtrue;
+		}
+	}
+	return qfalse;
 }
 /*===============
 POWER LEVEL
@@ -446,6 +832,12 @@ void PM_BurnPowerLevel(){
 		initial = burn;
 		percent = 1.0 - ((float)pm->ps->powerLevel[plCurrent] / (float)pm->ps->powerLevel[plMaximum]);
 		burn -= (int)(((float)pm->ps->powerLevel[plFatigue] * 0.01) * defense);
+		// Health bars (g_healthBars): every bar holds a whole health gauge, so
+		// the damage that reaches the health, and what it feeds back, is split
+		if(BG_HealthBars(pm->ps) > 1){
+			burn /= BG_HealthBars(pm->ps);
+			initial /= BG_HealthBars(pm->ps);
+		}
 		if(burnType != 2){
 			pm->ps->powerLevel[plHealthPool] += burn * 0.5;
 			pm->ps->powerLevel[plMaximumPool] += burn * 0.7;
@@ -1814,6 +2206,7 @@ void PM_Footsteps(void){
 	int	old;
 	qboolean footstep;
 	if(pm->ps->bitFlags & usingZanzoken || pm->ps->bitFlags & usingJump || pm->ps->bitFlags & usingBallFlip){return;}
+	if(pm->ps->timers[tmZanzokenStrike] > 0){return;}
 	if(pm->ps->bitFlags & keyTierUp || pm->ps->bitFlags & keyTierDown && VectorLength(pm->ps->velocity) <= 5){return;}
 	if((pm->ps->bitFlags & usingAlter) && (VectorLength(pm->ps->velocity) <= 5)){
 		if(pm->cmd.rightmove < 0){
@@ -2350,12 +2743,18 @@ void PM_Melee(void){
 			distance = Distance(pm->ps->origin,*(pm->ps->lockedPosition));
 			if(!(pm->ps->bitFlags & usingMelee)){
 				state = stMeleeInactive;
-				if(pm->cmd.forwardmove > 0){state = stMeleeAggressing;}
+				if(pm->cmd.forwardmove > 0 && !pm->ps->timers[tmFreeze]){state = stMeleeAggressing;}
 				if(pm->cmd.forwardmove < 0){state = stMeleeDegressing;}
 			}
-			if((pm->ps->lockedPlayer->bitFlags & isDead) || (pm->ps->lockedPlayer->bitFlags & isUnconcious) || (pm->ps->lockedPlayer->bitFlags & isCrashed)){
+			// the lock-on holds while the opponent is crashed or knocked out:
+			// only death (or the G key) ends it
+			if(pm->ps->lockedPlayer->bitFlags & isDead){
 				PM_StopMelee();
 				PM_StopLockon();
+				return;
+			}
+			if((pm->ps->lockedPlayer->bitFlags & isUnconcious) || (pm->ps->lockedPlayer->bitFlags & isCrashed)){
+				PM_StopMelee();
 				return;
 			}
 			if(state != stMeleeIdle){pm->ps->timers[tmMeleeIdle] = 0;}
@@ -2984,14 +3383,18 @@ void PM_CheckLockon(void){
 		}
 		AngleVectors(pm->ps->viewangles,forward,NULL,NULL);
 		VectorMA(pm->ps->origin,131072,forward,end);
-		lockBox = 250;
-		minSize[0] = -lockBox;
-		minSize[1] = -lockBox;
-		minSize[2] = -lockBox;
-		maxSize[0] = -minSize[0];
-		maxSize[1] = -minSize[1];
-		maxSize[2] = -minSize[2];
-		pm->trace(&trace,pm->ps->origin,minSize,maxSize,end,pm->ps->clientNum,CONTENTS_BODY);
+		// A box sweep misses a body it already overlaps at the start, so an
+		// opponent closer than the box was never found: smaller boxes follow.
+		for(lockBox = 250; lockBox >= 30; lockBox = lockBox > 100 ? 100 : (lockBox > 30 ? 30 : 0)){
+			minSize[0] = -lockBox;
+			minSize[1] = -lockBox;
+			minSize[2] = -lockBox;
+			maxSize[0] = -minSize[0];
+			maxSize[1] = -minSize[1];
+			maxSize[2] = -minSize[2];
+			pm->trace(&trace,pm->ps->origin,minSize,maxSize,end,pm->ps->clientNum,CONTENTS_BODY);
+			if(trace.entityNum < MAX_CLIENTS){break;}
+		}
 		if((trace.entityNum >= MAX_CLIENTS)){return;}
 		PM_AddEvent(EV_LOCKON_START);
 		pm->ps->lockedTarget = trace.entityNum+1;
@@ -3053,8 +3456,16 @@ void PM_UpdateViewAngles(playerState_t *ps, const usercmd_t *cmd){
 	if((pm->ps->lockedTarget > 0) && !(pm->ps->bitFlags & usingAlter) && *ps->lockedPosition){
 		vec3_t dir;
 		vec3_t angles;
-		VectorSubtract(*(ps->lockedPosition),ps->origin,dir);
-		vectoangles(dir, angles);
+		// a locked-on zanzoken took it out of sight: it does not know where it
+		// went, the view stays the same way until it shows up again
+		if(ps->lockedPlayer && ps->lockedPlayer != ps && ps->lockedPlayer->clientNum == ps->lockedTarget - 1
+			&& ps->lockedPlayer->timers[tmZanzokenVanish] > 0){
+			VectorCopy(ps->viewangles, angles);
+		}
+		else{
+			VectorSubtract(*(ps->lockedPosition),ps->origin,dir);
+			vectoangles(dir, angles);
+		}
 
 		for (i = 0; i < 3; i++) {
 			ps->delta_angles[i] = ANGLE2SHORT(angles[i]) - cmd->angles[i];
@@ -3173,6 +3584,8 @@ void PmoveSingle(pmove_t *pmove){
 	if(abs(pm->cmd.forwardmove)> 64 || abs(pm->cmd.rightmove)> 64){pm->cmd.buttons &= ~BUTTON_WALKING;}
 	AngleVectors(pm->ps->viewangles,pml.forward,pml.right,pml.up);
 	pml.previous_waterlevel = pmove->waterlevel;
+	PM_ZanzokenAppear();
+	PM_ZanzokenCaught();
 	PM_Impede();
 	PM_Burn();
 	PM_Ride();
@@ -3193,11 +3606,19 @@ void PmoveSingle(pmove_t *pmove){
 		PM_CheckCrash();
 		PM_CheckStatus();
 		PM_CheckStruggling();
-		if(!pm->ps->timers[tmKnockback] && !(pm->ps->bitFlags & isUnconcious) && !(pm->ps->bitFlags & isDead) && !(pm->ps->bitFlags & isCrashed)){
+		if(pm->ps->timers[tmKnockback] > 0 && !(pm->ps->bitFlags & (isUnconcious | isDead | isCrashed)) && (pm->cmd.buttons & BUTTON_TELEPORT)){
+		PM_LockedZanzoken();
+	}
+	if(!pm->ps->timers[tmKnockback] && !(pm->ps->bitFlags & isUnconcious) && !(pm->ps->bitFlags & isDead) && !(pm->ps->bitFlags & isCrashed)){
 			PM_CheckBoost();
 			PM_CheckPowerLevel();
 			PM_CheckLockon();
-			PM_CheckZanzoken();
+			if(PM_LockedZanzoken()){
+				pm->ps->timers[tmZanzoken] = 0;		// the classic one waits for the key to be released
+			}
+			else{
+				PM_CheckZanzoken();
+			}
 			if(!meleeRange){
 				PM_CheckBlock();
 				PM_CheckJump();
@@ -3216,7 +3637,7 @@ void PmoveSingle(pmove_t *pmove){
 		PM_StopMovementTypes();
 		PM_StopFlight();
 		PM_StopDirections();
-		PM_StopLockon();
+		if(pm->ps->bitFlags & isDead){PM_StopLockon();}
 		PM_GroundTrace();
 		PM_AirMove();
 		PM_UpdateViewAngles(pm->ps, &pm->cmd);

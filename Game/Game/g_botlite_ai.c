@@ -220,7 +220,7 @@ static void BotLite_RunCombatGoal( gentity_t *bot, int clientNum, const botlite_
 		info->runtime.targetRecoveryHandledNum = target->s.number;
 		info->runtime.targetRecoveryHandledEvent = target->client->botCrashEventCounter;
 		BotLite_DebugLog( bot, va( "Trigger retreat target=%d crashCounter=%d", target->s.number, target->client->botCrashEventCounter ) );
-		BotLite_ClearLock( bot );
+		/* el lock-on se mantiene cuando el rival se estrella: solo lo corta la muerte */
 		BotLite_StartRecoveryWait( bot, clientNum, target );
 		BotLite_RunRecoveryWait( bot, clientNum, target );
 		return;
@@ -247,7 +247,13 @@ static void BotLite_RunGoal( gentity_t *bot, int clientNum, botlite_goal_t goal,
 	case BOTLITE_GOAL_WAIT_RECOVERY:
 		BotLite_LogTacticChange( bot, &g_botlite[clientNum], BOTLITE_TACTIC_RETREAT_RECOVERY );
 		if ( snapshot->targetCrashEdge && g_botlite[clientNum].runtime.mode != BOTLITE_MODE_WAIT_TARGET_RECOVERY && snapshot->target ) {
-			BotLite_ClearLock( bot );
+			/* El choque queda atendido, como en BotLite_RunCombatGoal. Antes se
+			 * resincronizaba solo porque el bot soltaba el lock y "cambiaba" de
+			 * objetivo; con el lock-on persistente el contador quedaba distinto y
+			 * el bot volvia a alejarse en cuanto terminaba la espera, sin parar. */
+			g_botlite[clientNum].runtime.targetRecoveryHandled = qtrue;
+			g_botlite[clientNum].runtime.targetRecoveryHandledNum = snapshot->target->s.number;
+			g_botlite[clientNum].runtime.targetRecoveryHandledEvent = snapshot->target->client->botCrashEventCounter;
 			BotLite_StartRecoveryWait( bot, clientNum, snapshot->target );
 		}
 		BotLite_RunRecoveryWait( bot, clientNum, snapshot->target );
@@ -305,6 +311,12 @@ void BotLite_ThinkClient( int clientNum, int time ) {
 		return;
 	}
 
+	/* bot_pause 1 (pruebas): los bots se quedan quietos, sin tocar nada. */
+	if ( trap_Cvar_VariableIntegerValue( "bot_pause" ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
 	if ( BotLite_IsTemporarilyDisabled( bot ) ) {
 		BotLite_HandleDisabledState( bot, clientNum );
 		BotLite_LogGoalChange( bot, info, BOTLITE_GOAL_NONE );
@@ -351,6 +363,14 @@ void BotLite_ThinkClient( int clientNum, int time ) {
 			}
 		}
 		BotLite_ResetStateForTargetDeath( clientNum );
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* Contraataque con zanzoken: la respuesta a los golpes del rival en melee.
+	 * Va antes que todo lo demas porque la ventana es la racha de golpes, y
+	 * mientras recibe ninguna otra tactica tiene sentido. */
+	if ( BotLite_RunZanzokenCounter( bot, clientNum, &snapshot ) ) {
 		BotLite_ActionCommit( bot, clientNum, time );
 		return;
 	}

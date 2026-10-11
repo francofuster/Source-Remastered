@@ -89,6 +89,8 @@ vmCvar_t	g_powerlevel;
 vmCvar_t	g_powerlevelMaximum;
 vmCvar_t	g_breakLimitRate;
 vmCvar_t	g_botStamina;
+vmCvar_t	g_healthBars;
+vmCvar_t	g_zanzokenAppearDelay;
 vmCvar_t	g_allowTiers;
 vmCvar_t	g_allowScoreboard;
 vmCvar_t	g_allowSoar;
@@ -194,6 +196,11 @@ static cvarTable_t		gameCvarTable[] = {
 	{ &g_breakLimitRate, "g_breakLimitRate", "1.0", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue  },
 	{ &g_botlite_targetBots, "g_botlite_targetBots", "1", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
 	{ &g_botStamina, "g_botStamina", "0", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
+	// health bars (1 to 3): 3 = green, magenta and red bars and fights last 3 times longer, 1 = classic
+	{ &g_healthBars, "g_healthBars", "3", CVAR_ARCHIVE, 0, qtrue },
+	// locked-on zanzoken counter: the camera cuts at once, the body shows up
+	// behind the attacker and strikes this many ms later
+	{ &g_zanzokenAppearDelay, "g_zanzokenAppearDelay", "500", CVAR_ARCHIVE, 0, qfalse },
 	// END ADDING
 
 };

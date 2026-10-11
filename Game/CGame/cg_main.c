@@ -198,6 +198,7 @@ vmCvar_t	cg_particlesMaximum;
 // LOCK CAMERA (dynamic combat camera, see cg_lockcam.c)
 vmCvar_t	cg_lockCam;
 vmCvar_t	cg_lockCamDebug;
+vmCvar_t	cg_zanzokenLinesLead;
 vmCvar_t	cg_lockCamRange;
 vmCvar_t	cg_lockCamRangeMelee;
 vmCvar_t	cg_lockCamFrameX;
@@ -352,6 +353,9 @@ static cvarTable_t cvarTable[] = {
 	// before unless a player opts in.
 	{ &cg_lockCam, "cg_lockCam", "0", CVAR_ARCHIVE},
 	{ &cg_lockCamDebug, "cg_lockCamDebug", "0", 0},
+	// locked-on zanzoken counter (the body shows up g_zanzokenAppearDelay ms after
+	// the camera cut): its lines show up this many ms before the body, where it appears
+	{ &cg_zanzokenLinesLead, "cg_zanzokenLinesLead", "100", CVAR_ARCHIVE},
 	{ &cg_lockCamRange, "cg_lockCamRange", "180", CVAR_ARCHIVE},			// orbit distance at range
 	{ &cg_lockCamRangeMelee, "cg_lockCamRangeMelee", "110", CVAR_ARCHIVE},	// orbit distance in melee
 	{ &cg_lockCamFrameX, "cg_lockCamFrameX", "0.22", CVAR_ARCHIVE},		// at range: player and target this far from center, on opposite sides (fraction of half screen)

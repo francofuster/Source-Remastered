@@ -2548,6 +2548,15 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
 	CG_DrawActive( stereoView );
 	CG_CheckMusic();
 
+	// A teleport flag is normally cleared by the prediction code, which does
+	// not run while locked on (nor in demos or follow mode): without this it
+	// stayed set after any teleport during a lock-on (the locked-on zanzoken),
+	// and every camera that reads it (cg_lockcam.c, the camera damping)
+	// restarted on every frame.
+	if ( cg.snap && ( cg.demoPlayback || ( cg.snap->ps.pm_flags & PMF_FOLLOW ) || cg.snap->ps.lockedTarget > 0 ) ) {
+		cg.thisFrameTeleport = qfalse;
+	}
+
 	trap_Cvar_VariableStringBuffer( "cl_paused", var, sizeof( var ) );
 	cgs.clientPaused = atoi( var );
 
