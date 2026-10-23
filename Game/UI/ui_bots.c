@@ -887,12 +887,50 @@ typedef struct {
 	const char		*acceptLabel;
 	int				defTime;
 	int				styleTime;
-	int				charRows;
+	int				charRows;		// rows shown, 3 at most
+	int				charScroll;		// first row shown
 	playerInfo_t	playerinfo;
 	char			shownModel[MAX_QPATH];
 } editMenu_t;
 
 static editMenu_t s_edit;
+
+/*
+=================
+UI_BotEdit_LayoutChars
+
+the grid shows three rows of four; with more characters it scrolls by
+rows, the arrows and the mouse wheel bring the rest in
+=================
+*/
+static void UI_BotEdit_LayoutChars( void ) {
+	int i;
+	int row;
+
+	for ( i = 0; i < numBotDefs; i++ ) {
+		row = i / 4 - s_edit.charScroll;
+		if ( row >= 0 && row < 3 ) {
+			UI_DItem( &s_edit.chars[i], 72 + ( i % 4 ) * EDIT_CELL_W, 176 + row * EDIT_CELL_H, 88, 104 );
+			s_edit.chars[i].generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+		}
+		else {
+			s_edit.chars[i].generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		}
+	}
+}
+
+static void UI_BotEdit_ScrollTo( int def ) {
+	int row;
+
+	row = def / 4;
+	if ( row < s_edit.charScroll ) {
+		s_edit.charScroll = row;
+	}
+	else if ( row > s_edit.charScroll + 2 ) {
+		s_edit.charScroll = row - 2;
+	}
+	UI_BotEdit_LayoutChars();
+}
 
 static int UI_BotEdit_FreeDef( void ) {
 	int def;
@@ -930,6 +968,22 @@ static sfxHandle_t UI_BotEdit_Key( int key ) {
 	id = item->id;
 	step = 0;
 
+	// the wheel scrolls the character grid
+	if ( ( key == K_MWHEELUP || key == K_MWHEELDOWN ) && numBotDefs > 12 ) {
+		s_edit.charScroll += ( key == K_MWHEELUP ) ? -1 : 1;
+		if ( s_edit.charScroll > ( numBotDefs + 3 ) / 4 - 3 ) {
+			s_edit.charScroll = ( numBotDefs + 3 ) / 4 - 3;
+		}
+		if ( s_edit.charScroll < 0 ) {
+			s_edit.charScroll = 0;
+		}
+		UI_BotEdit_LayoutChars();
+		if ( id >= ID_EDIT_CHAR && id < ID_EDIT_CHAR + numBotDefs && ( item->flags & QMF_HIDDEN ) ) {
+			Menu_SetCursorToItem( &s_edit.menu, &s_edit.chars[s_edit.charScroll * 4] );
+		}
+		return menu_move_sound;
+	}
+
 	if ( key == K_LEFTARROW || key == K_KP_LEFTARROW ) {
 		step = -1;
 	}
@@ -945,6 +999,7 @@ static sfxHandle_t UI_BotEdit_Key( int key ) {
 			step = 4;
 		}
 		if ( step && id - ID_EDIT_CHAR + step >= 0 && id - ID_EDIT_CHAR + step < numBotDefs ) {
+			UI_BotEdit_ScrollTo( id - ID_EDIT_CHAR + step );
 			Menu_SetCursorToItem( &s_edit.menu, &s_edit.chars[id - ID_EDIT_CHAR + step] );
 			return menu_move_sound;
 		}
@@ -1120,6 +1175,11 @@ static void UI_BotEdit_Draw( void ) {
 
 	UI_DGlass( 48, 128, 412, 528 );
 	UI_DSectionTitle( 72, 152, "CHARACTER" );
+	if ( numBotDefs > 12 ) {
+		UI_DText( 436, 150, va( "%s %i-%i of %i %s", s_edit.charScroll > 0 ? "<" : " ", s_edit.charScroll * 4 + 1,
+			( s_edit.charScroll * 4 + 12 < numBotDefs ) ? s_edit.charScroll * 4 + 12 : numBotDefs, numBotDefs,
+			( s_edit.charScroll + 3 ) * 4 < numBotDefs ? ">" : " " ), 15, UI_RIGHT, zeq_text3 );
+	}
 	UI_DGlass( 732, 128, 500, 528 );
 	UI_DSectionTitle( 756, 152, "LEVEL" );
 	UI_DSectionTitle( 756, 306, "STYLE" );
@@ -1204,10 +1264,11 @@ void UI_BotEditMenu( int slot ) {
 	if ( s_edit.charRows > 3 ) {
 		s_edit.charRows = 3;
 	}
-	for ( i = 0; i < numBotDefs && i < 12; i++ ) {
-		UI_BotEdit_DItem( &s_edit.chars[i], ID_EDIT_CHAR + i, UI_BotEdit_DrawChar,
-			72 + ( i % 4 ) * EDIT_CELL_W, 176 + ( i / 4 ) * EDIT_CELL_H, 88, 104 );
+	for ( i = 0; i < numBotDefs; i++ ) {
+		UI_BotEdit_DItem( &s_edit.chars[i], ID_EDIT_CHAR + i, UI_BotEdit_DrawChar, 0, 0, 88, 104 );
 	}
+	s_edit.charScroll = 0;
+	UI_BotEdit_ScrollTo( s_edit.def );
 	for ( i = 0; i < 3; i++ ) {
 		UI_BotEdit_DItem( &s_edit.skills[i], ID_EDIT_SKILL + i, UI_BotEdit_DrawSkill, 756 + i * 154, 180, 146, 104 );
 	}
@@ -1216,7 +1277,7 @@ void UI_BotEditMenu( int slot ) {
 	}
 	UI_BotEdit_DItem( &s_edit.accept, ID_EDIT_ACCEPT, UI_BotEdit_DrawAccept, 1060 + UI_DExtra(), 664, 172, 46 );
 
-	for ( i = 0; i < numBotDefs && i < 12; i++ ) {
+	for ( i = 0; i < numBotDefs; i++ ) {
 		Menu_AddItem( &s_edit.menu, &s_edit.chars[i] );
 	}
 	for ( i = 0; i < 3; i++ ) {
@@ -1254,6 +1315,7 @@ static void UI_BotEditLive( int clientNum, int def, int skill, int style ) {
 		s_edit.skill = skill;
 		s_edit.style = style;
 		s_edit.touched = qtrue;
+		UI_BotEdit_ScrollTo( def );
 		Menu_SetCursorToItem( &s_edit.menu, &s_edit.chars[def] );
 	}
 }
@@ -1276,13 +1338,19 @@ as soon as the server applies them.
 #define ID_PB_KICKALL		62
 #define ID_PB_BACK			63
 
-#define PB_X				110
-#define PB_Y				40
-#define PB_W				420
-#define PB_H				400
-#define PB_ROW_Y			(PB_Y + 52)
-#define PB_ROW_H			26
-#define PB_BUTTON_W			96
+// design canvas, as the PauseBots artboard
+#define PB_X				190
+#define PB_Y				96
+#define PB_W				900
+#define PB_H				548
+#define PB_IN_X				( PB_X + 24 )			// inside the glass border
+#define PB_IN_W				( PB_W - 48 )
+#define PB_ROWS_Y			204
+#define PB_ROWS_H			330
+#define PB_ROW_MAX			66						// 60 px row and its gap
+#define PB_COL_LEVEL		622
+#define PB_COL_STYLE		826
+#define PB_KICK_X			1014
 
 typedef struct {
 	int		client;
@@ -1425,13 +1493,27 @@ static float UI_PauseBots_Focus( void *item ) {
 	return UI_AnimFrac( uis.focusTime, 0, 160 );
 }
 
+// rows share the list height, 66 px each until they no longer fit
+static float UI_PauseBots_RowH( void ) {
+	float h;
+
+	if ( !s_pauseBots.count ) {
+		return PB_ROW_MAX;
+	}
+	h = (float)PB_ROWS_H / s_pauseBots.count;
+	return ( h > PB_ROW_MAX ) ? PB_ROW_MAX : h;
+}
+
 static void UI_PauseBots_DrawRow( void *self ) {
 	menubitmap_s	*b;
 	int				row;
 	pauseBot_t		*bot;
 	uiBotStyle_t	*style;
 	float			focus;
-	float			y;
+	float			x, y, h;
+	float			size;
+	vec4_t			left;
+	vec4_t			right;
 
 	b = (menubitmap_s *)self;
 	row = b->generic.id - ID_PB_ROW;
@@ -1441,15 +1523,35 @@ static void UI_PauseBots_DrawRow( void *self ) {
 	bot = &s_pauseBots.bots[row];
 	style = UI_Bots_Style( bot->style );
 	focus = UI_PauseBots_Focus( self );
-	y = b->generic.top;
+	y = b->generic.y;
+	h = b->height;
 
-	UI_DrawFocusRow( b->generic.left, y, b->generic.right - b->generic.left, PB_ROW_H - 4, focus );
-	UI_DrawPortrait( b->generic.left + 4, y + 1, 20, UI_Bots_Portrait( bot->model ), qfalse, focus );
-	UI_DrawStringSized( b->generic.left + 30, y + 1, bot->name, UI_LEFT|UI_DROPSHADOW, zeq_white, 7, 12 );
-	UI_DrawStringSized( b->generic.left + 30, y + 12, va( "%s  -  slot %i", bot->model, bot->client ), UI_LEFT, zeq_text3, 5, 9 );
-	UI_DrawPips( b->generic.left + 190, y + 5, bot->skill, 3, UI_AnimFrac( uis.transitionTime, 120 + row * 40, 400 ) );
-	UI_DrawStringSized( b->generic.left + 190, y + 12, UI_Bots_SkillName( bot->skill ), UI_LEFT, zeq_text2, 5, 9 );
-	UI_DrawStringSized( b->generic.left + 240, y + 6, style ? style->label : "", UI_LEFT, zeq_text2, 6, 11 );
+	// selected row: ki gradient with a rounded outline
+	if ( focus > 0.0f ) {
+		left[0] = 0.33f; left[1] = 0.59f; left[2] = 1.0f; left[3] = 0.32f * focus;
+		right[0] = 0.33f; right[1] = 0.59f; right[2] = 1.0f; right[3] = 0.04f * focus;
+		UI_DRoundRowGlow( PB_IN_X, y, PB_IN_W, h, 6, left, right );
+		left[0] = 0.47f; left[1] = 0.63f; left[2] = 1.0f; left[3] = 0.45f * focus;
+		UI_DRoundEdge( PB_IN_X, y, PB_IN_W, h, 8, left );
+	}
+
+	size = h - 14;
+	if ( size > 46 ) {
+		size = 46;
+	}
+	UI_DPortrait( PB_IN_X + 12, y + ( h - size ) * 0.5f, size, UI_Bots_Portrait( bot->model ), qfalse, focus );
+	x = PB_IN_X + 26 + size;
+	if ( h >= 44 ) {
+		UI_DText( x, y + h * 0.5f - 20, bot->name, 19, UI_LEFT|UI_DROPSHADOW, zeq_white );
+		UI_DText( x, y + h * 0.5f + 1, va( "%s  -  slot %i", bot->model, bot->client ), 15, UI_LEFT, zeq_text3 );
+	}
+	else {
+		UI_DText( x, y + h * 0.5f - 9, bot->name, 17, UI_LEFT|UI_DROPSHADOW, zeq_white );
+		UI_DText( x + UI_DTextWidth( bot->name, 17 ) + 12, y + h * 0.5f - 7, va( "%s  -  slot %i", bot->model, bot->client ), 14, UI_LEFT, zeq_text3 );
+	}
+	UI_DPips( PB_COL_LEVEL + 30, y + h * 0.5f - 4, bot->skill, 3, UI_AnimFrac( uis.transitionTime, 120 + row * 40, 400 ) );
+	UI_DText( PB_COL_LEVEL + 84, y + h * 0.5f - 10, UI_Bots_SkillName( bot->skill ), 18, UI_LEFT, zeq_white );
+	UI_DText( PB_COL_STYLE + 30, y + h * 0.5f - 10, style ? style->label : "", 18, UI_LEFT, zeq_white );
 }
 
 static void UI_PauseBots_DrawKick( void *self ) {
@@ -1459,55 +1561,78 @@ static void UI_PauseBots_DrawKick( void *self ) {
 
 	b = (menubitmap_s *)self;
 	hot = ( Menu_ItemAtCursor( &s_pauseBots.menu ) == self );
-	color[0] = 0.94f; color[1] = 0.63f; color[2] = 0.53f; color[3] = hot ? 1.0f : 0.6f;
-	UI_DrawRect( b->generic.left, b->generic.top, 12, 12, color );
-	UI_DrawStringSized( b->generic.left + 6, b->generic.top, "x", UI_CENTER, color, 7, 12 );
+	color[0] = 0.235f; color[1] = 0.063f; color[2] = 0.04f; color[3] = hot ? 0.7f : 0.35f;
+	UI_DRoundFill( b->generic.x, b->generic.y, b->width, b->height, 4, color );
+	color[0] = 0.94f; color[1] = 0.63f; color[2] = 0.53f; color[3] = hot ? 1.0f : 0.5f;
+	UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 4, color );
+	color[3] = hot ? 1.0f : 0.85f;
+	UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + b->height * 0.5f - 11, "x", 22, UI_CENTER, color );
 }
 
 static void UI_PauseBots_DrawButton( void *self ) {
 	menubitmap_s	*b;
 	float			focus;
-	const char		*label;
 	float			*color;
 	qboolean		frozen;
+	qboolean		disabled;
+	vec4_t			edge;
 
 	b = (menubitmap_s *)self;
 	focus = UI_PauseBots_Focus( self );
 	frozen = trap_Cvar_VariableValue( "bot_pause" ) != 0;
-	switch ( b->generic.id ) {
-	case ID_PB_ADD:		label = "ADD BOT"; break;
-	case ID_PB_FREEZE:	label = frozen ? "UNFREEZE" : "FREEZE"; break;
-	case ID_PB_KICKALL:	label = "KICK ALL"; break;
-	default:			label = "BACK"; break;
-	}
-
-	if ( b->generic.flags & QMF_GRAYED ) {
+	disabled = ( b->generic.flags & QMF_GRAYED ) != 0;
+	if ( disabled ) {
 		focus = 0.0f;
-		color = zeq_text3;
-	}
-	else if ( focus > 0.0f ) {
-		color = zeq_white;
-	}
-	else if ( b->generic.id == ID_PB_FREEZE && frozen ) {
-		color = zeq_gold;
-	}
-	else {
-		color = zeq_text2;
 	}
 
-	UI_DrawKiBar( b->generic.left, b->generic.top, b->generic.right - b->generic.left, b->generic.bottom - b->generic.top, focus > 0.0f, focus );
-	UI_DrawPropScaled( ( b->generic.left + b->generic.right ) * 0.5f - 4, b->generic.top + 7, label,
-		UI_CENTER|UI_DROPSHADOW|( focus > 0.0f ? UI_PULSE : 0 ), color, 0.42f );
+	switch ( b->generic.id ) {
+	case ID_PB_ADD:
+		UI_DKiButton( b->generic.x + 4.0f * focus, b->generic.y, b->width, b->height, "ADD BOT", NULL, focus, disabled, qfalse );
+		break;
+
+	case ID_PB_FREEZE:
+		// switch on the right of the title, as the artboard
+		if ( focus > 0.0f ) {
+			edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.45f * focus;
+			UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 6, edge );
+		}
+		UI_DText( b->generic.x + b->width - 82, b->generic.y + 3, "Freeze bots", 18, UI_RIGHT, frozen ? zeq_gold : zeq_white );
+		UI_DText( b->generic.x + b->width - 82, b->generic.y + 23, frozen ? "They stand still until resumed" : "They keep fighting while paused", 15, UI_RIGHT, zeq_text3 );
+		UI_DToggle( b->generic.x + b->width - 72, b->generic.y + 11, frozen );
+		break;
+
+	default:
+		color = disabled ? zeq_text3 : zeq_white;
+		edge[0] = 0.235f; edge[1] = 0.063f; edge[2] = 0.04f; edge[3] = 0.35f + 0.35f * focus;
+		UI_DRoundFill( b->generic.x, b->generic.y, b->width, b->height, 4, edge );
+		edge[0] = 0.94f; edge[1] = 0.63f; edge[2] = 0.53f; edge[3] = disabled ? 0.25f : 0.5f + 0.5f * focus;
+		UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 4, edge );
+		edge[3] = disabled ? 0.4f : 1.0f;
+		UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + b->height * 0.5f - 10, "Kick all bots", 19, UI_CENTER, focus > 0.0f ? color : edge );
+		break;
+	}
 }
 
 // rows and buttons follow the live list
 static void UI_PauseBots_Sync( void ) {
 	int				i;
+	float			rowH;
+	float			kick;
+	float			y;
 	menucommon_s	*item;
 
 	UI_PauseBots_Scan();
+	rowH = UI_PauseBots_RowH();
+	kick = rowH - 18;
+	if ( kick > 36 ) {
+		kick = 36;
+	}
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
 		if ( i < s_pauseBots.count ) {
+			y = PB_ROWS_Y + i * rowH;
+			// the row ends before the kick button so both take clicks
+			UI_DItem( &s_pauseBots.rows[i], PB_IN_X, y, PB_KICK_X - 8 - PB_IN_X, rowH - 6 );
+			UI_DItem( &s_pauseBots.kicks[i], PB_KICK_X, y + ( rowH - 6 - kick ) * 0.5f, kick, kick );
 			s_pauseBots.rows[i].generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
 			s_pauseBots.kicks[i].generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
 		}
@@ -1536,32 +1661,48 @@ static void UI_PauseBots_Sync( void ) {
 
 static void UI_PauseBots_Draw( void ) {
 	float			bias;
+	int				slotsFree;
 	vec4_t			shade;
-	qboolean		frozen;
-	static const char *hints[] = { "ENTER", "Edit", "DEL", "Kick", "ESC", "Back" };
+	vec4_t			warn;
+	static const char *hints[] = { "ARROWS", "Bot", "ENTER", "Edit", "F", "Freeze", "DEL", "Kick", "ESC", "Back" };
 
 	UI_PauseBots_Sync();
-	frozen = trap_Cvar_VariableValue( "bot_pause" ) != 0;
 
 	// dim the running game behind
 	bias = ( uis.scale > 0.0f ) ? ( uis.bias / uis.scale ) : 0.0f;
 	shade[0] = 0.02f; shade[1] = 0.02f; shade[2] = 0.10f; shade[3] = 0.62f;
 	UI_FillRect( -bias - uis.drawOffsetX, 0, 640 + 2 * bias, 480, shade );
+	InGame_DrawTopStrip( qtrue );
 
-	UI_DrawGlassPanel( PB_X, PB_Y, PB_W, PB_H );
-	UI_DrawSectionTitle( PB_X + 14, PB_Y + 12, "BOTS IN THIS MATCH" );
-	UI_DrawStringSized( PB_X + PB_W - 14, PB_Y + 12, va( "%i of %i", s_pauseBots.count, UI_MAX_ROSTER ), UI_RIGHT, zeq_text3, 6, 11 );
-	UI_DrawStringSized( PB_X + 14, PB_Y + 30, frozen ? "Bots are frozen until you unfreeze them." : "Bots keep fighting while this menu is open.",
-		UI_LEFT, frozen ? zeq_gold : zeq_text2, 6, 11 );
+	UI_DGlass( PB_X, PB_Y, PB_W, PB_H );
+	UI_DSectionTitle( PB_IN_X + 12, PB_Y + 30, "BOTS IN THIS MATCH" );
+
+	// column titles
+	UI_DText( PB_IN_X + 12, 172, "BOT", 15, UI_LEFT, zeq_text3 );
+	UI_DText( PB_COL_LEVEL, 172, "LEVEL", 15, UI_LEFT, zeq_text3 );
+	UI_DText( PB_COL_STYLE, 172, "STYLE", 15, UI_LEFT, zeq_text3 );
+	shade[0] = 0.35f; shade[1] = 0.51f; shade[2] = 0.9f; shade[3] = 0.4f;
+	UI_DFill( PB_IN_X, 194, PB_IN_W, 1, shade );
 
 	if ( !s_pauseBots.count ) {
-		UI_DrawStringSized( PB_X + PB_W * 0.5f, PB_Y + 150, "No bots in this match.", UI_CENTER, zeq_white, 8, 14 );
-		UI_DrawStringSized( PB_X + PB_W * 0.5f, PB_Y + 170, "ADD BOT brings one in.", UI_CENTER, zeq_text2, 7, 12 );
+		UI_DText( 640, 320, "No bots in this match.", 22, UI_CENTER, zeq_white );
+		UI_DText( 640, 350, "ADD BOT brings one in.", 18, UI_CENTER, zeq_text2 );
 	}
+	else {
+		warn[0] = 0.96f; warn[1] = 0.81f; warn[2] = 0.52f; warn[3] = 1.0f;
+		UI_DProp( PB_IN_X + 16, 541, "!", 15, UI_LEFT, zeq_gold );
+		UI_DText( PB_IN_X + 34, 538, "ENTER edits a bot: it re-enters the match at a spawn point.", 17, UI_LEFT, warn );
+	}
+
+	// bottom bar
+	shade[3] = 0.25f;
+	UI_DFill( PB_IN_X, 566, PB_IN_W, 1, shade );
+	slotsFree = UI_MAX_ROSTER - s_pauseBots.count;
+	UI_DText( 414, 586, slotsFree == 1 ? "1 slot free" : va( "%i slots free", slotsFree ), 17, UI_LEFT, zeq_text3 );
 
 	Menu_Draw( &s_pauseBots.menu );
 
-	UI_DrawKeyHints( hints, 3 );
+	UI_DHintsCentered( hints, 5 );
 }
 
 static sfxHandle_t UI_PauseBots_Key( int key ) {
@@ -1578,19 +1719,20 @@ static sfxHandle_t UI_PauseBots_Key( int key ) {
 		UI_PauseBots_Leave();
 		return menu_out_sound;
 	}
+	if ( key == 'f' || key == 'F' ) {
+		trap_Cvar_Set( "bot_pause", trap_Cvar_VariableValue( "bot_pause" ) ? "0" : "1" );
+		return menu_move_sound;
+	}
 	return Menu_DefaultKey( &s_pauseBots.menu, key );
 }
 
-static void UI_PauseBots_Button( menubitmap_s *b, int id, int index ) {
+static void UI_PauseBots_Button( menubitmap_s *b, int id, int x, int y, int w, int h ) {
 	b->generic.type			= MTYPE_BITMAP;
 	b->generic.flags		= QMF_NODEFAULTINIT;
 	b->generic.id			= id;
 	b->generic.callback		= UI_PauseBots_Event;
 	b->generic.ownerdraw	= UI_PauseBots_DrawButton;
-	b->generic.left			= PB_X + 14 + index * ( PB_BUTTON_W + 2 );
-	b->generic.top			= PB_Y + PB_H - 44;
-	b->generic.right		= b->generic.left + PB_BUTTON_W;
-	b->generic.bottom		= b->generic.top + 28;
+	UI_DItem( b, x, y, w, h );
 }
 
 void UI_PauseBotsMenu( void ) {
@@ -1610,35 +1752,26 @@ void UI_PauseBotsMenu( void ) {
 		s_pauseBots.rows[i].generic.id			= ID_PB_ROW + i;
 		s_pauseBots.rows[i].generic.callback	= UI_PauseBots_Event;
 		s_pauseBots.rows[i].generic.ownerdraw	= UI_PauseBots_DrawRow;
-		s_pauseBots.rows[i].generic.left		= PB_X + 12;
-		s_pauseBots.rows[i].generic.right		= PB_X + PB_W - 32;
-		s_pauseBots.rows[i].generic.top			= PB_ROW_Y + i * PB_ROW_H;
-		s_pauseBots.rows[i].generic.bottom		= s_pauseBots.rows[i].generic.top + PB_ROW_H - 4;
 
 		s_pauseBots.kicks[i].generic.type		= MTYPE_BITMAP;
 		s_pauseBots.kicks[i].generic.flags		= QMF_NODEFAULTINIT|QMF_MOUSEONLY|QMF_HIDDEN|QMF_INACTIVE;
 		s_pauseBots.kicks[i].generic.id			= ID_PB_KICK + i;
 		s_pauseBots.kicks[i].generic.callback	= UI_PauseBots_Event;
 		s_pauseBots.kicks[i].generic.ownerdraw	= UI_PauseBots_DrawKick;
-		s_pauseBots.kicks[i].generic.left		= PB_X + PB_W - 28;
-		s_pauseBots.kicks[i].generic.right		= s_pauseBots.kicks[i].generic.left + 12;
-		s_pauseBots.kicks[i].generic.top		= PB_ROW_Y + i * PB_ROW_H + 5;
-		s_pauseBots.kicks[i].generic.bottom		= s_pauseBots.kicks[i].generic.top + 12;
 	}
 
-	UI_PauseBots_Button( &s_pauseBots.add, ID_PB_ADD, 0 );
-	UI_PauseBots_Button( &s_pauseBots.freeze, ID_PB_FREEZE, 1 );
-	UI_PauseBots_Button( &s_pauseBots.kickall, ID_PB_KICKALL, 2 );
-	UI_PauseBots_Button( &s_pauseBots.back, ID_PB_BACK, 3 );
+	// ESC goes back, the artboard has no BACK button
+	UI_PauseBots_Button( &s_pauseBots.freeze, ID_PB_FREEZE, 760, 112, 306, 46 );
+	UI_PauseBots_Button( &s_pauseBots.add, ID_PB_ADD, PB_IN_X + 12, 578, 170, 42 );
+	UI_PauseBots_Button( &s_pauseBots.kickall, ID_PB_KICKALL, PB_X + PB_W - 24 - 12 - 150, 581, 150, 36 );
 
+	Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.freeze );
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
 		Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.rows[i] );
 		Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.kicks[i] );
 	}
 	Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.add );
-	Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.freeze );
 	Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.kickall );
-	Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.back );
 
 	UI_PushMenu( &s_pauseBots.menu );
 	trap_Cvar_Set( "cl_paused", "0" );

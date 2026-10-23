@@ -565,6 +565,10 @@ static qhandle_t	d_nameArea;
 static qhandle_t	d_switchOn;
 static qhandle_t	d_switchOff;
 static qhandle_t	d_sliderKnob;
+static qhandle_t	d_round;
+static qhandle_t	d_roundEdge;
+static qhandle_t	d_roundMask;
+static qhandle_t	d_roundGlow;
 
 static void UI_DRegister( void ) {
 	if ( d_logo ) {
@@ -572,6 +576,10 @@ static void UI_DRegister( void ) {
 	}
 	d_logo			= trap_R_RegisterShaderNoMip( "interface/menu/zeq2litelogo.png" );
 	d_cta			= trap_R_RegisterShaderNoMip( "interface/menu/ctaButton.png" );
+	d_round			= trap_R_RegisterShaderNoMip( "interface/menu/round.png" );
+	d_roundEdge		= trap_R_RegisterShaderNoMip( "interface/menu/roundEdge.png" );
+	d_roundMask		= trap_R_RegisterShaderNoMip( "interface/menu/roundMask.png" );
+	d_roundGlow		= trap_R_RegisterShaderNoMip( "interface/menu/roundGlow.png" );
 	d_ctaGlow		= trap_R_RegisterShaderNoMip( "menuCtaGlow" );
 	d_tab			= trap_R_RegisterShaderNoMip( "interface/menu/mainButton3.png" );
 	d_tabGlow		= trap_R_RegisterShaderNoMip( "menuKiGlow3" );
@@ -822,6 +830,172 @@ float UI_DKeyHint( float x, float y, const char *key, const char *label ) {
 	return capW + 8 + UI_DTextWidth( label, 19 ) + 26;
 }
 
+
+/*
+=================
+Rounded shapes
+
+white rounded rect art (round.png, radius 24 of 64 px) drawn in nine
+slices and tinted: fills, 1.5 px outlines, soft glows and corner masks
+that round off square pictures (portraits) over a dark panel
+=================
+*/
+#define ROUND_C		( 24.0f / 64.0f )
+
+static void UI_DRound9( float x, float y, float w, float h, float r, float c, qhandle_t shader, const float *color ) {
+	float	xs[4], ys[4], ss[4];
+	int		i, j;
+
+	if ( r * 2.0f > w ) {
+		r = w * 0.5f;
+	}
+	if ( r * 2.0f > h ) {
+		r = h * 0.5f;
+	}
+	xs[0] = x; xs[1] = x + r; xs[2] = x + w - r; xs[3] = x + w;
+	ys[0] = y; ys[1] = y + r; ys[2] = y + h - r; ys[3] = y + h;
+	ss[0] = 0; ss[1] = c; ss[2] = 1.0f - c; ss[3] = 1.0f;
+	trap_R_SetColor( color );
+	for ( j = 0; j < 3; j++ ) {
+		for ( i = 0; i < 3; i++ ) {
+			UI_DPicST( xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], ss[i], ss[j], ss[i + 1], ss[j + 1], shader );
+		}
+	}
+	trap_R_SetColor( NULL );
+}
+
+void UI_DRoundFill( float x, float y, float w, float h, float r, const float *color ) {
+	UI_DRegister();
+	UI_DRound9( x, y, w, h, r, ROUND_C, d_round, color );
+}
+
+// the stroke is 1.5 px at r 12, it scales with r
+void UI_DRoundEdge( float x, float y, float w, float h, float r, const float *color ) {
+	UI_DRegister();
+	UI_DRound9( x, y, w, h, r, ROUND_C, d_roundEdge, color );
+}
+
+// box-shadow like glow spreading about spread px out of the rect
+void UI_DRoundGlow( float x, float y, float w, float h, float spread, const float *color ) {
+	float k;
+
+	UI_DRegister();
+	k = spread / 32.0f;
+	UI_DRound9( x - 32.0f * k, y - 32.0f * k, w + 64.0f * k, h + 64.0f * k, 56.0f * k, 56.0f / 128.0f, d_roundGlow, color );
+}
+
+// paints the four corners outside a rounded rect, in the color behind it
+void UI_DRoundCorners( float x, float y, float w, float h, float r, const float *color ) {
+	UI_DRegister();
+	trap_R_SetColor( color );
+	UI_DPicST( x, y, r, r, 0, 0, ROUND_C, ROUND_C, d_roundMask );
+	UI_DPicST( x + w - r, y, r, r, 1.0f - ROUND_C, 0, 1, ROUND_C, d_roundMask );
+	UI_DPicST( x, y + h - r, r, r, 0, 1.0f - ROUND_C, ROUND_C, 1, d_roundMask );
+	UI_DPicST( x + w - r, y + h - r, r, r, 1.0f - ROUND_C, 1.0f - ROUND_C, 1, 1, d_roundMask );
+	trap_R_SetColor( NULL );
+}
+
+static void UI_DGradColor( vec4_t out, float t, const float *top, const float *mid, float midStop, const float *bottom ) {
+	const float	*a, *b;
+	float		f;
+	int			i;
+
+	if ( t < midStop ) {
+		a = top; b = mid; f = ( midStop > 0.0f ) ? t / midStop : 1.0f;
+	}
+	else {
+		a = mid; b = bottom; f = ( midStop < 1.0f ) ? ( t - midStop ) / ( 1.0f - midStop ) : 1.0f;
+	}
+	for ( i = 0; i < 4; i++ ) {
+		out[i] = a[i] + ( b[i] - a[i] ) * f;
+	}
+}
+
+/*
+=================
+UI_DRoundPanel
+
+rounded panel with a vertical gradient (top, mid at midStop, bottom), as
+the CSS linear-gradient of the pause panel; the middle is drawn in thin
+bands that meet edge to edge so there is no visible step
+=================
+*/
+void UI_DRoundPanel( float x, float y, float w, float h, float r, const float *top, const float *mid, float midStop, const float *bottom ) {
+	vec4_t	color;
+	float	xs[4], ss[4];
+	float	y0, y1;
+	int		i, k;
+
+	UI_DRegister();
+	xs[0] = x; xs[1] = x + r; xs[2] = x + w - r; xs[3] = x + w;
+	ss[0] = 0; ss[1] = ROUND_C; ss[2] = 1.0f - ROUND_C; ss[3] = 1.0f;
+
+	UI_DGradColor( color, r * 0.5f / h, top, mid, midStop, bottom );
+	trap_R_SetColor( color );
+	for ( i = 0; i < 3; i++ ) {
+		UI_DPicST( xs[i], y, xs[i + 1] - xs[i], r, ss[i], 0, ss[i + 1], ROUND_C, d_round );
+	}
+
+	for ( k = 0; k < 64; k++ ) {
+		y0 = y + r + ( h - 2.0f * r ) * k / 64.0f;
+		y1 = y + r + ( h - 2.0f * r ) * ( k + 1 ) / 64.0f;
+		UI_DGradColor( color, ( ( y0 + y1 ) * 0.5f - y ) / h, top, mid, midStop, bottom );
+		trap_R_SetColor( color );
+		UI_DPic( x, y0, w, y1 - y0, uis.whiteShader );
+	}
+
+	UI_DGradColor( color, 1.0f - r * 0.5f / h, top, mid, midStop, bottom );
+	trap_R_SetColor( color );
+	for ( i = 0; i < 3; i++ ) {
+		UI_DPicST( xs[i], y + h - r, xs[i + 1] - xs[i], r, ss[i], 1.0f - ROUND_C, ss[i + 1], 1, d_round );
+	}
+	trap_R_SetColor( NULL );
+}
+
+// rounded highlight fading from left to right, for the focused list row
+void UI_DRoundRowGlow( float x, float y, float w, float h, float r, const float *left, const float *right ) {
+	vec4_t	color;
+	float	x0, x1;
+	int		k;
+
+	UI_DRegister();
+	trap_R_SetColor( left );
+	UI_DPicST( x, y, r, r, 0, 0, ROUND_C, ROUND_C, d_round );
+	UI_DPicST( x, y + r, r, h - 2.0f * r, 0, ROUND_C, ROUND_C, 1.0f - ROUND_C, d_round );
+	UI_DPicST( x, y + h - r, r, r, 0, 1.0f - ROUND_C, ROUND_C, 1, d_round );
+	for ( k = 0; k < 32; k++ ) {
+		x0 = x + r + ( w - 2.0f * r ) * k / 32.0f;
+		x1 = x + r + ( w - 2.0f * r ) * ( k + 1 ) / 32.0f;
+		UI_DGradColor( color, ( ( x0 + x1 ) * 0.5f - x ) / w, left, right, 1.0f, right );
+		trap_R_SetColor( color );
+		UI_DPic( x0, y, x1 - x0, h, uis.whiteShader );
+	}
+	trap_R_SetColor( right );
+	UI_DPicST( x + w - r, y, r, r, 1.0f - ROUND_C, 0, 1, ROUND_C, d_round );
+	UI_DPicST( x + w - r, y + r, r, h - 2.0f * r, 1.0f - ROUND_C, ROUND_C, 1, 1.0f - ROUND_C, d_round );
+	UI_DPicST( x + w - r, y + h - r, r, r, 1.0f - ROUND_C, 1.0f - ROUND_C, 1, 1, d_round );
+	trap_R_SetColor( NULL );
+}
+
+// key hints centered under the screen, as the pause screens have them
+void UI_DHintsCentered( const char **pairs, int count ) {
+	float	total, capW, x;
+	int		i;
+
+	total = 0.0f;
+	for ( i = 0; i < count; i++ ) {
+		capW = UI_DTextWidth( pairs[i * 2], 15 ) + 16;
+		if ( capW < 30 ) {
+			capW = 30;
+		}
+		total += capW + 8 + UI_DTextWidth( pairs[i * 2 + 1], 19 ) + 26;
+	}
+	x = 640.0f - ( total - 26.0f ) * 0.5f;
+	for ( i = 0; i < count; i++ ) {
+		x += UI_DKeyHint( x, 672, pairs[i * 2], pairs[i * 2 + 1] );
+	}
+}
+
 // footer at the bottom left: pairs = key, label, key, label...
 void UI_DHints( const char **pairs, int count ) {
 	int		i;
@@ -991,22 +1165,31 @@ void UI_DStatBar( float x, float y, float w, const char *label, float value, flo
 	UI_DText( x + w, y - 4, va( "%i", (int)( value * 100.0f + 0.5f ) ), 16, UI_RIGHT, zeq_white );
 }
 
+/*
+=================
+UI_DPortrait
+
+character icon with rounded corners (radius 14 at 96 px); the selected one
+gets the 3 px gold outline and its glow, the focused one a ki outline
+=================
+*/
+vec4_t zeq_portraitBack = { 0.035f, 0.032f, 0.13f, 1.0f };	// the glass under the portraits
+
 void UI_DPortrait( float x, float y, float size, qhandle_t shader, qboolean selected, float focus ) {
-	vec4_t ring;
-	vec4_t dim;
-	float grow;
+	vec4_t	ring;
+	vec4_t	dim;
+	float	grow;
+	float	r;
 
 	grow = 4.0f * focus;
 	x -= grow * 0.5f;
 	y -= grow * 0.5f;
 	size += grow;
+	r = size * 14.0f / 96.0f;
 	if ( selected ) {
 		ring[0] = zeq_gold[0]; ring[1] = zeq_gold[1]; ring[2] = zeq_gold[2];
-		ring[3] = 0.3f + 0.15f * sin( uis.realtime / 250.0f );
-		UI_DFill( x - 6, y - 6, size + 12, size + 12, ring );
-		ring[3] = 1.0f;
-		UI_DFrame( x - 4, y - 4, size + 8, size + 8, ring );
-		UI_DFrame( x - 3, y - 3, size + 6, size + 6, ring );
+		ring[3] = 0.45f + 0.12f * sin( uis.realtime / 250.0f );
+		UI_DRoundGlow( x - 2, y - 2, size + 4, size + 4, 16, ring );
 	}
 	if ( selected || focus > 0.0f ) {
 		trap_R_SetColor( NULL );
@@ -1018,6 +1201,18 @@ void UI_DPortrait( float x, float y, float size, qhandle_t shader, qboolean sele
 	}
 	UI_DPic( x, y, size, size, shader );
 	trap_R_SetColor( NULL );
+	UI_DRoundCorners( x, y, size, size, r, zeq_portraitBack );
+	if ( selected ) {
+		ring[3] = 1.0f;
+		UI_DRoundEdge( x - 5, y - 5, size + 10, size + 10, r + 5, ring );
+		UI_DRoundEdge( x - 4, y - 4, size + 8, size + 8, r + 4, ring );
+		UI_DRoundEdge( x - 3.5f, y - 3.5f, size + 7, size + 7, r + 3.5f, ring );
+	}
+	else if ( focus > 0.0f ) {
+		ring[0] = 0.33f; ring[1] = 0.59f; ring[2] = 1.0f; ring[3] = 0.9f * focus;
+		UI_DRoundEdge( x - 4, y - 4, size + 8, size + 8, r + 4, ring );
+		UI_DRoundEdge( x - 3.5f, y - 3.5f, size + 7, size + 7, r + 3.5f, ring );
+	}
 }
 
 void UI_DFocusRow( float x, float y, float w, float h, float focus ) {

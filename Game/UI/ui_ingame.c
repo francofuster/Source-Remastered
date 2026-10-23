@@ -181,37 +181,40 @@ static void InGame_DrawEntry( void *self ) {
 InGame_MenuDraw
 =================
 */
-static void InGame_MenuDraw( void ) {
-	static const char *hints[] = { "ARROWS", "Navigate", "ENTER", "Select", "ESC", "Resume" };
+/*
+=================
+InGame_DrawTopStrip
+
+the strip over the match: map and KO limit on the left (PAUSED > BOTS on
+the bots screen), who is playing on the right; anchored to the screen edges
+=================
+*/
+void InGame_DrawTopStrip( qboolean botsScreen ) {
 	char		info[MAX_INFO_STRING];
 	char		map[64];
-	char		players[64];
+	char		players[128];
 	int			humans;
 	int			bots;
 	int			i;
 	int			value;
-	float		bias;
-	float		x;
+	float		e;
 	vec4_t		shade;
-	vec4_t		edge;
-	vec4_t		top;
-	vec4_t		bottom;
-	vec4_t		warm;
 
-	// dim the match behind
-	bias = ( uis.scale > 0.0f ) ? ( uis.bias / uis.scale ) : 0.0f;
-	shade[0] = 0.02f; shade[1] = 0.024f; shade[2] = 0.10f; shade[3] = 0.55f;
-	UI_FillRect( -bias - uis.drawOffsetX, 0, 640 + 2 * bias, 480, shade );
-
-	// top strip with the match
-	shade[3] = 0.6f;
-	UI_DFill( -400, 0, 2080, 64, shade );
+	e = UI_DExtra();
+	shade[0] = 0.02f; shade[1] = 0.024f; shade[2] = 0.10f; shade[3] = 0.6f;
+	UI_DFill( -400 - e, 0, 2080 + 2 * e, 64, shade );
 	trap_GetConfigString( CS_SERVERINFO, info, sizeof( info ) );
 	Q_strncpyz( map, Info_ValueForKey( info, "mapname" ), sizeof( map ) );
 	Q_strupr( map );
-	UI_DProp( 40, 22, map, 19, UI_LEFT, zeq_white );
-	value = atoi( Info_ValueForKey( info, "fraglimit" ) );
-	UI_DText( 60 + UI_DPropWidth( map, 19 ), 22, value ? va( "KO limit %i", value ) : "No KO limit", 19, UI_LEFT, zeq_text2 );
+	if ( botsScreen ) {
+		UI_DProp( 40 - e, 24, "PAUSED  >", 15, UI_LEFT, zeq_text3 );
+		UI_DProp( 54 - e + UI_DPropWidth( "PAUSED  >", 15 ), 22, "BOTS", 19, UI_LEFT, zeq_white );
+	}
+	else {
+		UI_DProp( 40 - e, 22, map, 19, UI_LEFT, zeq_white );
+		value = atoi( Info_ValueForKey( info, "fraglimit" ) );
+		UI_DText( 60 - e + UI_DPropWidth( map, 19 ), 22, value ? va( "KO limit %i", value ) : "No KO limit", 19, UI_LEFT, zeq_text2 );
+	}
 	humans = bots = 0;
 	for ( i = 0; i < MAX_CLIENTS; i++ ) {
 		trap_GetConfigString( CS_PLAYERS + i, info, sizeof( info ) );
@@ -225,32 +228,50 @@ static void InGame_MenuDraw( void ) {
 			humans++;
 		}
 	}
-	Com_sprintf( players, sizeof( players ), "%s  -  %i human%s  -  %i bot%s", trap_Cvar_VariableValue( "sv_running" ) ? "Local match" : "Online",
+	Com_sprintf( players, sizeof( players ), "%s%s%s  -  %i human%s  -  %i bot%s", botsScreen ? map : "", botsScreen ? "  -  " : "",
+		trap_Cvar_VariableValue( "sv_running" ) ? "Local match" : "Online",
 		humans, humans == 1 ? "" : "s", bots, bots == 1 ? "" : "s" );
-	UI_DText( 1240, 22, players, 19, UI_RIGHT, zeq_text2 );
+	UI_DText( 1240 + e, 22, players, 19, UI_RIGHT, zeq_text2 );
+}
 
-	// Shenron around a solid panel
+/*
+=================
+InGame_MenuDraw
+=================
+*/
+static void InGame_MenuDraw( void ) {
+	static const char *hints[] = { "ARROWS", "Navigate", "ENTER", "Select", "ESC", "Resume" };
+	float		bias;
+	vec4_t		shade;
+	vec4_t		edge;
+	vec4_t		top;
+	vec4_t		mid;
+	vec4_t		warm;
+
+	// dim the match behind
+	bias = ( uis.scale > 0.0f ) ? ( uis.bias / uis.scale ) : 0.0f;
+	shade[0] = 0.02f; shade[1] = 0.024f; shade[2] = 0.10f; shade[3] = 0.55f;
+	UI_FillRect( -bias - uis.drawOffsetX, 0, 640 + 2 * bias, 480, shade );
+	InGame_DrawTopStrip( qfalse );
+
+	// Shenron around the panel: rounded, navy fading to a warm glow at the bottom
 	trap_R_SetColor( NULL );
 	UI_DPic( 381, 8, 576, 707, s_ingame.shenron );
+	edge[0] = 0.33f; edge[1] = 0.59f; edge[2] = 1.0f; edge[3] = 0.35f;
+	UI_DRoundGlow( PAUSE_PANEL_X, PAUSE_PANEL_Y, PAUSE_PANEL_W, PAUSE_PANEL_H, 24, edge );
 	top[0] = 0.063f; top[1] = 0.075f; top[2] = 0.22f; top[3] = 0.97f;
-	bottom[0] = 0.04f; bottom[1] = 0.047f; bottom[2] = 0.15f; bottom[3] = 0.97f;
-	warm[0] = 0.26f; warm[1] = 0.16f; warm[2] = 0.09f; warm[3] = 0.97f;
-	UI_DFill( PAUSE_PANEL_X, PAUSE_PANEL_Y, PAUSE_PANEL_W, PAUSE_PANEL_H * 0.5f, top );
-	UI_DFill( PAUSE_PANEL_X, PAUSE_PANEL_Y + PAUSE_PANEL_H * 0.5f, PAUSE_PANEL_W, PAUSE_PANEL_H * 0.3f, bottom );
-	UI_DFill( PAUSE_PANEL_X, PAUSE_PANEL_Y + PAUSE_PANEL_H * 0.8f, PAUSE_PANEL_W, PAUSE_PANEL_H * 0.2f, warm );
+	mid[0] = 0.039f; mid[1] = 0.047f; mid[2] = 0.149f; mid[3] = 0.97f;
+	warm[0] = 0.259f; warm[1] = 0.165f; warm[2] = 0.094f; warm[3] = 0.97f;
+	UI_DRoundPanel( PAUSE_PANEL_X, PAUSE_PANEL_Y, PAUSE_PANEL_W, PAUSE_PANEL_H, 12, top, mid, 0.72f, warm );
 	edge[0] = 0.43f; edge[1] = 0.56f; edge[2] = 0.94f; edge[3] = 1.0f;
-	UI_DFrame( PAUSE_PANEL_X, PAUSE_PANEL_Y, PAUSE_PANEL_W, PAUSE_PANEL_H, edge );
-	edge[3] = 0.3f;
-	UI_DFrame( PAUSE_PANEL_X - 3, PAUSE_PANEL_Y - 3, PAUSE_PANEL_W + 6, PAUSE_PANEL_H + 6, edge );
+	UI_DRoundEdge( PAUSE_PANEL_X, PAUSE_PANEL_Y, PAUSE_PANEL_W, PAUSE_PANEL_H, 12, edge );
+	edge[0] = edge[1] = edge[2] = 1.0f; edge[3] = 0.18f;
+	UI_DFill( PAUSE_PANEL_X + 12, PAUSE_PANEL_Y + 1.5f, PAUSE_PANEL_W - 24, 1, edge );
 	UI_DSectionTitle( PAUSE_PANEL_X + 26, PAUSE_PANEL_Y + 20, "PAUSED" );
 
 	Menu_Draw( &s_ingame.menu );
 
-	// hints centered at the bottom
-	x = 640 - ( UI_DTextWidth( "ARROWSNavigateENTERSelectESCResume", 19 ) + 180 ) * 0.5f;
-	for ( i = 0; i < 3; i++ ) {
-		x += UI_DKeyHint( x, 672, hints[i * 2], hints[i * 2 + 1] );
-	}
+	UI_DHintsCentered( hints, 3 );
 }
 
 
