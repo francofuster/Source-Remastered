@@ -40,11 +40,11 @@ static void UI_ReadableSize ( char *buf, int bufsize, int value )
 {
 	if (value > 1024*1024*1024 ) { // gigs
 		Com_sprintf( buf, bufsize, "%d", value / (1024*1024*1024) );
-		Com_sprintf( buf+strlen(buf), bufsize-strlen(buf), ".%02d GB", 
+		Com_sprintf( buf+strlen(buf), bufsize-strlen(buf), ".%02d GB",
 			(value % (1024*1024*1024))*100 / (1024*1024*1024) );
 	} else if (value > 1024*1024 ) { // megs
 		Com_sprintf( buf, bufsize, "%d", value / (1024*1024) );
-		Com_sprintf( buf+strlen(buf), bufsize-strlen(buf), ".%02d MB", 
+		Com_sprintf( buf+strlen(buf), bufsize-strlen(buf), ".%02d MB",
 			(value % (1024*1024))*100 / (1024*1024) );
 	} else if (value > 1024 ) { // kilos
 		Com_sprintf( buf, bufsize, "%d KB", value / 1024 );
@@ -106,7 +106,7 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 
 	if (downloadCount < 4096 || !downloadTime) {
 		UI_DrawProportionalString( leftWidth, 160, "estimating", style, color_white );
-		UI_DrawProportionalString( leftWidth, 192, 
+		UI_DrawProportionalString( leftWidth, 192,
 			va("(%s of %s copied)", dlSizeBuf, totalSizeBuf), style, color_white );
 	} else {
 	  if ( (uis.realtime - downloadTime) / 1000) {
@@ -124,28 +124,28 @@ static void UI_DisplayDownloadInfo( const char *downloadName ) {
 
 			// We do it in K (/1024) because we'd overflow around 4MB
 			n = (n - (((downloadCount/1024) * n) / (downloadSize/1024))) * 1000;
-			
+
 			UI_PrintTime ( dlTimeBuf, sizeof dlTimeBuf, n );
 				//(n - (((downloadCount/1024) * n) / (downloadSize/1024))) * 1000);
 
-			UI_DrawProportionalString( leftWidth, 160, 
+			UI_DrawProportionalString( leftWidth, 160,
 				dlTimeBuf, style, color_white );
-			UI_DrawProportionalString( leftWidth, 192, 
+			UI_DrawProportionalString( leftWidth, 192,
 				va("(%s of %s copied)", dlSizeBuf, totalSizeBuf), style, color_white );
 		} else {
-			UI_DrawProportionalString( leftWidth, 160, 
+			UI_DrawProportionalString( leftWidth, 160,
 				"estimating", style, color_white );
 			if (downloadSize) {
-				UI_DrawProportionalString( leftWidth, 192, 
+				UI_DrawProportionalString( leftWidth, 192,
 					va("(%s of %s copied)", dlSizeBuf, totalSizeBuf), style, color_white );
 			} else {
-				UI_DrawProportionalString( leftWidth, 192, 
+				UI_DrawProportionalString( leftWidth, 192,
 					va("(%s copied)", dlSizeBuf), style, color_white );
 			}
 		}
 
 		if (xferRate) {
-			UI_DrawProportionalString( leftWidth, 224, 
+			UI_DrawProportionalString( leftWidth, 224,
 				va("%s/Sec", xferRateBuf), style, color_white );
 		}
 	}
@@ -175,7 +175,7 @@ void UI_DrawConnectScreen( qboolean overlay ) {
 	// background, logo and a glass panel, like the rest of the redesign
 	UI_DrawBackPic( qtrue );
 	UI_FillRect( -( ( uis.scale > 0.0f ) ? uis.bias / uis.scale : 0.0f ), 0, 640 + 2 * ( ( uis.scale > 0.0f ) ? uis.bias / uis.scale : 0.0f ), 480, zeq_shade );
-	UI_DLogo( 40, 22, 170 );
+	UI_DLogo( 40 - UI_DExtra(), 22, 170 );
 
 	// see what information we should display
 	trap_GetClientState( &cstate );
@@ -218,7 +218,7 @@ void UI_DrawConnectScreen( qboolean overlay ) {
 		Field_Clear( &passwordField.field );
 		passwordField.width = 256;
 		passwordField.field.widthInChars = 16;
-		Q_strncpyz( passwordField.field.buffer, Cvar_VariableString("password"), 
+		Q_strncpyz( passwordField.field.buffer, Cvar_VariableString("password"),
 			sizeof(passwordField.field.buffer) );
 
 		Menu_AddItem( &s_ingame_menu, ( void * ) &s_customize_player_action );

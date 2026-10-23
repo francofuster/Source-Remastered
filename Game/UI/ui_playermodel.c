@@ -669,7 +669,7 @@ static void PlayerModel_MenuInit( void )
 	s_playermodel.player.generic.right			= vx + vw;
 	s_playermodel.player.generic.bottom			= vy + vh;
 
-	PlayerModel_DItem( &s_playermodel.confirm, ID_CONFIRM, PlayerModel_DrawConfirm, 1060, 652, 172, 48 );
+	PlayerModel_DItem( &s_playermodel.confirm, ID_CONFIRM, PlayerModel_DrawConfirm, 1060 + UI_DExtra(), 652, 172, 48 );
 
 	for ( i = 0; i < FIGHTERS_PER_PAGE; i++ ) {
 		Menu_AddItem( &s_playermodel.menu, &s_playermodel.fighters[i] );

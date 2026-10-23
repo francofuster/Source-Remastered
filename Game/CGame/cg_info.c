@@ -37,6 +37,7 @@ static char		loadingStage[64];
 static float	ld_scale;
 static float	ld_offX;
 static float	ld_offY;
+static float	ld_extra;		// design px between the canvas and the screen sides (21:9)
 
 static vec4_t	ld_white	= { 1.00f, 1.00f, 1.00f, 1.00f };
 static vec4_t	ld_text2	= { 0.77f, 0.80f, 0.92f, 1.00f };
@@ -68,6 +69,7 @@ static void LD_Setup( void ) {
 	ld_scale = ( sx < sy ) ? sx : sy;
 	ld_offX = ( cgs.glconfig.vidWidth - LOAD_DESIGN_W * ld_scale ) * 0.5f;
 	ld_offY = ( cgs.glconfig.vidHeight - LOAD_DESIGN_H * ld_scale ) * 0.5f;
+	ld_extra = ( ld_scale > 0.0f ) ? ld_offX / ld_scale : 0.0f;
 }
 
 static void LD_PicST( float x, float y, float w, float h, float s0, float t0, float s1, float t1, qhandle_t shader ) {
@@ -460,19 +462,19 @@ void CG_DrawInformation( void ) {
 	// logo, cropped out of the 1024x768 logo sheet
 	logo = trap_R_RegisterShaderNoMip( "interface/menu/zeq2litelogo.png" );
 	trap_R_SetColor( NULL );
-	LD_PicST( 40, 24, 170, 86, 155.0f / 1024.0f, 194.0f / 768.0f, 874.0f / 1024.0f, 558.0f / 768.0f, logo );
+	LD_PicST( 40 - ld_extra, 24, 170, 86, 155.0f / 1024.0f, 194.0f / 768.0f, 874.0f / 1024.0f, 558.0f / 768.0f, logo );
 
 	// tip of the day
 	tip = ( atoi( Info_ValueForKey( CG_ConfigString( CS_SYSTEMINFO ), "sv_serverid" ) ) & 0x7fffffff ) % ( sizeof( loadingTips ) / sizeof( loadingTips[0] ) );
-	LD_Glass( 860, 30, 380, 118 );
+	LD_Glass( 860 + ld_extra, 30, 380, 118 );
 	trap_R_SetColor( NULL );
-	LD_Pic( 884, 54, 30, 36, trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" ) );
-	LD_Prop( 928, 52, "TIP", 15, UI_LEFT, ld_gold );
-	LD_WrappedText( 928, 72, loadingTips[tip], 19, 290, ld_white );
+	LD_Pic( 884 + ld_extra, 54, 30, 36, trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" ) );
+	LD_Prop( 928 + ld_extra, 52, "TIP", 15, UI_LEFT, ld_gold );
+	LD_WrappedText( 928 + ld_extra, 72, loadingTips[tip], 19, 290, ld_white );
 
 	// map name and rules
-	LD_Prop( 60, 420, "LOADING", 15, UI_LEFT, ld_gold );
-	LD_Prop( 60, 440, title, 62, UI_LEFT|UI_DROPSHADOW, ld_white );
+	LD_Prop( 60 - ld_extra, 420, "LOADING", 15, UI_LEFT, ld_gold );
+	LD_Prop( 60 - ld_extra, 440, title, 62, UI_LEFT|UI_DROPSHADOW, ld_white );
 
 	s = CG_ConfigString( CS_MESSAGE );
 	if ( !Q_stricmpn( s, "ZEQ2 - ", 7 ) ) {
@@ -490,7 +492,7 @@ void CG_DrawInformation( void ) {
 	if ( Info_ValueForKey( sysInfo, "sv_cheats" )[0] == '1' ) {
 		Q_strcat( subtitle, sizeof( subtitle ), "  -  cheats on" );
 	}
-	LD_Text( 60, 506, subtitle, 22, UI_LEFT|UI_DROPSHADOW, ld_text2 );
+	LD_Text( 60 - ld_extra, 506, subtitle, 22, UI_LEFT|UI_DROPSHADOW, ld_text2 );
 
 	// progress, a ki bar like the health bar of the HUD
 	if ( loadingStage[0] ) {
@@ -502,25 +504,25 @@ void CG_DrawInformation( void ) {
 	if ( cg.infoScreenText[0] && Q_stricmp( cg.infoScreenText, loadingStage ) && Q_stricmpn( cg.infoScreenText, "LF:", 3 ) ) {
 		Q_strcat( stage, sizeof( stage ), va( "  -  %s", cg.infoScreenText ) );
 	}
-	LD_Text( 60, 556, stage, 18, UI_LEFT, ld_text3 );
-	LD_Prop( 820, 558, va( "%i%%", (int)( loadingProgress * 100.0f ) ), 15, UI_RIGHT, ld_white );
+	LD_Text( 60 - ld_extra, 556, stage, 18, UI_LEFT, ld_text3 );
+	LD_Prop( 820 - ld_extra, 558, va( "%i%%", (int)( loadingProgress * 100.0f ) ), 15, UI_RIGHT, ld_white );
 
 	track[0] = 0.02f; track[1] = 0.03f; track[2] = 0.12f; track[3] = 0.9f;
 	edge[0] = 0.24f; edge[1] = 0.33f; edge[2] = 0.66f; edge[3] = 1.0f;
 	fillDark[0] = 0.16f; fillDark[1] = 0.35f; fillDark[2] = 0.78f; fillDark[3] = 1.0f;
 	fillLight[0] = 0.66f; fillLight[1] = 0.82f; fillLight[2] = 1.0f; fillLight[3] = 1.0f;
 	glow[0] = ld_ki[0]; glow[1] = ld_ki[1]; glow[2] = ld_ki[2]; glow[3] = 0.25f;
-	LD_Fill( 60, 586, 760, 16, track );
-	LD_Frame( 60, 586, 760, 16, edge );
+	LD_Fill( 60 - ld_extra, 586, 760, 16, track );
+	LD_Frame( 60 - ld_extra, 586, 760, 16, edge );
 	fill = 756.0f * loadingProgress;
 	if ( fill > 0.0f ) {
-		LD_Fill( 62, 582, fill, 24, glow );
-		LD_Fill( 62, 588, fill, 12, fillDark );
-		LD_Fill( 62, 588, fill, 4, fillLight );
+		LD_Fill( 62 - ld_extra, 582, fill, 24, glow );
+		LD_Fill( 62 - ld_extra, 588, fill, 12, fillDark );
+		LD_Fill( 62 - ld_extra, 588, fill, 4, fillLight );
 	}
 
 	// the fighters of the match
-	LD_DrawFighters( 60, 628 );
+	LD_DrawFighters( 60 - ld_extra, 628 );
 
 	// bottom right: server and the dragon ball, bobbing on every redraw
 	trap_Cvar_VariableStringBuffer( "sv_running", buf, sizeof( buf ) );
@@ -531,9 +533,9 @@ void CG_DrawInformation( void ) {
 		Q_strncpyz( buf, Info_ValueForKey( info, "sv_hostname" ), sizeof( buf ) );
 		Q_CleanStr( buf );
 	}
-	LD_Prop( 1158, 630, "CONNECTED", 15, UI_RIGHT, ld_white );
-	LD_Text( 1158, 650, buf, 17, UI_RIGHT, ld_text3 );
+	LD_Prop( 1158 + ld_extra, 630, "CONNECTED", 15, UI_RIGHT, ld_white );
+	LD_Text( 1158 + ld_extra, 650, buf, 17, UI_RIGHT, ld_text3 );
 	bob = 3.0f * sin( trap_Milliseconds() / 160.0f );
 	trap_R_SetColor( NULL );
-	LD_Pic( 1176, 620 + bob, 56, 67, trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" ) );
+	LD_Pic( 1176 + ld_extra, 620 + bob, 56, 67, trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" ) );
 }

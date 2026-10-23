@@ -1672,7 +1672,7 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 
 	// fighters and FIGHT!
 	ServerOptions_DItem( &s_serveroptions.fighterPanel, ID_FIGHTERPANEL, ServerOptions_DrawFighters, 712, 440, 520, 202 );
-	ServerOptions_DItem( &s_serveroptions.fightBtn, ID_GO, ServerOptions_DrawFight, 1060, 652, 172, 50 );
+	ServerOptions_DItem( &s_serveroptions.fightBtn, ID_GO, ServerOptions_DrawFight, 1060 + UI_DExtra(), 652, 172, 50 );
 
 	// map picture, only its name is used now
 	s_serveroptions.mappic.generic.type		= MTYPE_BITMAP;

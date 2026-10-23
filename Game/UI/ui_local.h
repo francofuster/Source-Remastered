@@ -300,6 +300,7 @@ extern void			UI_FadeSetColor( const float *rgba );
 // design layer: 1280x720 design pixels
 extern vec4_t		zeq_shade;
 extern float		UI_DScale( void );
+extern float		UI_DExtra( void );
 extern void			UI_DToV( float *x, float *y, float *w, float *h );
 extern void			UI_DItem( menubitmap_s *b, int x, int y, int w, int h );
 extern void			UI_DPicST( float x, float y, float w, float h, float s0, float t0, float s1, float t1, qhandle_t shader );

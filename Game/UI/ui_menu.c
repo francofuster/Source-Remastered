@@ -120,6 +120,7 @@ static void MainMenu_DrawButton( void *self ) {
 
 	b = (menubitmap_s *)self;
 	index = ( b->generic.y - MAIN_BUTTON_Y ) / MAIN_BUTTON_STEP;
+	// x already carries the edge offset of wide screens
 	enter = UI_AnimFrac( uis.transitionTime, 80 + index * 60, 320 );
 	focus = UI_DFocus( &s_main.menu, self );
 	shift = -50.0f * ( 1.0f - enter ) + 10.0f * focus;
@@ -142,16 +143,18 @@ static void MainMenu_DrawName( void *self ) {
 	char			*txt;
 	char			clean[64];
 	float			x, y;
+	float			e;
 	vec4_t			edge;
 
 	f = (menufield_s*)self;
 	focus = ( f->generic.parent->cursor == f->generic.menuPosition );
 
-	UI_DNamePlate( 920, 638, 320, 48 );
+	e = UI_DExtra();
+	UI_DNamePlate( 920 + e, 638, 320, 48 );
 	if ( focus ) {
 		edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f;
 		edge[3] = 0.6f + 0.3f * sin( uis.realtime / 220.0f );
-		UI_DFrame( 934, 640, 304, 44, edge );
+		UI_DFrame( 934 + e, 640, 304, 44, edge );
 	}
 
 	trap_Cvar_VariableStringBuffer( "model", model, sizeof( model ) );
@@ -160,8 +163,8 @@ static void MainMenu_DrawName( void *self ) {
 		*slash = 0;
 	}
 	Q_strupr( model );
-	UI_DProp( 954, 646, model, 13, UI_LEFT, zeq_gold );
-	UI_DText( 954, 662, focus ? "Type your name" : "Your fighter", 15, UI_LEFT, zeq_text2 );
+	UI_DProp( 954 + e, 646, model, 13, UI_LEFT, zeq_gold );
+	UI_DText( 954 + e, 662, focus ? "Type your name" : "Your fighter", 15, UI_LEFT, zeq_text2 );
 
 	// the name, colors shown unless it is being edited
 	txt = f->field.buffer;
@@ -169,7 +172,7 @@ static void MainMenu_DrawName( void *self ) {
 	if ( focus ) {
 		Q_CleanStr( clean );
 	}
-	x = 1222;
+	x = 1222 + e;
 	y = 648;
 	UI_DText( x, y, focus ? clean : txt, 26, UI_RIGHT|UI_DROPSHADOW, zeq_white );
 	if ( focus && ( ( uis.realtime / 400 ) & 1 ) ) {
@@ -257,10 +260,10 @@ static void Main_MenuDraw( void ) {
 	uis.hideEarth = qfalse;
 	uis.showFrame = qfalse;
 
-	UI_DLogo( 40, 30, 270 );
-	UI_DProp( 1244, 32, "REMASTER  v1.3", 13, UI_RIGHT, zeq_text3 );
+	UI_DLogo( 40 - UI_DExtra(), 30, 270 );
+	UI_DProp( 1244 + UI_DExtra(), 32, "REMASTER  v1.3", 13, UI_RIGHT, zeq_text3 );
 	trap_R_SetColor( NULL );
-	UI_DPic( 930, 584, 280, 90, uis.blobShadow );
+	UI_DPic( 930 + UI_DExtra(), 584, 280, 90, uis.blobShadow );
 
 	if ( uis.activemenu == &s_errorMessage.menu ) {
 		UI_DGlass( 400, 250, 480, 200 );
@@ -290,11 +293,10 @@ static void MainMenu_Button( menubitmap_s *b, int id, int index ) {
 	b->generic.id			= id;
 	b->generic.callback		= Main_MenuEvent;
 	b->generic.ownerdraw	= MainMenu_DrawButton;
-	UI_DItem( b, MAIN_BUTTON_X, MAIN_BUTTON_Y + index * MAIN_BUTTON_STEP, MAIN_BUTTON_W, MAIN_BUTTON_H );
+	UI_DItem( b, MAIN_BUTTON_X - UI_DExtra(), MAIN_BUTTON_Y + index * MAIN_BUTTON_STEP, MAIN_BUTTON_W, MAIN_BUTTON_H );
 }
 
 void UI_MainMenu( void ) {
-	float	rightBias;
 	float	vx, vy, vw, vh;
 
 	trap_S_StopBackgroundTrack();
@@ -312,7 +314,6 @@ void UI_MainMenu( void ) {
 	memset( &s_main, 0 ,sizeof(mainmenu_t) );
 	memset( &s_errorMessage, 0 ,sizeof(errorMessage_t) );
 
-	rightBias = (uis.scale > 0.0f) ? (uis.bias / uis.scale) : 0.0f;
 
 	// com_errorMessage would need that too
 	MainMenu_Cache();
@@ -349,7 +350,7 @@ void UI_MainMenu( void ) {
 	s_main.name.generic.ownerdraw			= MainMenu_DrawName;
 	s_main.name.field.widthInChars			= 14;
 	s_main.name.field.maxchars				= 14;
-	vx = 934; vy = 640; vw = 304; vh = 44;
+	vx = 934 + UI_DExtra(); vy = 640; vw = 304; vh = 44;
 	UI_DToV( &vx, &vy, &vw, &vh );
 	s_main.name.generic.x					= vx;
 	s_main.name.generic.y					= vy;
@@ -363,10 +364,13 @@ void UI_MainMenu( void ) {
 	s_main.player.generic.ownerdraw			= MainMenu_DrawPlayer;
 	s_main.player.generic.id				= ID_MODEL;
 	s_main.player.generic.callback			= Main_MenuEvent;
-	s_main.player.generic.x					= 380 + rightBias;
-	s_main.player.generic.y					= -170;
-	s_main.player.width						= 320;
-	s_main.player.height					= 810;
+	// the fighter stands over its name plate on every aspect ratio
+	vx = 890 + UI_DExtra(); vy = -255; vw = 480; vh = 1215;
+	UI_DToV( &vx, &vy, &vw, &vh );
+	s_main.player.generic.x					= vx;
+	s_main.player.generic.y					= vy;
+	s_main.player.width						= vw;
+	s_main.player.height					= vh;
 
 	Menu_AddItem( &s_main.menu,	&s_main.multiplayer );
 	Menu_AddItem( &s_main.menu,	&s_main.fighter );

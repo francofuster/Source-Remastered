@@ -830,7 +830,7 @@ void UI_BotRosterMenu( void ) {
 	UI_BotRoster_DItem( &s_roster.random, ID_ROSTER_RANDOM, UI_BotRoster_DrawButton, 252, 606, 170, 40, 0 );
 	UI_BotRoster_DItem( &s_roster.clear, ID_ROSTER_CLEAR, UI_BotRoster_DrawButton, 634, 610, 170, 32, 0 );
 	UI_BotRoster_DItem( &s_roster.edit, ID_ROSTER_EDIT, UI_BotRoster_DrawButton, 876, 610, 180, 38, 0 );
-	UI_BotRoster_DItem( &s_roster.done, ID_ROSTER_DONE, UI_BotRoster_DrawButton, 1060, 664, 172, 46, 0 );
+	UI_BotRoster_DItem( &s_roster.done, ID_ROSTER_DONE, UI_BotRoster_DrawButton, 1060 + UI_DExtra(), 664, 172, 46, 0 );
 
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
 		Menu_AddItem( &s_roster.menu, &s_roster.rows[i] );
@@ -1214,7 +1214,7 @@ void UI_BotEditMenu( int slot ) {
 	for ( i = 0; i < numBotStyles; i++ ) {
 		UI_BotEdit_DItem( &s_edit.styles[i], ID_EDIT_STYLE + i, UI_BotEdit_DrawStyle, 756 + ( i % 4 ) * 114, 334 + ( i / 4 ) * 42, 108, 34 );
 	}
-	UI_BotEdit_DItem( &s_edit.accept, ID_EDIT_ACCEPT, UI_BotEdit_DrawAccept, 1060, 664, 172, 46 );
+	UI_BotEdit_DItem( &s_edit.accept, ID_EDIT_ACCEPT, UI_BotEdit_DrawAccept, 1060 + UI_DExtra(), 664, 172, 46 );
 
 	for ( i = 0; i < numBotDefs && i < 12; i++ ) {
 		Menu_AddItem( &s_edit.menu, &s_edit.chars[i] );

@@ -418,14 +418,25 @@ float UI_DrawKeyHint( float x, float y, const char *key, const char *label ) {
 =================
 UI_DrawKeyHints
 
-footer at the bottom left: pairs = key, label, key, label...
+footer centered at the bottom, clear of the HUD in the corners:
+pairs = key, label, key, label...
 =================
 */
 void UI_DrawKeyHints( const char **pairs, int count ) {
 	int		i;
 	float	x;
+	float	capW;
+	float	total;
 
-	x = 22.0f - UI_LeftBias();
+	total = 0.0f;
+	for ( i = 0; i < count; i++ ) {
+		capW = UI_StringSizedWidth( pairs[i * 2], 6 ) + 8;
+		if ( capW < 16 ) {
+			capW = 16;
+		}
+		total += capW + 4 + UI_StringSizedWidth( pairs[i * 2 + 1], 7 ) + 14;
+	}
+	x = 320.0f - ( total - 14 ) * 0.5f;
 	for ( i = 0; i < count; i++ ) {
 		x += UI_DrawKeyHint( x, 458, pairs[i * 2], pairs[i * 2 + 1] );
 	}
@@ -554,6 +565,22 @@ static void UI_DFit( float *s, float *offX, float *offY ) {
 	*s = ( sx < sy ) ? sx : sy;
 	*offX = ( uis.glconfig.vidWidth - 1280.0f * *s ) * 0.5f;
 	*offY = ( uis.glconfig.vidHeight - 720.0f * *s ) * 0.5f;
+}
+
+/*
+=================
+UI_DExtra
+
+design pixels between the canvas and each side of a screen wider than
+16:9 (21:9 and up). Header, hints and the main buttons move out by it so
+they sit on the edges like on 16:9; panels stay centered.
+=================
+*/
+float UI_DExtra( void ) {
+	float s, ox, oy;
+
+	UI_DFit( &s, &ox, &oy );
+	return ( s > 0.0f ) ? ox / s : 0.0f;
 }
 
 float UI_DScale( void ) {
@@ -716,11 +743,14 @@ void UI_DLogo( float x, float y, float w ) {
 void UI_DHeader( const char *crumb, const char *title ) {
 	vec4_t line;
 
+	float	e;
+
+	e = UI_DExtra();
 	line[0] = 0.35f; line[1] = 0.51f; line[2] = 0.90f; line[3] = 0.45f;
-	UI_DLogo( 40, 22, 170 );
-	UI_DFill( 236, 34, 1.5f, 62, line );
-	UI_DText( 262, 38, crumb, 18, UI_LEFT, zeq_text3 );
-	UI_DProp( 262, 58, title, 34, UI_LEFT|UI_DROPSHADOW, zeq_white );
+	UI_DLogo( 40 - e, 22, 170 );
+	UI_DFill( 236 - e, 34, 1.5f, 62, line );
+	UI_DText( 262 - e, 38, crumb, 18, UI_LEFT, zeq_text3 );
+	UI_DProp( 262 - e, 58, title, 34, UI_LEFT|UI_DROPSHADOW, zeq_white );
 }
 
 void UI_DSectionTitle( float x, float y, const char *text ) {
@@ -751,7 +781,7 @@ void UI_DHints( const char **pairs, int count ) {
 	int		i;
 	float	x;
 
-	x = 60;
+	x = 60 - UI_DExtra();
 	for ( i = 0; i < count; i++ ) {
 		x += UI_DKeyHint( x, 672, pairs[i * 2], pairs[i * 2 + 1] );
 	}
