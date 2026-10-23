@@ -582,10 +582,24 @@ UI_StartServerMenu
 void UI_StartServerMenu( qboolean multiplayer ) {
 	uis.menuamount = 2;
 	uis.hideEarth = qtrue;
-	uis.showFrame = qfalse;	
+	uis.showFrame = qfalse;
 	StartServer_MenuInit();
 	s_startserver.multiplayer = multiplayer;
 	UI_PushMenu( &s_startserver.menu );
+}
+
+static void UI_ServerOptionsMenu( qboolean multiplayer );
+
+// TEMP testing aid for the menu redesign, remove before release
+void UI_TestMenu( const char *which ) {
+	UI_StartServerMenu( qtrue );
+	UI_ServerOptionsMenu( qtrue );
+	if ( !Q_stricmp( which, "roster" ) || !Q_stricmp( which, "edit" ) ) {
+		UI_BotRosterMenu();
+	}
+	if ( !Q_stricmp( which, "edit" ) ) {
+		UI_BotEditMenu( -1 );
+	}
 }
 
 
@@ -603,6 +617,13 @@ SERVER OPTIONS MENU *****
 #define ID_DEDICATED			22
 #define ID_GO					23
 #define ID_BACK					24
+#define ID_FIGHTERS				25
+#define ID_FIGHTERPANEL			26
+
+#define SO_MAP_X				160
+#define SO_RULES_X				400
+#define SO_PANEL_Y				36
+#define SO_FIGHTERS_Y			262
 
 #define PLAYER_SLOTS			12
 
@@ -635,6 +656,9 @@ typedef struct {
 	menutext_s			go;
 	menutext_s			next;
 	menutext_s			back;
+	menutext_s			fighters;
+	menubitmap_s		fighterPanel;
+	int					rulesBottom;
 
 	qboolean			multiplayer;
 	int					gametype;
@@ -761,6 +785,8 @@ static void ServerOptions_Start( void ) {
 #if MAPLENSFLARES	// JUHOX: reset edit mode
 	trap_Cvar_SetValue("g_editmode", 0);
 #endif
+	// room for the roster and for bots added later from the pause menu
+	maxclients = 12;
 	trap_Cvar_SetValue( "sv_maxclients", Com_Clamp( 0, 12, maxclients ) );
 	trap_Cvar_SetValue( "dedicated", Com_Clamp( 0, 2, dedicated ) );
 	trap_Cvar_SetValue ("timelimit", Com_Clamp( 0, timelimit, timelimit ) );
@@ -773,31 +799,13 @@ static void ServerOptions_Start( void ) {
 	trap_Cvar_SetValue( "sv_pure", pure );
 	trap_Cvar_Set("sv_hostname", s_serveroptions.hostname.field.buffer );
 
+	// the roster travels in g_queuedBot cvars, the game adds the bots
+	// itself once the level runs
+	UI_Bots_ExecAddCommands();
+
 	// the wait commands will allow the dedicated to take effect
 	info = UI_GetArenaInfoByNumber( s_startserver.maplist[ s_startserver.currentmap ]);
 	trap_Cmd_ExecuteText( EXEC_APPEND, va( "wait ; wait ; map %s\n", Info_ValueForKey( info, "map" )));
-
-	// add bots
-	trap_Cmd_ExecuteText( EXEC_APPEND, "wait 3\n" );
-	for( n = 1; n < PLAYER_SLOTS; n++ ) {
-		if( s_serveroptions.playerType[n].curvalue != 1 ) {
-			continue;
-		}
-		if( s_serveroptions.playerNameBuffers[n][0] == 0 ) {
-			continue;
-		}
-		if( s_serveroptions.playerNameBuffers[n][0] == '-' ) {
-			continue;
-		}
-		if( s_serveroptions.gametype >= GT_TEAM ) {
-			Com_sprintf( buf, sizeof(buf), "addbot %s %i %s\n", s_serveroptions.playerNameBuffers[n], skill,
-				playerTeam_list[s_serveroptions.playerTeam[n].curvalue] );
-		}
-		else {
-			Com_sprintf( buf, sizeof(buf), "addbot %s %i\n", s_serveroptions.playerNameBuffers[n], skill );
-		}
-		trap_Cmd_ExecuteText( EXEC_APPEND, buf );
-	}
 
 	// set player's team
 	if( dedicated == 0 && s_serveroptions.gametype >= GT_TEAM ) {
@@ -939,6 +947,14 @@ static void ServerOptions_Event( void* ptr, int event ) {
 		ServerOptions_Start();
 		break;
 
+	case ID_FIGHTERS:
+	case ID_FIGHTERPANEL:
+		if( event != QM_ACTIVATED ) {
+			break;
+		}
+		UI_BotRosterMenu();
+		break;
+
 	case ID_STARTSERVERNEXT:
 		if( event != QM_ACTIVATED ) {
 			break;
@@ -972,11 +988,8 @@ ServerOptions_StatusBar
 =================
 */
 static void ServerOptions_StatusBar( void* ptr ) {
-	switch( ((menucommon_s*)ptr)->id ) {
-	default:
-		UI_DrawString( 320, 440, "0 = NO LIMIT", UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW, colorWhite );
-		break;
-	}
+	// the map panel already says 0 = no limit
+
 }
 
 
@@ -998,7 +1011,9 @@ static void ServerOptions_LevelshotDraw( void *self ) {
 
 	b = (menubitmap_s *)self;
 
+	trap_R_SetColor( NULL );
 	Bitmap_Draw( b );
+	UI_DrawRect( b->generic.x - 1, b->generic.y - 1, b->width + 2, b->height + 2, zeq_ki );
 /*
 	x = b->generic.x;
 	y = b->generic.y + b->height;
@@ -1202,10 +1217,121 @@ static void PlayerName_Draw( void *item ) {
 
 /*
 =================
+ServerOptions_DrawFighters
+
+summary of the roster: the human, then each bot with its level,
+the portraits rise in one after the other
+=================
+*/
+static void ServerOptions_DrawFighters( void *self ) {
+	menubitmap_s	*b;
+	float			focus;
+	float			x, y, w, h;
+	float			px, rise;
+	int				i;
+	int				count;
+	int				shown;
+	char			model[64];
+	char			*slash;
+	uiRosterSlot_t	*slot;
+	uiBotDef_t		*def;
+	vec4_t			edge;
+
+	b = (menubitmap_s *)self;
+	x = b->generic.left;
+	y = b->generic.top;
+	w = b->generic.right - b->generic.left;
+	h = b->generic.bottom - b->generic.top;
+	focus = ( Menu_ItemAtCursor( &s_serveroptions.menu ) == self ) ? UI_AnimFrac( uis.focusTime, 0, 180 ) : 0.0f;
+
+	UI_DrawGlassPanel( x, y, w, h );
+	if ( focus > 0.0f ) {
+		edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f;
+		edge[3] = focus * ( 0.6f + 0.3f * sin( uis.realtime / 220.0f ) );
+		UI_DrawRect( x + 4, y + 4, w - 8, h - 8, edge );
+		UI_DrawRect( x + 5, y + 5, w - 10, h - 10, edge );
+	}
+
+	count = UI_Bots_RosterCount();
+	UI_DrawSectionTitle( x + 14, y + 12, va( "FIGHTERS  %i OF 12", count + 1 ) );
+	UI_DrawStringSized( x + w - 14, y + 12, "Manage bots  >", UI_RIGHT, focus > 0.0f ? zeq_white : zeq_ki, 6, 11 );
+
+	// the human player
+	trap_Cvar_VariableStringBuffer( "model", model, sizeof( model ) );
+	slash = strchr( model, '/' );
+	if ( slash ) {
+		*slash = 0;
+	}
+	px = x + 16;
+	rise = 8.0f * ( 1.0f - UI_AnimFrac( uis.transitionTime, 80, 300 ) );
+	UI_DrawPortrait( px, y + 40 + rise, 44, UI_Bots_Portrait( model ), qfalse, 0.0f );
+	UI_DrawRect( px - 1, y + 39 + rise, 46, 46, zeq_ki );
+	UI_DrawStringSized( px + 22, y + 90 + rise, "YOU", UI_CENTER, zeq_ki, 6, 11 );
+
+	shown = count;
+	if ( shown > 6 ) {
+		shown = 6;
+	}
+	for ( i = 0; i < shown; i++ ) {
+		slot = UI_Bots_RosterSlot( i );
+		def = UI_Bots_Def( slot->def );
+		px = x + 16 + ( i + 1 ) * 60;
+		rise = 8.0f * ( 1.0f - UI_AnimFrac( uis.transitionTime, 130 + i * 50, 300 ) );
+		UI_DrawPortrait( px, y + 40 + rise, 44, UI_Bots_Portrait( def->player ), qfalse, focus );
+		UI_DrawPips( px + 9, y + 90 + rise, slot->skill, 3, UI_AnimFrac( uis.transitionTime, 260 + i * 50, 300 ) );
+		UI_DrawStringSized( px + 22, y + 98 + rise, def->player, UI_CENTER, zeq_text2, 5, 9 );
+	}
+
+	px = x + 16 + ( shown + 1 ) * 60;
+	if ( count > shown ) {
+		UI_DrawPropScaled( px + 4, y + 52, va( "+%i", count - shown ), UI_LEFT, zeq_white, 0.6f );
+	}
+	else if ( count < UI_MAX_ROSTER ) {
+		edge[0] = 0.29f; edge[1] = 0.39f; edge[2] = 0.74f; edge[3] = 0.8f;
+		UI_DrawRect( px, y + 40, 44, 44, edge );
+		UI_DrawPropScaled( px + 22, y + 52, "+", UI_CENTER, zeq_ki, 0.7f );
+		UI_DrawStringSized( px + 22, y + 90, "Add bot", UI_CENTER, zeq_text3, 5, 9 );
+	}
+
+	if ( !count ) {
+		UI_DrawStringSized( x + 16, y + h - 30, "No bots yet: you will fight alone until someone joins.", UI_LEFT, zeq_text2, 6, 11 );
+	}
+	else {
+		UI_DrawStringSized( x + 16, y + h - 30, "Levels and styles come from botsys; change them in Manage bots.", UI_LEFT, zeq_text3, 6, 11 );
+	}
+}
+
+/*
+=================
+ServerOptions_MenuDraw
+=================
+*/
+static void ServerOptions_MenuDraw( void ) {
+	static const char *hints[] = { "ENTER", "Select", "ESC", "Back" };
+
+	// the side strip is shared, set it again after coming back from the roster
+	uis.menuamount = 3;
+	uis.hideEarth = qtrue;
+
+	UI_DrawGlassPanel( SO_MAP_X, SO_PANEL_Y, 230, 192 );
+	UI_DrawSectionTitle( SO_MAP_X + 14, SO_PANEL_Y + 12, "MAP" );
+	UI_DrawGlassPanel( SO_RULES_X, SO_PANEL_Y, 230, s_serveroptions.rulesBottom - SO_PANEL_Y );
+	UI_DrawSectionTitle( SO_RULES_X + 14, SO_PANEL_Y + 12, "RULES" );
+
+	Menu_Draw( &s_serveroptions.menu );
+
+	UI_DrawPropScaled( SO_MAP_X + 14, SO_PANEL_Y + 152, s_serveroptions.mapnamebuffer, UI_LEFT|UI_DROPSHADOW, zeq_white, 0.6f );
+	UI_DrawStringSized( SO_MAP_X + 14, SO_PANEL_Y + 172, va( "%s  -  0 = no limit", gametype_items[0] ), UI_LEFT, zeq_text2, 6, 11 );
+
+	UI_DrawKeyHints( hints, 2 );
+}
+
+/*
+=================
 ServerOptions_MenuInit
 =================
 */
-#define OPTIONS_X	420
+#define OPTIONS_X	545
 
 static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	int		y;
@@ -1219,6 +1345,7 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 
 	s_serveroptions.menu.wrapAround = qtrue;
 	s_serveroptions.menu.fullscreen = qtrue;
+	s_serveroptions.menu.draw = ServerOptions_MenuDraw;
 
 	s_serveroptions.banner.generic.type			= MTYPE_BTEXT;
 	s_serveroptions.banner.generic.x			= 320;
@@ -1229,10 +1356,10 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 
 	s_serveroptions.mappic.generic.type			= MTYPE_BITMAP;
 	s_serveroptions.mappic.generic.flags		= QMF_LEFT_JUSTIFY|QMF_INACTIVE;
-	s_serveroptions.mappic.generic.x			= 290;
-	s_serveroptions.mappic.generic.y			= 80;
-	s_serveroptions.mappic.width				= 256;
-	s_serveroptions.mappic.height				= 196;
+	s_serveroptions.mappic.generic.x			= SO_MAP_X + 8;
+	s_serveroptions.mappic.generic.y			= SO_PANEL_Y + 28;
+	s_serveroptions.mappic.width				= 214;
+	s_serveroptions.mappic.height				= 118;
 	s_serveroptions.mappic.errorpic				= GAMESERVER_UNKNOWNMAP;
 	s_serveroptions.mappic.generic.ownerdraw	= ServerOptions_LevelshotDraw;
 
@@ -1244,14 +1371,14 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	s_serveroptions.picframe.height  			= 320;
 	s_serveroptions.picframe.focuspic			= GAMESERVER_SELECT;
 
-	y = 290;
+	y = SO_PANEL_Y + 32;
 	if( s_serveroptions.multiplayer ) {
 		s_serveroptions.hostname.generic.type       = MTYPE_FIELD;
 		s_serveroptions.hostname.generic.name       = "Hostname     :";
 		s_serveroptions.hostname.generic.flags      = QMF_SMALLFONT;
 		s_serveroptions.hostname.generic.x          = OPTIONS_X;
 		s_serveroptions.hostname.generic.y	        = y;
-		s_serveroptions.hostname.field.widthInChars = 24;
+		s_serveroptions.hostname.field.widthInChars = 18;
 		s_serveroptions.hostname.field.maxchars     = 64;
 		y += BIGCHAR_HEIGHT+2;
 	}
@@ -1343,6 +1470,7 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 		s_serveroptions.dedicated.generic.name		= "Dedicated    :";
 		s_serveroptions.dedicated.itemnames			= dedicated_list;
 	}
+	s_serveroptions.rulesBottom = y + 30;
 
 	y = 80;
 	s_serveroptions.botSkill.generic.type			= MTYPE_SPINCONTROL;
@@ -1410,7 +1538,7 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	s_serveroptions.back.generic.id			= ID_BACK;
 	s_serveroptions.back.generic.callback	= ServerOptions_Event;
 	s_serveroptions.back.generic.x			= 28;
-	s_serveroptions.back.generic.y			= 157;
+	s_serveroptions.back.generic.y			= 195;
 	s_serveroptions.back.string				= "BACK";
 	s_serveroptions.back.style				= UI_LEFT | UI_DROPSHADOW | UI_TINYFONT;
 	s_serveroptions.back.color				= color_white;
@@ -1427,8 +1555,32 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	y+=38;
 
 
+	s_serveroptions.fighters.generic.type		= MTYPE_PTEXT;
+	s_serveroptions.fighters.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
+	s_serveroptions.fighters.generic.id			= ID_FIGHTERS;
+	s_serveroptions.fighters.generic.callback	= ServerOptions_Event;
+	s_serveroptions.fighters.generic.x			= 28;
+	s_serveroptions.fighters.generic.y			= 157;
+	s_serveroptions.fighters.string				= "FIGHTERS";
+	s_serveroptions.fighters.style				= UI_LEFT | UI_DROPSHADOW | UI_TINYFONT;
+	s_serveroptions.fighters.color				= color_white;
+
+	s_serveroptions.fighterPanel.generic.type		= MTYPE_BITMAP;
+	s_serveroptions.fighterPanel.generic.flags		= QMF_NODEFAULTINIT;
+	s_serveroptions.fighterPanel.generic.id			= ID_FIGHTERPANEL;
+	s_serveroptions.fighterPanel.generic.callback	= ServerOptions_Event;
+	s_serveroptions.fighterPanel.generic.ownerdraw	= ServerOptions_DrawFighters;
+	s_serveroptions.fighterPanel.generic.left		= SO_MAP_X;
+	s_serveroptions.fighterPanel.generic.top		= SO_FIGHTERS_Y;
+	s_serveroptions.fighterPanel.generic.right		= SO_RULES_X + 230;
+	s_serveroptions.fighterPanel.generic.bottom		= SO_FIGHTERS_Y + 168;
+
+	UI_Bots_Load();
+
+	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.go );
+	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.fighters );
+	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.back );
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.mappic );
-	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.picframe );
 
 /*	
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.player0 );
@@ -1464,8 +1616,7 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 		Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.hostname );
 	}
 
-	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.go );
-	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.back );
+	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.fighterPanel );
 //	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.next );
 
 
@@ -1495,7 +1646,7 @@ UI_ServerOptionsMenu
 static void UI_ServerOptionsMenu( qboolean multiplayer ) {
 	ServerOptions_MenuInit( multiplayer );
 	UI_PushMenu( &s_serveroptions.menu );
-	uis.menuamount = 2;
+	uis.menuamount = 3;
 	uis.hideEarth = qtrue;
 	uis.showFrame = qfalse;
 }

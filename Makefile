@@ -1903,6 +1903,7 @@ UIOBJ_ = \
   $(B)/Base/UI/ui_servers2.o \
   $(B)/Base/UI/ui_specifyserver.o \
   $(B)/Base/UI/ui_shared.o \
+  $(B)/Base/UI/ui_bots.o \
   $(B)/Base/UI/ui_startserver.o \
   $(B)/Base/UI/ui_system.o \
   $(B)/Base/UI/ui_camera.o \

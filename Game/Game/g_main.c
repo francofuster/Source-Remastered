@@ -1469,6 +1469,9 @@ void G_RunFrame( int levelTime ) {
 	// get any cvar changes
 	G_UpdateCvars();
 
+	// bots chosen in the create match screen
+	G_SpawnQueuedBots();
+
 	//
 	// go through all allocated objects
 	//

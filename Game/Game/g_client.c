@@ -754,10 +754,11 @@ void ClientUserinfoChanged( int clientNum ) {
 	// print scoreboards, display models, and play custom sounds
 	if (ent->r.svFlags & SVF_BOT)
 	{
-		s = va("n\\%s\\t\\%i\\model\\%s\\hmodel\\%s\\lmodel\\%s\\c1\\%s\\c2\\%s\\hc\\%i\\w\\%i\\l\\%i\\skill\\%s\\tt\\%d\\tl\\%d",
-			client->pers.netname, team, model, headModel,legsModel, c1, c2, 
+		// st = botsys style file, shown by the pause menu bot list
+		s = va("n\\%s\\t\\%i\\model\\%s\\hmodel\\%s\\lmodel\\%s\\c1\\%s\\c2\\%s\\hc\\%i\\w\\%i\\l\\%i\\skill\\%s\\st\\%s\\tt\\%d\\tl\\%d",
+			client->pers.netname, team, model, headModel,legsModel, c1, c2,
 			client->pers.maxHealth, client->sess.wins, client->sess.losses,
-			Info_ValueForKey( userinfo, "skill" ), teamTask, teamLeader );
+			Info_ValueForKey( userinfo, "skill" ), Info_ValueForKey( userinfo, "style" ), teamTask, teamLeader );
 	}
 	else
 	{

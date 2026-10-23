@@ -26,37 +26,70 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../UI/menudef/menudef.h"		// for the voice chats
 
 
+/*
+==================
+G_ApplyBotStyle
+
+style= override of the archetype set in bots.txt (botsys/archetypes file)
+==================
+*/
+static void G_ApplyBotStyle( int clientNum, const char *style ) {
+	char file[MAX_QPATH];
+	char info[MAX_INFO_STRING];
+
+	if ( clientNum < 0 || !style || !style[0] ) {
+		return;
+	}
+	Q_strncpyz( file, style, sizeof( file ) );
+	if ( !strstr( file, ".cfg" ) ) {
+		Q_strcat( file, sizeof( file ), ".cfg" );
+	}
+	BotLite_BotsysApplyInfoConfig( &g_botlite[clientNum], file );
+
+	// publish the style so the pause menu can list it: userinfo keeps it
+	// across later userinfo updates, the configstring shows it right away
+	trap_GetUserinfo( clientNum, info, sizeof( info ) );
+	Info_SetValueForKey( info, "style", file );
+	trap_SetUserinfo( clientNum, info );
+	// player configstrings have no leading backslash, Info_SetValueForKey
+	// needs one or it glues the new pair onto the first key
+	info[0] = '\\';
+	trap_GetConfigstring( CS_PLAYERS + clientNum, info + 1, sizeof( info ) - 1 );
+	if ( info[1] == '\\' ) {
+		memmove( info, info + 1, strlen( info + 1 ) + 1 );
+	}
+	Info_SetValueForKey( info, "st", file );
+	trap_SetConfigstring( CS_PLAYERS + clientNum, info );
+}
+
 static void Cmd_AddBot_f( gentity_t *ent ) {
 	char character[MAX_TOKEN_CHARS];
-	char skillArg[MAX_TOKEN_CHARS];
-	char debugArg[MAX_TOKEN_CHARS];
+	char arg[MAX_TOKEN_CHARS];
+	char style[MAX_QPATH];
 	char error[128];
 	int skill;
 	int clientNum;
+	int i;
 	qboolean enableDebug;
 
 	if ( trap_Argc() < 2 ) {
-		trap_SendServerCommand( ent-g_entities, "print \"Usage: /addbot <character> [skill 1-3] [-debug]\\n\"" );
+		trap_SendServerCommand( ent-g_entities, "print \"Usage: /addbot <character> [skill 1-3] [style=<archetype>] [-debug]\\n\"" );
 		return;
 	}
 
 	trap_Argv( 1, character, sizeof( character ) );
 	skill = 0;
+	style[0] = 0;
 	enableDebug = qfalse;
 
-	if ( trap_Argc() >= 3 ) {
-		trap_Argv( 2, skillArg, sizeof( skillArg ) );
-		if ( !Q_stricmp( skillArg, "-debug" ) || !Q_stricmp( skillArg, "debug" ) ) {
+	for ( i = 2; i < trap_Argc(); i++ ) {
+		trap_Argv( i, arg, sizeof( arg ) );
+		if ( !Q_stricmp( arg, "-debug" ) || !Q_stricmp( arg, "debug" ) ) {
 			enableDebug = qtrue;
+		} else if ( !Q_stricmpn( arg, "style=", 6 ) ) {
+			Q_strncpyz( style, arg + 6, sizeof( style ) );
 		} else {
-			skill = atoi( skillArg );
-		}
-	}
-
-	if ( trap_Argc() >= 4 ) {
-		trap_Argv( 3, debugArg, sizeof( debugArg ) );
-		if ( !Q_stricmp( debugArg, "-debug" ) || !Q_stricmp( debugArg, "debug" ) ) {
-			enableDebug = qtrue;
+			skill = atoi( arg );
 		}
 	}
 
@@ -68,6 +101,7 @@ static void Cmd_AddBot_f( gentity_t *ent ) {
 		trap_SendServerCommand( ent-g_entities, va( "print \"%s\\n\"", error ) );
 		return;
 	}
+	G_ApplyBotStyle( clientNum, style );
 
 	if ( enableDebug ) {
 		trap_SendServerCommand( ent-g_entities, va( "print \"Bot %s added with debug in slot %d.\\n\"", character, clientNum ) );
@@ -123,6 +157,57 @@ static void Cmd_RemoveBot_f( gentity_t *ent ) {
 	}
 
 	trap_SendServerCommand( ent-g_entities, va( "print \"Bot %s removed from slot %d.\\n\"", character, clientNum ) );
+}
+
+/*
+==================
+G_SpawnQueuedBots
+
+The create match screen leaves the roster in g_queuedBots (count) and
+g_queuedBot0..N ("<bot id> <skill> <style file>"). They are added once
+the level has been running for a moment, then the queue is cleared.
+==================
+*/
+void G_SpawnQueuedBots( void ) {
+	char	entry[MAX_STRING_CHARS];
+	char	character[MAX_QPATH];
+	char	style[MAX_QPATH];
+	char	error[128];
+	char	*p;
+	char	*token;
+	int		count;
+	int		skill;
+	int		clientNum;
+	int		i;
+
+	if ( level.time - level.startTime < 1000 ) {
+		return;
+	}
+	count = trap_Cvar_VariableIntegerValue( "g_queuedBots" );
+	if ( count <= 0 ) {
+		return;
+	}
+	trap_Cvar_Set( "g_queuedBots", "0" );
+
+	for ( i = 0; i < count && i < MAX_CLIENTS; i++ ) {
+		trap_Cvar_VariableStringBuffer( va( "g_queuedBot%i", i ), entry, sizeof( entry ) );
+		p = entry;
+		token = COM_Parse( &p );
+		if ( !token[0] ) {
+			continue;
+		}
+		Q_strncpyz( character, token, sizeof( character ) );
+		skill = atoi( COM_Parse( &p ) );
+		Q_strncpyz( style, COM_Parse( &p ), sizeof( style ) );
+
+		clientNum = BotLite_AddBot( character, skill, error, sizeof( error ) );
+		if ( clientNum < 0 ) {
+			G_Printf( "Queued bot %s: %s\n", character, error );
+			continue;
+		}
+		G_ApplyBotStyle( clientNum, style );
+		G_Printf( "Queued bot %s added (skill %i, style %s)\n", character, skill, style[0] ? style : "default" );
+	}
 }
 
 static void Cmd_RemoveAllBots_f( gentity_t *ent ) {

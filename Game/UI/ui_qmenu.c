@@ -240,6 +240,16 @@ static void PText_Draw( menutext_s *t )
 		color = t->color;
 
 	style = t->style;
+	if ( UI_IsSideButton( (menucommon_s *)t ) && !(t->generic.flags & QMF_GRAYED) ) {
+		// redesign: grey label, white with ki glow when focused
+		if ( Menu_ItemAtCursor( t->generic.parent ) == t ) {
+			UI_DrawPropScaled( x, y, t->string, (style & UI_FORMATMASK)|UI_DROPSHADOW|UI_PULSE, zeq_white, UI_ProportionalSizeScale( style ) );
+		}
+		else {
+			UI_DrawPropScaled( x, y, t->string, (style & UI_FORMATMASK)|UI_DROPSHADOW, zeq_text2, UI_ProportionalSizeScale( style ) );
+		}
+		return;
+	}
 	if( t->generic.flags & QMF_PULSEIFFOCUS ) {
 		if( Menu_ItemAtCursor( t->generic.parent ) == t ) {
 			style |= UI_PULSE;
@@ -1346,6 +1356,8 @@ void Menu_CursorMoved( menuframework_s *m )
 	if (m->cursor_prev == m->cursor)
 		return;
 
+	uis.focusTime = uis.realtime;
+
 	if (m->cursor_prev >= 0 && m->cursor_prev < m->nitems)
 	{
 		callback = ((menucommon_s*)(m->items[m->cursor_prev]))->callback;
@@ -1460,6 +1472,9 @@ void Menu_Draw( menuframework_s *menu )
 {
 	int				i;
 	menucommon_s	*itemptr;
+	float			baseOffset;
+
+	baseOffset = uis.drawOffsetX;
 
 	// draw menu
 	for (i=0; i<menu->nitems; i++)
@@ -1468,6 +1483,12 @@ void Menu_Draw( menuframework_s *menu )
 
 		if (itemptr->flags & QMF_HIDDEN)
 			continue;
+
+		// side buttons ride on their animated backgrounds
+		uis.drawOffsetX = baseOffset;
+		if ( UI_IsSideButton( itemptr ) ) {
+			uis.drawOffsetX += UI_SideButtonOffset( itemptr );
+		}
 
 		if (itemptr->ownerdraw)
 		{
@@ -1545,6 +1566,7 @@ void Menu_Draw( menuframework_s *menu )
 		}
 #endif
 	}
+	uis.drawOffsetX = baseOffset;
 
 	itemptr = Menu_ItemAtCursor( menu );
 	if ( itemptr && itemptr->statusbar)
@@ -1737,6 +1759,13 @@ void Menu_Cache( void )
 
 	uis.blobShadow	= trap_R_RegisterShaderNoMip("blobShadow");
 	uis.nameArea	= trap_R_RegisterShaderNoMip("nameArea");
+
+	// redesign art: registered by path so they take vertex color and fade
+	uis.kiButton		= trap_R_RegisterShaderNoMip( "interface/menu/mainButton1.png" );
+	uis.kiButtonGlow	= trap_R_RegisterShaderNoMip( "menuKiGlow1" );
+	uis.glassPanel		= trap_R_RegisterShaderNoMip( "interface/menu/menuFrame.png" );
+	uis.dragonBall		= trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" );
+	uis.fadeAlpha		= 1.0f;
 
 	uis.menuButton1	= trap_R_RegisterShaderNoMip("mainButton1");
 	uis.menuButton2	= trap_R_RegisterShaderNoMip("mainButton2");

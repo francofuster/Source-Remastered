@@ -31,7 +31,7 @@ INGAME MENU
 #include "ui_local.h"
 
 #define INGAME_FRAME					"interface/art/addbotframe"
-#define INGAME_MENU_VERTICAL_SPACING	28
+#define INGAME_MENU_VERTICAL_SPACING	24
 
 #define ID_SETUP				13
 #define ID_PLAYER				14
@@ -40,6 +40,7 @@ INGAME MENU
 #define ID_RESTART				17
 #define ID_QUIT					18
 #define ID_RESUME				19
+#define ID_BOTS					20
 
 typedef struct {
 	menuframework_s	menu;
@@ -52,6 +53,7 @@ typedef struct {
 	menutext_s		restart;
 	menutext_s		quit;
 	menutext_s		resume;
+	menutext_s		bots;
 } ingamemenu_t;
 
 static ingamemenu_t	s_ingame;
@@ -109,6 +111,10 @@ void InGame_Event( void *ptr, int notification ) {
 		UI_CameraMenu();
 		break;		
 
+	case ID_BOTS:
+		UI_PauseBotsMenu();
+		break;
+
 	case ID_LEAVEARENA:
 		// JUHOX: reset edit mode
 #if MAPLENSFLARES
@@ -158,7 +164,7 @@ void InGame_MenuInit( void ) {
 	s_ingame.frame.height				= 350;//256;
 
 	//y = 96;
-	y = 125;
+	y = 125;	// 7 entries at 24 keep inside the frame
 
 	y += INGAME_MENU_VERTICAL_SPACING;
 	s_ingame.resume.generic.type			= MTYPE_PTEXT;
@@ -193,6 +199,21 @@ void InGame_MenuInit( void ) {
 	s_ingame.player.color				= color_white;
 	s_ingame.player.style				= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
 	
+	// bots of the match, only the host can manage them
+	y += INGAME_MENU_VERTICAL_SPACING;
+	s_ingame.bots.generic.type			= MTYPE_PTEXT;
+	s_ingame.bots.generic.flags			= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
+	s_ingame.bots.generic.x				= 320;
+	s_ingame.bots.generic.y				= y;
+	s_ingame.bots.generic.id			= ID_BOTS;
+	s_ingame.bots.generic.callback		= InGame_Event;
+	s_ingame.bots.string				= "BOTS";
+	s_ingame.bots.color					= color_white;
+	s_ingame.bots.style					= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
+	if( !trap_Cvar_VariableValue( "sv_running" ) ) {
+		s_ingame.bots.generic.flags |= QMF_GRAYED;
+	}
+
 	y += INGAME_MENU_VERTICAL_SPACING;
 	s_ingame.camera.generic.type		= MTYPE_PTEXT;
 	s_ingame.camera.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -235,6 +256,7 @@ void InGame_MenuInit( void ) {
 	Menu_AddItem( &s_ingame.menu, &s_ingame.restart );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.setup );	
 	Menu_AddItem( &s_ingame.menu, &s_ingame.player );	
+	Menu_AddItem( &s_ingame.menu, &s_ingame.bots );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.camera );
 	Menu_AddItem( &s_ingame.menu, &s_ingame.leave );
 }

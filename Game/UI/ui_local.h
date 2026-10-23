@@ -273,6 +273,30 @@ extern void			Menu_AdjustCursor( menuframework_s *menu, int dir );
 extern void			Menu_Common(int amount);
 extern void 		Menu_Frame(void);
 extern void 		Menu_Side(void);
+
+// ui_shared.c: redesign drawing helpers and animation
+extern vec4_t		zeq_white;
+extern vec4_t		zeq_text2;
+extern vec4_t		zeq_text3;
+extern vec4_t		zeq_gold;
+extern vec4_t		zeq_ki;
+extern float		UI_EaseOut( float t );
+extern float		UI_AnimFrac( int startTime, int delay, int duration );
+extern void			UI_BeginContentFade( void );
+extern void			UI_EndContentFade( void );
+extern qboolean		UI_IsSideButton( menucommon_s *item );
+extern float		UI_SideButtonOffset( menucommon_s *item );
+extern void			UI_DrawGlassPanel( float x, float y, float w, float h );
+extern void			UI_DrawKiBar( float x, float y, float w, float h, qboolean focus, float focusFrac );
+extern void			UI_DrawDragonBall( float x, float y, float size );
+extern void			UI_DrawPips( float x, float y, int filled, int total, float anim );
+extern void			UI_DrawStatBar( float x, float y, float w, const char *label, float value, float anim );
+extern float		UI_DrawKeyHint( float x, float y, const char *key, const char *label );
+extern void			UI_DrawKeyHints( const char **pairs, int count );
+extern void			UI_DrawSectionTitle( float x, float y, const char *text );
+extern void			UI_DrawPortrait( float x, float y, float size, qhandle_t shader, qboolean selected, float focusFrac );
+extern void			UI_DrawFocusRow( float x, float y, float w, float h, float focusFrac );
+extern void			UI_FadeSetColor( const float *rgba );
 extern void			Menu_Draw( menuframework_s *menu );
 extern void			*Menu_ItemAtCursor( menuframework_s *m );
 extern sfxHandle_t	Menu_ActivateItem( menuframework_s *s, menucommon_s* item );
@@ -429,10 +453,52 @@ extern void ArenaServers_Cache( void );
 // ui_startserver.c
 //
 extern void UI_StartServerMenu( qboolean multiplayer );
+extern void UI_TestMenu( const char *which );
 extern void StartServer_Cache( void );
 extern void ServerOptions_Cache( void );
 extern void UI_BotSelectMenu( char *bot );
 extern void UI_BotSelectMenu_Cache( void );
+
+//
+// ui_bots.c
+//
+#define UI_MAX_BOTDEFS			32
+#define UI_MAX_STYLES			16
+#define UI_MAX_ROSTER			11		// 12 fighters, slot 0 is the human
+
+typedef struct {
+	char	id[32];
+	char	name[32];
+	char	player[32];
+	char	archetype[32];
+	int		skill;
+} uiBotDef_t;
+
+typedef struct {
+	char	file[32];		// aggressive.cfg
+	char	label[32];		// Aggressive
+	float	values[6];		// aggression, rush, combos, specials, block, ranged
+} uiBotStyle_t;
+
+typedef struct {
+	int		def;			// index in the bot definitions
+	int		skill;			// 1 to 3
+	int		style;			// index in the styles
+} uiRosterSlot_t;
+
+extern void			UI_Bots_Load( void );
+extern int			UI_Bots_NumDefs( void );
+extern uiBotDef_t	*UI_Bots_Def( int index );
+extern int			UI_Bots_NumStyles( void );
+extern uiBotStyle_t	*UI_Bots_Style( int index );
+extern int			UI_Bots_RosterCount( void );
+extern uiRosterSlot_t *UI_Bots_RosterSlot( int index );
+extern const char	*UI_Bots_SkillName( int skill );
+extern qhandle_t	UI_Bots_Portrait( const char *player );
+extern void			UI_Bots_ExecAddCommands( void );
+extern void			UI_BotRosterMenu( void );
+extern void			UI_BotEditMenu( int slot );
+extern void			UI_PauseBotsMenu( void );
 
 //
 // ui_serverinfo.c
@@ -574,6 +640,18 @@ typedef struct {
 	// Virtual 640x480 UI scaling
 	float				scale;
 	float				bias;
+	// Menu redesign: screen transitions and focus animation
+	int					transitionTime;		// realtime of the last push/pop
+	int					transitionDir;		// +1 push (slide from the right), -1 pop
+	int					focusTime;			// realtime of the last cursor change
+	float				fadeAlpha;			// global alpha applied by UI_FadeSetColor
+	float				drawOffsetX;		// global x offset in virtual units
+	float				markerY;			// animated dragon ball marker
+	qboolean			markerValid;
+	qhandle_t			kiButton;			// path registered copies that honour vertex color
+	qhandle_t			kiButtonGlow;
+	qhandle_t			glassPanel;
+	qhandle_t			dragonBall;
 	qboolean			demoversion;
 	qboolean			firstdraw;
 } uiStatic_t;
@@ -600,6 +678,9 @@ extern void			UI_DrawProportionalString_AutoWrapped( int x, int ystart, int xmax
 extern int			UI_ProportionalStringWidth( const char* str );
 extern int			UI_DrawStrlen(const char *str);	// JUHOX
 extern void			UI_DrawString( int x, int y, const char* str, int style, vec4_t color );
+extern void			UI_DrawStringSized( float x, float y, const char* str, int style, vec4_t color, float charw, float charh );
+extern float		UI_StringSizedWidth( const char *str, float charw );
+extern void			UI_DrawPropScaled( float x, float y, const char* str, int style, vec4_t color, float sizeScale );
 extern void			UI_DrawChar( int x, int y, int ch, int style, vec4_t color );
 extern qboolean 	UI_CursorInRect (int x, int y, int width, int height);
 extern void			UI_AdjustFrom640( float *x, float *y, float *w, float *h );
@@ -653,6 +734,9 @@ void			trap_R_AddPolyToScene( qhandle_t hShader , int numVerts, const polyVert_t
 void			trap_R_AddLightToScene( const vec3_t org, float intensity, float r, float g, float b );
 void			trap_R_RenderScene( const refdef_t *fd );
 void			trap_R_SetColor( const float *rgba );
+// Every UI draw goes through the fade wrapper so whole screens can fade in.
+// ui_syscalls.c and the wrapper itself undefine this.
+#define trap_R_SetColor UI_FadeSetColor
 void			trap_R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, qhandle_t hShader );
 void			trap_UpdateScreen( void );
 int				trap_CM_LerpTag( orientation_t *tag, clipHandle_t mod, int startFrame, int endFrame, float frac, const char *tagName );

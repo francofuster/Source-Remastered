@@ -6,6 +6,8 @@ set cc=call ..\..\..\Tools\Compiler\Perform.bat
 
 %cc% ../ui_shared.c
 @if errorlevel 1 goto quit
+%cc% ../ui_bots.c
+@if errorlevel 1 goto quit
 %cc% ../ui_main.c
 @if errorlevel 1 goto quit
 %cc% ../ui_ingame.c

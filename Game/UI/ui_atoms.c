@@ -102,6 +102,9 @@ void UI_PushMenu( menuframework_s *menu )
 	}
 
 	uis.activemenu = menu;
+	uis.transitionTime = uis.realtime;
+	uis.transitionDir = 1;
+	uis.focusTime = uis.realtime;
 
 	// default cursor position
 	menu->cursor      = 0;
@@ -143,6 +146,9 @@ void UI_PopMenu (void)
 	if (uis.menusp) {
 		uis.activemenu = uis.stack[uis.menusp-1];
 		uis.firstdraw = qtrue;
+		uis.transitionTime = uis.realtime;
+		uis.transitionDir = -1;
+		uis.focusTime = uis.realtime;
 	}
 	else {
 		UI_ForceMenuOff ();
@@ -351,7 +357,7 @@ static void UI_DrawBannerString2( int x, int y, const char* str, vec4_t color )
 	// draw the colored text
 	trap_R_SetColor( color );
 	
-	ax = x * uis.scale + uis.bias;
+	ax = (x + uis.drawOffsetX) * uis.scale + uis.bias;
 	ay = y * uis.scale;
 
 	s = str;
@@ -461,7 +467,7 @@ static void UI_DrawProportionalString2( int x, int y, const char* str, vec4_t co
 	// draw the colored text
 	trap_R_SetColor( color );
 	
-	ax = x * uis.scale + uis.bias;
+	ax = (x + uis.drawOffsetX) * uis.scale + uis.bias;
 	ay = y * uis.scale;
 
 	s = str;
@@ -589,7 +595,7 @@ static void UI_DrawString2( int x, int y, const char* str, vec4_t color, int cha
 
 	// draw the colored text
 	trap_R_SetColor( color );
-	ax = x * uis.scale + uis.bias;
+	ax = (x + uis.drawOffsetX) * uis.scale + uis.bias;
 	ay = y * uis.scale;
 	aw = charw * uis.scale;
 	ah = charh * uis.scale;
@@ -755,6 +761,112 @@ void UI_DrawChar( int x, int y, int ch, int style, vec4_t color )
 	buff[1] = '\0';
 
 	UI_DrawString( x, y, buff, style, color );
+}
+
+/*
+=================
+UI_StringSizedWidth / UI_DrawStringSized
+
+Console font (font0) at any size, used by the redesigned screens
+=================
+*/
+float UI_StringSizedWidth( const char *str, float charw ) {
+	return UI_DrawStrlen( str ) * charw * 0.7f;
+}
+
+void UI_DrawStringSized( float x, float y, const char* str, int style, vec4_t color, float charw, float charh ) {
+	const char	*s;
+	int			ch;
+	float		ax, ay, aw, ah;
+	float		frow, fcol;
+	vec4_t		shadow;
+	vec4_t		tempcolor;
+	int			pass;
+
+	if ( !str ) {
+		return;
+	}
+
+	switch ( style & UI_FORMATMASK ) {
+	case UI_CENTER:
+		x -= UI_StringSizedWidth( str, charw ) * 0.5f;
+		break;
+	case UI_RIGHT:
+		x -= UI_StringSizedWidth( str, charw );
+		break;
+	default:
+		break;
+	}
+
+	shadow[0] = shadow[1] = shadow[2] = 0;
+	shadow[3] = 0.7f * color[3];
+
+	for ( pass = ( style & UI_DROPSHADOW ) ? 0 : 1; pass < 2; pass++ ) {
+		trap_R_SetColor( pass ? color : shadow );
+		ax = ( x + uis.drawOffsetX + ( pass ? 0 : 1 ) ) * uis.scale + uis.bias;
+		ay = ( y + ( pass ? 0 : 1 ) ) * uis.scale;
+		aw = charw * uis.scale;
+		ah = charh * uis.scale;
+		s = str;
+		while ( *s ) {
+			if ( Q_IsColorString( s ) ) {
+				if ( pass ) {
+					memcpy( tempcolor, g_color_table[ColorIndex( s[1] )], sizeof( tempcolor ) );
+					tempcolor[3] = color[3];
+					trap_R_SetColor( tempcolor );
+				}
+				s += 2;
+				continue;
+			}
+			ch = *s & 255;
+			if ( ch != ' ' ) {
+				frow = ( ch >> 4 ) * 0.0625f;
+				fcol = ( ch & 15 ) * 0.0625f;
+				trap_R_DrawStretchPic( ax, ay, aw, ah, fcol, frow, fcol + 0.0625f, frow + 0.0625f, uis.charset );
+			}
+			ax += charw * 0.7f * uis.scale;
+			s++;
+		}
+	}
+	trap_R_SetColor( NULL );
+}
+
+/*
+=================
+UI_DrawPropScaled
+
+Proportional font (font1) at any scale; UI_PULSE adds the glow pass
+=================
+*/
+void UI_DrawPropScaled( float x, float y, const char* str, int style, vec4_t color, float sizeScale ) {
+	vec4_t	drawcolor;
+	float	width;
+
+	width = UI_ProportionalStringWidth( str ) * sizeScale;
+	switch ( style & UI_FORMATMASK ) {
+	case UI_CENTER:
+		x -= width * 0.5f;
+		break;
+	case UI_RIGHT:
+		x -= width;
+		break;
+	default:
+		break;
+	}
+
+	if ( style & UI_DROPSHADOW ) {
+		drawcolor[0] = drawcolor[1] = drawcolor[2] = 0;
+		drawcolor[3] = 0.6f * color[3];
+		UI_DrawProportionalString2( x + 1, y + 1, str, drawcolor, sizeScale, uis.charsetProp );
+	}
+	UI_DrawProportionalString2( x, y, str, color, sizeScale, uis.charsetProp );
+	if ( style & UI_PULSE ) {
+		drawcolor[0] = color[0];
+		drawcolor[1] = color[1];
+		drawcolor[2] = color[2];
+		drawcolor[3] = color[3] * ( 0.45f + 0.25f * sin( uis.realtime / 180.0f ) );
+		UI_DrawProportionalString2( x, y, str, drawcolor, sizeScale, uis.charsetPropGlow );
+	}
 }
 
 qboolean UI_IsFullscreen( void ) {
@@ -987,6 +1099,11 @@ qboolean UI_ConsoleCommand( int realTime ) {
 		UI_Cache_f();
 		return qtrue;
 	}
+	// TEMP testing aid for the menu redesign, remove before release
+	if ( Q_stricmp( cmd, "ui_testmenu" ) == 0 ) {
+		UI_TestMenu( UI_Argv( 1 ) );
+		return qtrue;
+	}
 #if MAPLENSFLARES	// JUHOX: commands for map lens flares
 	if (Q_stricmp(cmd, "lfedit") == 0) {
 		UI_LFEdit_f();
@@ -1041,7 +1158,7 @@ Adjusted for resolution and screen aspect ratio
 */
 void UI_AdjustFrom640( float *x, float *y, float *w, float *h ) {
 	// expect valid pointers
-	*x = *x * uis.scale + uis.bias;
+	*x = (*x + uis.drawOffsetX) * uis.scale + uis.bias;
 	*y *= uis.scale;
 	*w *= uis.scale;
 	*h *= uis.scale;
@@ -1349,6 +1466,11 @@ void UI_Refresh( int realtime )
 			if(!uis.hideEarth){UI_MenuScene();}
 			if(uis.showFrame){Menu_Frame();}
 			if(uis.showSide){Menu_Side();}
+		}
+
+		// everything that belongs to the screen fades and slides in together
+		UI_BeginContentFade();
+		if (uis.activemenu->fullscreen) {
 			Menu_Common(uis.menuamount);
 		}
 
@@ -1356,6 +1478,7 @@ void UI_Refresh( int realtime )
 			uis.activemenu->draw();
 		else
 			Menu_Draw( uis.activemenu );
+		UI_EndContentFade();
 
 		if( uis.firstdraw ) {
 			UI_MouseEvent( 0, 0 );
