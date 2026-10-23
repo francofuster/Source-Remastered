@@ -607,6 +607,14 @@ void UI_TestMenu( const char *which ) {
 		UI_ControlsMenu();
 		return;
 	}
+	if ( !Q_stricmp( which, "quit" ) ) {
+		UI_ConfirmMenu( "Quit?", 0, 0 );
+		return;
+	}
+	if ( !Q_stricmp( which, "camera" ) ) {
+		UI_CameraMenu();
+		return;
+	}
 	if ( !Q_stricmp( which, "game" ) ) {
 		UI_PreferencesMenu();
 		return;
@@ -1205,8 +1213,7 @@ static void ServerOptions_SetMenuItems( void ) {
 	ServerOptions_InitPlayerItems();
 	ServerOptions_SetPlayerItems();
 
-	// seed bot names
-	ServerOptions_InitBotNames();
+	// bots come from the botsys roster now (ui_bots.c)
 	ServerOptions_SetPlayerItems();
 }
 
@@ -1718,6 +1725,8 @@ static void UI_ServerOptionsMenu( qboolean multiplayer ) {
 	ServerOptions_MenuInit( multiplayer );
 	UI_PushMenu( &s_serveroptions.menu );
 	uis.menuamount = -1;
+	// ENTER starts the match right away
+	Menu_SetCursorToItem( &s_serveroptions.menu, &s_serveroptions.fightBtn );
 	uis.hideEarth = qtrue;
 	uis.showFrame = qfalse;
 }

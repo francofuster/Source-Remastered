@@ -450,7 +450,7 @@ static void UI_Bots_HumanInfo( char *name, int nameSize, char *model, int modelS
 /*
 =======================================================================
 
-ROSTER MENU
+ROSTER MENU (menu redesign, design canvas)
 
 =======================================================================
 */
@@ -459,34 +459,56 @@ ROSTER MENU
 #define ID_ROSTER_RANDOM	11
 #define ID_ROSTER_CLEAR		12
 #define ID_ROSTER_DONE		13
+#define ID_ROSTER_EDIT		14
 #define ID_ROSTER_ROW		20		// + slot
 #define ID_ROSTER_REMOVE	40		// + slot
 #define ID_ROSTER_NEWROW	60
 
-#define ROSTER_LIST_X		160
-#define ROSTER_LIST_Y		36
-#define ROSTER_LIST_W		300
-#define ROSTER_ROW_Y		100
-#define ROSTER_ROW_H		28
-#define ROSTER_INFO_X		470
-#define ROSTER_INFO_W		160
+#define ROSTER_ROW_X		72
+#define ROSTER_ROW_W		732
+#define ROSTER_ROW_Y		252
+#define ROSTER_ROW_H		31
 
 typedef struct {
 	menuframework_s	menu;
-	menutext_s		add;
-	menutext_s		random;
-	menutext_s		clear;
-	menutext_s		done;
 	menubitmap_s	rows[UI_MAX_ROSTER];
 	menubitmap_s	removes[UI_MAX_ROSTER];
 	menubitmap_s	newRow;
+	menubitmap_s	add;
+	menubitmap_s	random;
+	menubitmap_s	clear;
+	menubitmap_s	edit;
+	menubitmap_s	done;
 	int				shownSlot;		// bot shown in the info panel
 	int				shownTime;		// when it changed, restarts the bars
+	playerInfo_t	playerinfo;
+	char			shownModel[MAX_QPATH];
 } rosterMenu_t;
 
 static rosterMenu_t s_roster;
 
 static void UI_BotRoster_Refresh( void );
+
+// the 3D model of the info panel follows the shown bot
+static void UI_Bots_SetPreview( playerInfo_t *pi, char *current, int size, const char *model ) {
+	vec3_t viewangles;
+
+	if ( !Q_stricmp( current, model ) ) {
+		return;
+	}
+	Q_strncpyz( current, model, size );
+	memset( pi, 0, sizeof( *pi ) );
+	viewangles[YAW] = 180 - 25;
+	viewangles[PITCH] = 0;
+	viewangles[ROLL] = 0;
+	UI_PlayerInfo_SetModel( pi, model );
+	UI_PlayerInfo_SetInfo( pi, ANIM_IDLE, ANIM_IDLE, viewangles, vec3_origin, WP_NONE, qfalse );
+}
+
+static void UI_Bots_DrawPreview( playerInfo_t *pi, float x, float y, float w, float h ) {
+	UI_DToV( &x, &y, &w, &h );
+	UI_DrawPlayer( x, y, w, h, pi, uis.realtime / PLAYER_MODEL_SPEED );
+}
 
 static void UI_BotRoster_Show( int slot ) {
 	if ( slot != s_roster.shownSlot ) {
@@ -555,17 +577,15 @@ static void UI_BotRoster_Event( void *ptr, int event ) {
 		UI_Bots_SaveRoster();
 		UI_BotRoster_Refresh();
 		break;
+	case ID_ROSTER_EDIT:
+		if ( s_roster.shownSlot >= 0 && s_roster.shownSlot < rosterCount ) {
+			UI_BotEditMenu( s_roster.shownSlot );
+		}
+		break;
 	case ID_ROSTER_DONE:
 		UI_PopMenu();
 		break;
 	}
-}
-
-static float UI_BotRoster_RowFocus( void *item ) {
-	if ( Menu_ItemAtCursor( &s_roster.menu ) != item ) {
-		return 0.0f;
-	}
-	return UI_AnimFrac( uis.focusTime, 0, 160 );
 }
 
 static void UI_BotRoster_DrawRow( void *self ) {
@@ -575,7 +595,6 @@ static void UI_BotRoster_DrawRow( void *self ) {
 	float			focus;
 	uiBotDef_t		*def;
 	uiBotStyle_t	*style;
-	float			enter;
 
 	b = (menubitmap_s *)self;
 	slot = b->generic.id - ID_ROSTER_ROW;
@@ -584,19 +603,19 @@ static void UI_BotRoster_DrawRow( void *self ) {
 	}
 	def = &botDefs[roster[slot].def];
 	style = UI_Bots_Style( roster[slot].style );
-	y = b->generic.top;
-	focus = UI_BotRoster_RowFocus( self );
+	y = b->generic.y;
+	focus = UI_DFocus( &s_roster.menu, self );
+	if ( slot == s_roster.shownSlot && focus <= 0.0f ) {
+		focus = 0.35f;
+	}
 
-	UI_DrawFocusRow( b->generic.left, y, b->generic.right - b->generic.left, ROSTER_ROW_H - 4, focus );
-	UI_DrawPortrait( b->generic.left + 4, y + 2, 20, UI_Bots_Portrait( def->player ), qfalse, focus );
-	UI_DrawStringSized( b->generic.left + 30, y + 2, def->name, UI_LEFT|UI_DROPSHADOW, zeq_white, 7, 12 );
-	UI_DrawStringSized( b->generic.left + 30, y + 13, def->player, UI_LEFT, zeq_text3, 5, 9 );
-
-	// the pips light up in turn when the screen opens, row after row
-	enter = UI_AnimFrac( uis.transitionTime, 120 + slot * 40, 400 );
-	UI_DrawPips( b->generic.left + 150, y + 6, roster[slot].skill, 3, enter );
-	UI_DrawStringSized( b->generic.left + 150, y + 13, UI_Bots_SkillName( roster[slot].skill ), UI_LEFT, zeq_text2, 5, 9 );
-	UI_DrawStringSized( b->generic.left + 196, y + 7, style ? style->label : "", UI_LEFT, zeq_text2, 6, 11 );
+	UI_DFocusRow( ROSTER_ROW_X, y, ROSTER_ROW_W, ROSTER_ROW_H - 3, focus );
+	UI_DPortrait( ROSTER_ROW_X + 10, y + 1, 26, UI_Bots_Portrait( def->player ), qfalse, 0.0f );
+	UI_DText( ROSTER_ROW_X + 48, y + 5, def->name, 19, UI_LEFT|UI_DROPSHADOW, zeq_white );
+	UI_DText( ROSTER_ROW_X + 250, y + 7, def->player, 15, UI_LEFT, zeq_text3 );
+	UI_DPips( ROSTER_ROW_X + 398, y + 12, roster[slot].skill, 3, UI_AnimFrac( uis.transitionTime, 120 + slot * 40, 400 ) );
+	UI_DText( ROSTER_ROW_X + 450, y + 6, UI_Bots_SkillName( roster[slot].skill ), 17, UI_LEFT, zeq_text2 );
+	UI_DText( ROSTER_ROW_X + 538, y + 6, style ? style->label : "", 17, UI_LEFT, zeq_text2 );
 }
 
 static void UI_BotRoster_DrawRemove( void *self ) {
@@ -607,8 +626,8 @@ static void UI_BotRoster_DrawRemove( void *self ) {
 	b = (menubitmap_s *)self;
 	hot = ( Menu_ItemAtCursor( &s_roster.menu ) == self );
 	color[0] = 0.94f; color[1] = 0.63f; color[2] = 0.53f; color[3] = hot ? 1.0f : 0.6f;
-	UI_DrawRect( b->generic.left, b->generic.top, 12, 12, color );
-	UI_DrawStringSized( b->generic.left + 6, b->generic.top, "x", UI_CENTER, color, 7, 12 );
+	UI_DFrame( b->generic.x, b->generic.y, b->width, b->height, color );
+	UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + 2, "x", 17, UI_CENTER, color );
 }
 
 static void UI_BotRoster_DrawNewRow( void *self ) {
@@ -617,71 +636,105 @@ static void UI_BotRoster_DrawNewRow( void *self ) {
 	vec4_t			edge;
 
 	b = (menubitmap_s *)self;
-	focus = UI_BotRoster_RowFocus( self );
+	focus = UI_DFocus( &s_roster.menu, self );
 	edge[0] = 0.29f; edge[1] = 0.39f; edge[2] = 0.74f; edge[3] = 0.6f + 0.4f * focus;
-	UI_DrawFocusRow( b->generic.left, b->generic.top, b->generic.right - b->generic.left, ROSTER_ROW_H - 4, focus );
-	UI_DrawRect( b->generic.left, b->generic.top, b->generic.right - b->generic.left, ROSTER_ROW_H - 4, edge );
-	UI_DrawStringSized( b->generic.left + 12, b->generic.top + 6, va( "+  Add a bot to slot %i", rosterCount + 2 ), UI_LEFT, zeq_ki, 7, 12 );
+	UI_DFocusRow( b->generic.x, b->generic.y, b->width, b->height, focus );
+	UI_DFrame( b->generic.x, b->generic.y, b->width, b->height, edge );
+	UI_DText( b->generic.x + 16, b->generic.y + 5, va( "+   Add a bot to slot %i", rosterCount + 2 ), 18, UI_LEFT, zeq_ki );
+}
+
+static void UI_BotRoster_DrawButton( void *self ) {
+	menubitmap_s	*b;
+	float			focus;
+	const char		*label;
+	vec4_t			warn;
+
+	b = (menubitmap_s *)self;
+	focus = UI_DFocus( &s_roster.menu, self );
+	switch ( b->generic.id ) {
+	case ID_ROSTER_DONE:
+		UI_DCta( b->generic.x, b->generic.y, b->width, b->height, "DONE", focus );
+		return;
+	case ID_ROSTER_CLEAR:
+		warn[0] = 0.94f; warn[1] = 0.63f; warn[2] = 0.53f; warn[3] = 0.5f + 0.5f * focus;
+		UI_DFrame( b->generic.x, b->generic.y, b->width, b->height, warn );
+		warn[3] = 1.0f;
+		UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + 7, "Remove all bots", 18, UI_CENTER, warn );
+		return;
+	case ID_ROSTER_ADD:		label = "ADD BOT"; break;
+	case ID_ROSTER_RANDOM:	label = "RANDOM"; break;
+	default:				label = "EDIT BOT"; break;
+	}
+	UI_DKiButton( b->generic.x, b->generic.y, b->width, b->height, label, NULL, focus, ( b->generic.flags & QMF_GRAYED ) != 0, qfalse );
 }
 
 static void UI_BotRoster_Draw( void ) {
 	char			name[64];
 	char			model[64];
-	float			y;
 	uiRosterSlot_t	*slot;
 	uiBotDef_t		*def;
 	uiBotStyle_t	*style;
 	int				i;
 	float			anim;
-	float			cx;
-	static const char *hints[] = { "ENTER", "Edit", "DEL", "Remove", "ESC", "Back" };
+	vec4_t			line;
+	static const char *statShort[6] = { "Aggression", "Rush", "Combos", "Specials", "Block", "Ranged" };
+	static const char *hints[] = { "ARROWS", "Fighter", "ENTER", "Edit", "DEL", "Remove", "ESC", "Back" };
 
-	// the side strip is shared, set it again after coming back from a sub screen
-	uis.menuamount = 4;
+	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
 
+	UI_DHeader( "PLAY  >  CREATE MATCH  >", "FIGHTERS" );
+
 	// list panel
-	UI_DrawGlassPanel( ROSTER_LIST_X, ROSTER_LIST_Y, ROSTER_LIST_W, 398 );
-	UI_DrawSectionTitle( ROSTER_LIST_X + 14, ROSTER_LIST_Y + 12, va( "FIGHTERS  %i OF 12", rosterCount + 1 ) );
-	UI_DrawStringSized( ROSTER_LIST_X + ROSTER_LIST_W - 14, ROSTER_LIST_Y + 12, va( "1 human  %i bots", rosterCount ), UI_RIGHT, zeq_text3, 6, 11 );
+	UI_DGlass( 48, 128, 780, 528 );
+	UI_DSectionTitle( 72, 152, va( "IN THIS MATCH  -  %i OF 12", rosterCount + 1 ) );
+	UI_DText( 804, 152, va( "1 human  -  %i bot%s", rosterCount, rosterCount == 1 ? "" : "s" ), 17, UI_RIGHT, zeq_text3 );
+	UI_DText( 84, 188, "FIGHTER", 15, UI_LEFT, zeq_text3 );
+	UI_DText( ROSTER_ROW_X + 398, 188, "LEVEL", 15, UI_LEFT, zeq_text3 );
+	UI_DText( ROSTER_ROW_X + 538, 188, "STYLE", 15, UI_LEFT, zeq_text3 );
+	line[0] = 0.35f; line[1] = 0.51f; line[2] = 0.90f; line[3] = 0.4f;
+	UI_DFill( 72, 208, 732, 1.5f, line );
 
 	// the human player, not editable here
 	UI_Bots_HumanInfo( name, sizeof( name ), model, sizeof( model ) );
-	y = ROSTER_LIST_Y + 34;
-	UI_DrawPortrait( ROSTER_LIST_X + 16, y + 2, 20, UI_Bots_Portrait( model ), qfalse, 0.0f );
-	UI_DrawStringSized( ROSTER_LIST_X + 42, y + 2, name, UI_LEFT|UI_DROPSHADOW, zeq_white, 7, 12 );
-	UI_DrawStringSized( ROSTER_LIST_X + 42, y + 13, va( "you  %s", model ), UI_LEFT, zeq_text3, 5, 9 );
+	UI_DPortrait( ROSTER_ROW_X + 10, 216, 26, UI_Bots_Portrait( model ), qfalse, 0.0f );
+	UI_DFrame( ROSTER_ROW_X + 8, 214, 30, 30, zeq_ki );
+	UI_DText( ROSTER_ROW_X + 48, 220, name, 19, UI_LEFT|UI_DROPSHADOW, zeq_white );
+	UI_DText( ROSTER_ROW_X + 250, 222, va( "%s  -  you", model ), 15, UI_LEFT, zeq_text3 );
+	UI_DText( ROSTER_ROW_X + 398, 221, "-", 17, UI_LEFT, zeq_text3 );
+	UI_DText( ROSTER_ROW_X + 538, 221, "-", 17, UI_LEFT, zeq_text3 );
+
+	line[3] = 0.25f;
+	UI_DFill( 72, 594, 732, 1.5f, line );
 
 	Menu_Draw( &s_roster.menu );
 
-	// info panel for the focused (or last focused) bot
-	UI_DrawGlassPanel( ROSTER_INFO_X, ROSTER_LIST_Y, ROSTER_INFO_W, 398 );
+	// info panel of the shown bot
+	UI_DGlass( 852, 128, 380, 528 );
 	slot = UI_Bots_RosterSlot( s_roster.shownSlot );
-	cx = ROSTER_INFO_X + ROSTER_INFO_W * 0.5f;
 	if ( !slot ) {
-		UI_DrawSectionTitle( ROSTER_INFO_X + 14, ROSTER_LIST_Y + 12, "NO BOTS" );
-		UI_DrawStringSized( ROSTER_INFO_X + 14, ROSTER_LIST_Y + 36, "Add bots with ADD BOT", UI_LEFT, zeq_text2, 6, 11 );
-		UI_DrawStringSized( ROSTER_INFO_X + 14, ROSTER_LIST_Y + 50, "or RANDOM on the left.", UI_LEFT, zeq_text2, 6, 11 );
+		UI_DSectionTitle( 876, 152, "NO BOTS" );
+		UI_DTextWrapped( 876, 186, 332, "Add bots with ADD BOT, or let RANDOM pick one from the roster of botsys.", 19, zeq_text2 );
 	}
 	else {
 		def = &botDefs[slot->def];
 		style = UI_Bots_Style( slot->style );
 		anim = UI_AnimFrac( s_roster.shownTime, 0, 450 );
-		UI_DrawPortrait( cx - 32, ROSTER_LIST_Y + 18, 64, UI_Bots_Portrait( def->player ), qtrue, 0.0f );
-		UI_DrawPropScaled( cx, ROSTER_LIST_Y + 96, UI_Bots_DisplayName( def ), UI_CENTER|UI_DROPSHADOW, zeq_white, 0.55f );
-		UI_DrawStringSized( cx, ROSTER_LIST_Y + 116, va( "%s  -  %s", def->name, def->player ), UI_CENTER, zeq_text3, 6, 11 );
-		UI_DrawPips( cx - 13, ROSTER_LIST_Y + 136, slot->skill, 3, anim );
-		UI_DrawStringSized( cx, ROSTER_LIST_Y + 144, va( "%s  %s", UI_Bots_SkillName( slot->skill ), style ? style->label : "" ), UI_CENTER, zeq_text2, 6, 11 );
+		UI_Bots_SetPreview( &s_roster.playerinfo, s_roster.shownModel, sizeof( s_roster.shownModel ), def->player );
+		trap_R_SetColor( NULL );
+		UI_DPic( 932, 356, 220, 60, uis.blobShadow );
+		UI_Bots_DrawPreview( &s_roster.playerinfo, 892, 136, 300, 284 );
+		UI_DProp( 1042, 404, UI_Bots_DisplayName( def ), 26, UI_CENTER|UI_DROPSHADOW, zeq_white );
+		UI_DPips( 1042 - 22, 440, slot->skill, 3, anim );
+		UI_DText( 1042, 452, va( "%s  -  %s style", UI_Bots_SkillName( slot->skill ), style ? style->label : "" ), 18, UI_CENTER, zeq_text2 );
 		if ( style ) {
 			for ( i = 0; i < 6; i++ ) {
-				UI_DrawStatBar( ROSTER_INFO_X + 14, ROSTER_LIST_Y + 172 + i * 18, ROSTER_INFO_W - 28, statLabels[i], style->values[i],
-					UI_AnimFrac( s_roster.shownTime, 40 * i, 420 ) );
+				UI_DStatBar( 876, 490 + i * 19, 332, statShort[i], style->values[i], UI_AnimFrac( s_roster.shownTime, 40 * i, 420 ) );
 			}
 		}
-		UI_DrawStringSized( cx, ROSTER_LIST_Y + 370, "ENTER on a row to edit", UI_CENTER, zeq_text3, 5, 9 );
 	}
 
-	UI_DrawKeyHints( hints, 3 );
+	UI_DHints( hints, 4 );
 }
 
 static sfxHandle_t UI_BotRoster_Key( int key ) {
@@ -714,11 +767,22 @@ static void UI_BotRoster_Refresh( void ) {
 	// the add row sits right under the last bot
 	if ( rosterCount < UI_MAX_ROSTER ) {
 		s_roster.newRow.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
-		s_roster.newRow.generic.top = ROSTER_ROW_Y + rosterCount * ROSTER_ROW_H;
-		s_roster.newRow.generic.bottom = s_roster.newRow.generic.top + ROSTER_ROW_H - 4;
+		UI_DItem( &s_roster.newRow, ROSTER_ROW_X, ROSTER_ROW_Y + rosterCount * ROSTER_ROW_H, ROSTER_ROW_W, ROSTER_ROW_H - 3 );
+		s_roster.add.generic.flags &= ~QMF_GRAYED;
+		s_roster.random.generic.flags &= ~QMF_GRAYED;
 	}
 	else {
 		s_roster.newRow.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		s_roster.add.generic.flags |= QMF_GRAYED;
+		s_roster.random.generic.flags |= QMF_GRAYED;
+	}
+	if ( rosterCount ) {
+		s_roster.edit.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+		s_roster.clear.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+	}
+	else {
+		s_roster.edit.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		s_roster.clear.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 	}
 
 	if ( s_roster.shownSlot >= rosterCount ) {
@@ -728,21 +792,18 @@ static void UI_BotRoster_Refresh( void ) {
 
 	// keep the cursor on something that still exists
 	if ( s_roster.menu.cursor >= 0 && s_roster.menu.cursor < s_roster.menu.nitems &&
-		( ((menucommon_s *)s_roster.menu.items[s_roster.menu.cursor])->flags & QMF_INACTIVE ) ) {
-		Menu_SetCursorToItem( &s_roster.menu, rosterCount < UI_MAX_ROSTER ? (void *)&s_roster.newRow : (void *)&s_roster.add );
+		( ((menucommon_s *)s_roster.menu.items[s_roster.menu.cursor])->flags & ( QMF_INACTIVE|QMF_GRAYED ) ) ) {
+		Menu_SetCursorToItem( &s_roster.menu, rosterCount < UI_MAX_ROSTER ? (void *)&s_roster.newRow : (void *)&s_roster.done );
 	}
 }
 
-static void UI_BotRoster_SideButton( menutext_s *t, int id, int slot, const char *label ) {
-	t->generic.type		= MTYPE_PTEXT;
-	t->generic.flags	= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
-	t->generic.id		= id;
-	t->generic.callback	= UI_BotRoster_Event;
-	t->generic.x		= 28;
-	t->generic.y		= 119 + slot * 38;
-	t->string			= (char *)label;
-	t->style			= UI_LEFT|UI_DROPSHADOW|UI_TINYFONT;
-	t->color			= color_white;
+static void UI_BotRoster_DItem( menubitmap_s *b, int id, void (*draw)( void * ), int x, int y, int w, int h, int flags ) {
+	b->generic.type			= MTYPE_BITMAP;
+	b->generic.flags		= QMF_NODEFAULTINIT|flags;
+	b->generic.id			= id;
+	b->generic.callback		= UI_BotRoster_Event;
+	b->generic.ownerdraw	= draw;
+	UI_DItem( b, x, y, w, h );
 }
 
 void UI_BotRosterMenu( void ) {
@@ -758,54 +819,33 @@ void UI_BotRosterMenu( void ) {
 	s_roster.shownSlot = rosterCount ? 0 : -1;
 	s_roster.shownTime = uis.realtime;
 
-	UI_BotRoster_SideButton( &s_roster.add, ID_ROSTER_ADD, 0, "ADD BOT" );
-	UI_BotRoster_SideButton( &s_roster.random, ID_ROSTER_RANDOM, 1, "RANDOM" );
-	UI_BotRoster_SideButton( &s_roster.clear, ID_ROSTER_CLEAR, 2, "CLEAR" );
-	UI_BotRoster_SideButton( &s_roster.done, ID_ROSTER_DONE, 3, "DONE" );
-
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
-		s_roster.rows[i].generic.type		= MTYPE_BITMAP;
-		s_roster.rows[i].generic.flags		= QMF_NODEFAULTINIT;
-		s_roster.rows[i].generic.id			= ID_ROSTER_ROW + i;
-		s_roster.rows[i].generic.callback	= UI_BotRoster_Event;
-		s_roster.rows[i].generic.ownerdraw	= UI_BotRoster_DrawRow;
-		s_roster.rows[i].generic.left		= ROSTER_LIST_X + 12;
-		s_roster.rows[i].generic.right		= ROSTER_LIST_X + ROSTER_LIST_W - 30;
-		s_roster.rows[i].generic.top		= ROSTER_ROW_Y + i * ROSTER_ROW_H;
-		s_roster.rows[i].generic.bottom		= s_roster.rows[i].generic.top + ROSTER_ROW_H - 4;
-
-		s_roster.removes[i].generic.type		= MTYPE_BITMAP;
-		s_roster.removes[i].generic.flags		= QMF_NODEFAULTINIT|QMF_MOUSEONLY;
-		s_roster.removes[i].generic.id			= ID_ROSTER_REMOVE + i;
-		s_roster.removes[i].generic.callback	= UI_BotRoster_Event;
-		s_roster.removes[i].generic.ownerdraw	= UI_BotRoster_DrawRemove;
-		s_roster.removes[i].generic.left		= ROSTER_LIST_X + ROSTER_LIST_W - 26;
-		s_roster.removes[i].generic.right		= s_roster.removes[i].generic.left + 12;
-		s_roster.removes[i].generic.top			= ROSTER_ROW_Y + i * ROSTER_ROW_H + 6;
-		s_roster.removes[i].generic.bottom		= s_roster.removes[i].generic.top + 12;
+		UI_BotRoster_DItem( &s_roster.rows[i], ID_ROSTER_ROW + i, UI_BotRoster_DrawRow,
+			ROSTER_ROW_X, ROSTER_ROW_Y + i * ROSTER_ROW_H, ROSTER_ROW_W - 40, ROSTER_ROW_H - 3, 0 );
+		UI_BotRoster_DItem( &s_roster.removes[i], ID_ROSTER_REMOVE + i, UI_BotRoster_DrawRemove,
+			ROSTER_ROW_X + ROSTER_ROW_W - 28, ROSTER_ROW_Y + i * ROSTER_ROW_H + 4, 22, 22, QMF_MOUSEONLY );
 	}
+	UI_BotRoster_DItem( &s_roster.newRow, ID_ROSTER_NEWROW, UI_BotRoster_DrawNewRow, ROSTER_ROW_X, ROSTER_ROW_Y, ROSTER_ROW_W, ROSTER_ROW_H - 3, 0 );
+	UI_BotRoster_DItem( &s_roster.add, ID_ROSTER_ADD, UI_BotRoster_DrawButton, 72, 606, 170, 40, 0 );
+	UI_BotRoster_DItem( &s_roster.random, ID_ROSTER_RANDOM, UI_BotRoster_DrawButton, 252, 606, 170, 40, 0 );
+	UI_BotRoster_DItem( &s_roster.clear, ID_ROSTER_CLEAR, UI_BotRoster_DrawButton, 634, 610, 170, 32, 0 );
+	UI_BotRoster_DItem( &s_roster.edit, ID_ROSTER_EDIT, UI_BotRoster_DrawButton, 876, 610, 180, 38, 0 );
+	UI_BotRoster_DItem( &s_roster.done, ID_ROSTER_DONE, UI_BotRoster_DrawButton, 1060, 664, 172, 46, 0 );
 
-	s_roster.newRow.generic.type		= MTYPE_BITMAP;
-	s_roster.newRow.generic.flags		= QMF_NODEFAULTINIT;
-	s_roster.newRow.generic.id			= ID_ROSTER_NEWROW;
-	s_roster.newRow.generic.callback	= UI_BotRoster_Event;
-	s_roster.newRow.generic.ownerdraw	= UI_BotRoster_DrawNewRow;
-	s_roster.newRow.generic.left		= ROSTER_LIST_X + 12;
-	s_roster.newRow.generic.right		= ROSTER_LIST_X + ROSTER_LIST_W - 12;
-
-	Menu_AddItem( &s_roster.menu, &s_roster.add );
-	Menu_AddItem( &s_roster.menu, &s_roster.random );
-	Menu_AddItem( &s_roster.menu, &s_roster.clear );
-	Menu_AddItem( &s_roster.menu, &s_roster.done );
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
 		Menu_AddItem( &s_roster.menu, &s_roster.rows[i] );
 		Menu_AddItem( &s_roster.menu, &s_roster.removes[i] );
 	}
 	Menu_AddItem( &s_roster.menu, &s_roster.newRow );
+	Menu_AddItem( &s_roster.menu, &s_roster.add );
+	Menu_AddItem( &s_roster.menu, &s_roster.random );
+	Menu_AddItem( &s_roster.menu, &s_roster.clear );
+	Menu_AddItem( &s_roster.menu, &s_roster.edit );
+	Menu_AddItem( &s_roster.menu, &s_roster.done );
 
 	UI_BotRoster_Refresh();
 	UI_PushMenu( &s_roster.menu );
-	uis.menuamount = 4;
+	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
 	uis.showFrame = qfalse;
 
@@ -818,28 +858,22 @@ void UI_BotRosterMenu( void ) {
 /*
 =======================================================================
 
-EDIT MENU: one bot
+EDIT MENU: one bot (menu redesign, design canvas)
 
 =======================================================================
 */
 
 #define ID_EDIT_ACCEPT		10
-#define ID_EDIT_BACK		11
 #define ID_EDIT_CHAR		20		// + def
 #define ID_EDIT_SKILL		60		// + skill
 #define ID_EDIT_STYLE		70		// + style
 
-#define EDIT_CHAR_X			160
-#define EDIT_CHAR_Y			36
-#define EDIT_CHAR_W			230
-#define EDIT_CELL			52
-#define EDIT_RIGHT_X		400
-#define EDIT_RIGHT_W		230
+#define EDIT_CELL_W			94
+#define EDIT_CELL_H			112
 
 typedef struct {
 	menuframework_s	menu;
-	menutext_s		accept;
-	menutext_s		back;
+	menubitmap_s	accept;
 	menubitmap_s	chars[UI_MAX_BOTDEFS];
 	menubitmap_s	skills[3];
 	menubitmap_s	styles[UI_MAX_STYLES];
@@ -850,9 +884,12 @@ typedef struct {
 	qboolean		touched;		// level or style chosen by hand
 	qboolean		live;			// editing a bot of the running match
 	int				liveClient;		// its client number, -1 to add a new one
+	const char		*acceptLabel;
 	int				defTime;
 	int				styleTime;
 	int				charRows;
+	playerInfo_t	playerinfo;
+	char			shownModel[MAX_QPATH];
 } editMenu_t;
 
 static editMenu_t s_edit;
@@ -884,7 +921,6 @@ arrows move inside the character grid, the level cards and the style chips
 static sfxHandle_t UI_BotEdit_Key( int key ) {
 	menucommon_s	*item;
 	int				id;
-	int				target;
 	int				step;
 
 	item = (menucommon_s *)Menu_ItemAtCursor( &s_edit.menu );
@@ -893,7 +929,6 @@ static sfxHandle_t UI_BotEdit_Key( int key ) {
 	}
 	id = item->id;
 	step = 0;
-	target = -1;
 
 	if ( key == K_LEFTARROW || key == K_KP_LEFTARROW ) {
 		step = -1;
@@ -910,8 +945,7 @@ static sfxHandle_t UI_BotEdit_Key( int key ) {
 			step = 4;
 		}
 		if ( step && id - ID_EDIT_CHAR + step >= 0 && id - ID_EDIT_CHAR + step < numBotDefs ) {
-			target = id - ID_EDIT_CHAR + step;
-			Menu_SetCursorToItem( &s_edit.menu, &s_edit.chars[target] );
+			Menu_SetCursorToItem( &s_edit.menu, &s_edit.chars[id - ID_EDIT_CHAR + step] );
 			return menu_move_sound;
 		}
 	}
@@ -923,10 +957,10 @@ static sfxHandle_t UI_BotEdit_Key( int key ) {
 	}
 	else if ( id >= ID_EDIT_STYLE && id < ID_EDIT_STYLE + numBotStyles ) {
 		if ( key == K_UPARROW || key == K_KP_UPARROW ) {
-			step = -2;
+			step = -4;
 		}
 		else if ( key == K_DOWNARROW || key == K_KP_DOWNARROW ) {
-			step = 2;
+			step = 4;
 		}
 		if ( step && id - ID_EDIT_STYLE + step >= 0 && id - ID_EDIT_STYLE + step < numBotStyles ) {
 			Menu_SetCursorToItem( &s_edit.menu, &s_edit.styles[id - ID_EDIT_STYLE + step] );
@@ -934,13 +968,6 @@ static sfxHandle_t UI_BotEdit_Key( int key ) {
 		}
 	}
 	return Menu_DefaultKey( &s_edit.menu, key );
-}
-
-static float UI_BotEdit_Focus( void *item ) {
-	if ( Menu_ItemAtCursor( &s_edit.menu ) != item ) {
-		return 0.0f;
-	}
-	return UI_AnimFrac( uis.focusTime, 0, 160 );
 }
 
 static void UI_BotEdit_Event( void *ptr, int event ) {
@@ -973,8 +1000,7 @@ static void UI_BotEdit_Event( void *ptr, int event ) {
 		return;
 	}
 
-	switch ( id ) {
-	case ID_EDIT_ACCEPT:
+	if ( id == ID_EDIT_ACCEPT ) {
 		if ( s_edit.live ) {
 			// a bot loads its level and style when it joins: replace it
 			if ( s_edit.liveClient >= 0 ) {
@@ -983,11 +1009,11 @@ static void UI_BotEdit_Event( void *ptr, int event ) {
 			trap_Cmd_ExecuteText( EXEC_APPEND, va( "addbot %s %i style=%s\n", botDefs[s_edit.def].id, s_edit.skill,
 				UI_Bots_Style( s_edit.style ) ? UI_Bots_Style( s_edit.style )->file : "" ) );
 			UI_PopMenu();
-			break;
+			return;
 		}
 		if ( s_edit.slot < 0 ) {
 			if ( rosterCount >= UI_MAX_ROSTER ) {
-				break;
+				return;
 			}
 			s_edit.slot = rosterCount++;
 		}
@@ -998,10 +1024,6 @@ static void UI_BotEdit_Event( void *ptr, int event ) {
 		UI_PopMenu();
 		UI_BotRoster_Refresh();
 		UI_BotRoster_Show( s_edit.slot );
-		break;
-	case ID_EDIT_BACK:
-		UI_PopMenu();
-		break;
 	}
 }
 
@@ -1013,28 +1035,23 @@ static void UI_BotEdit_DrawChar( void *self ) {
 
 	b = (menubitmap_s *)self;
 	def = b->generic.id - ID_EDIT_CHAR;
-	focus = UI_BotEdit_Focus( self );
+	focus = UI_DFocus( &s_edit.menu, self );
 	selected = ( def == s_edit.def );
-	UI_DrawPortrait( b->generic.left + 4, b->generic.top, 40, UI_Bots_Portrait( botDefs[def].player ), selected, focus );
-	UI_DrawStringSized( b->generic.left + 24, b->generic.top + 44, botDefs[def].player, UI_CENTER,
-		( selected || focus > 0.0f ) ? zeq_white : zeq_text2, 5, 9 );
+	UI_DPortrait( b->generic.x + 6, b->generic.y, 76, UI_Bots_Portrait( botDefs[def].player ), selected, focus );
+	UI_DText( b->generic.x + 44, b->generic.y + 84, botDefs[def].player, 14, UI_CENTER,
+		( selected || focus > 0.0f ) ? zeq_white : zeq_text2 );
 }
 
 static void UI_BotEdit_DrawSkill( void *self ) {
 	menubitmap_s	*b;
 	int				skill;
 	float			focus;
-	float			x, y, w, h;
 	vec4_t			fill;
 	vec4_t			edge;
 
 	b = (menubitmap_s *)self;
 	skill = b->generic.id - ID_EDIT_SKILL + 1;
-	focus = UI_BotEdit_Focus( self );
-	x = b->generic.left;
-	y = b->generic.top;
-	w = b->generic.right - b->generic.left;
-	h = b->generic.bottom - b->generic.top;
+	focus = UI_DFocus( &s_edit.menu, self );
 
 	if ( skill == s_edit.skill ) {
 		fill[0] = zeq_gold[0]; fill[1] = zeq_gold[1]; fill[2] = zeq_gold[2]; fill[3] = 0.16f;
@@ -1044,31 +1061,26 @@ static void UI_BotEdit_DrawSkill( void *self ) {
 		fill[0] = 0.02f; fill[1] = 0.03f; fill[2] = 0.12f; fill[3] = 0.55f;
 		edge[0] = 0.18f; edge[1] = 0.27f; edge[2] = 0.56f; edge[3] = 1.0f;
 	}
-	UI_FillRect( x, y, w, h, fill );
-	UI_DrawFocusRow( x, y, w, h, focus );
-	UI_DrawRect( x, y, w, h, edge );
+	UI_DFill( b->generic.x, b->generic.y, b->width, b->height, fill );
+	UI_DFocusRow( b->generic.x, b->generic.y, b->width, b->height, focus );
+	UI_DFrame( b->generic.x, b->generic.y, b->width, b->height, edge );
 
-	UI_DrawPips( x + 6, y + 6, skill, 3, UI_AnimFrac( uis.transitionTime, 100 + skill * 60, 300 ) );
-	UI_DrawPropScaled( x + 6, y + 14, skillNames[skill], UI_LEFT, zeq_white, 0.34f );
-	UI_DrawStringSized( x + 6, y + 30, skillLines[skill][0], UI_LEFT, zeq_text2, 5, 9 );
-	UI_DrawStringSized( x + 6, y + 40, skillLines[skill][1], UI_LEFT, zeq_text2, 5, 9 );
+	UI_DPips( b->generic.x + 12, b->generic.y + 12, skill, 3, UI_AnimFrac( uis.transitionTime, 100 + skill * 60, 300 ) );
+	UI_DProp( b->generic.x + 12, b->generic.y + 28, va( "%s", skillNames[skill] ), 15, UI_LEFT, zeq_white );
+	UI_DText( b->generic.x + 12, b->generic.y + 54, skillLines[skill][0], 15, UI_LEFT, zeq_text2 );
+	UI_DText( b->generic.x + 12, b->generic.y + 74, skillLines[skill][1], 15, UI_LEFT, zeq_text2 );
 }
 
 static void UI_BotEdit_DrawStyle( void *self ) {
 	menubitmap_s	*b;
 	int				style;
 	float			focus;
-	float			x, y, w, h;
 	vec4_t			fill;
 	vec4_t			edge;
 
 	b = (menubitmap_s *)self;
 	style = b->generic.id - ID_EDIT_STYLE;
-	focus = UI_BotEdit_Focus( self );
-	x = b->generic.left;
-	y = b->generic.top;
-	w = b->generic.right - b->generic.left;
-	h = b->generic.bottom - b->generic.top;
+	focus = UI_DFocus( &s_edit.menu, self );
 
 	if ( style == s_edit.style ) {
 		fill[0] = zeq_ki[0]; fill[1] = zeq_ki[1]; fill[2] = zeq_ki[2]; fill[3] = 0.35f;
@@ -1078,11 +1090,18 @@ static void UI_BotEdit_DrawStyle( void *self ) {
 		fill[0] = 0.02f; fill[1] = 0.03f; fill[2] = 0.12f; fill[3] = 0.6f;
 		edge[0] = 0.24f; edge[1] = 0.33f; edge[2] = 0.66f; edge[3] = 0.6f + 0.4f * focus;
 	}
-	UI_FillRect( x, y, w, h, fill );
-	UI_DrawFocusRow( x, y, w, h, focus * 0.6f );
-	UI_DrawRect( x, y, w, h, edge );
-	UI_DrawStringSized( x + w * 0.5f, y + 3, botStyles[style].label, UI_CENTER,
-		( style == s_edit.style || focus > 0.0f ) ? zeq_white : zeq_text2, 6, 11 );
+	UI_DFill( b->generic.x, b->generic.y, b->width, b->height, fill );
+	UI_DFocusRow( b->generic.x, b->generic.y, b->width, b->height, focus * 0.6f );
+	UI_DFrame( b->generic.x, b->generic.y, b->width, b->height, edge );
+	UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + 6, botStyles[style].label, 17, UI_CENTER,
+		( style == s_edit.style || focus > 0.0f ) ? zeq_white : zeq_text2 );
+}
+
+static void UI_BotEdit_DrawAccept( void *self ) {
+	menubitmap_s *b;
+
+	b = (menubitmap_s *)self;
+	UI_DCta( b->generic.x, b->generic.y, b->width, b->height, s_edit.acceptLabel, UI_DFocus( &s_edit.menu, self ) );
 }
 
 static void UI_BotEdit_Draw( void ) {
@@ -1090,45 +1109,63 @@ static void UI_BotEdit_Draw( void ) {
 	int				i;
 	uiBotDef_t		*def;
 	uiBotStyle_t	*style;
-	float			charBottom;
 	float			pop;
-	static const char *hints[] = { "ENTER", "Select", "ESC", "Back" };
+	static const char *hints[] = { "ARROWS", "Character", "ENTER", "Select", "ESC", "Cancel" };
 
-	uis.menuamount = 2;
+	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
-	charBottom = EDIT_CHAR_Y + 30 + s_edit.charRows * 62;
 
-	UI_DrawGlassPanel( EDIT_CHAR_X, EDIT_CHAR_Y, EDIT_CHAR_W, charBottom - EDIT_CHAR_Y + 96 );
-	UI_DrawSectionTitle( EDIT_CHAR_X + 14, EDIT_CHAR_Y + 12, "CHARACTER" );
+	UI_DHeader( s_edit.live ? "PAUSED  >  BOTS  >" : "CREATE MATCH  >  FIGHTERS  >",
+		s_edit.slot >= 0 || s_edit.liveClient >= 0 ? "EDIT BOT" : ( s_edit.live ? "ADD BOT" : va( "ADD BOT  -  SLOT %i", rosterCount + 2 ) ) );
 
-	UI_DrawGlassPanel( EDIT_RIGHT_X, EDIT_CHAR_Y, EDIT_RIGHT_W, 398 );
-	UI_DrawSectionTitle( EDIT_RIGHT_X + 14, EDIT_CHAR_Y + 12, "LEVEL" );
-	UI_DrawSectionTitle( EDIT_RIGHT_X + 14, EDIT_CHAR_Y + 104, "STYLE" );
+	UI_DGlass( 48, 128, 412, 528 );
+	UI_DSectionTitle( 72, 152, "CHARACTER" );
+	UI_DGlass( 732, 128, 500, 528 );
+	UI_DSectionTitle( 756, 152, "LEVEL" );
+	UI_DSectionTitle( 756, 306, "STYLE" );
+
+	// the chosen fighter in 3D
+	def = UI_Bots_Def( s_edit.def );
+	if ( def ) {
+		UI_Bots_SetPreview( &s_edit.playerinfo, s_edit.shownModel, sizeof( s_edit.shownModel ), def->player );
+		trap_R_SetColor( NULL );
+		UI_DPic( 480, 590, 240, 76, uis.blobShadow );
+		UI_Bots_DrawPreview( &s_edit.playerinfo, 440, 110, 320, 500 );
+	}
 
 	Menu_Draw( &s_edit.menu );
 
-	// chosen character, the name pops in when it changes
-	def = UI_Bots_Def( s_edit.def );
+	// name of the chosen character, it pops in when it changes
 	if ( def ) {
+		y = 176 + s_edit.charRows * EDIT_CELL_H + 6;
 		pop = UI_AnimFrac( s_edit.defTime, 0, 260 );
-		UI_DrawPropScaled( EDIT_CHAR_X + 14 + 10.0f * ( 1.0f - pop ), charBottom + 10, UI_Bots_DisplayName( def ), UI_LEFT|UI_DROPSHADOW, zeq_white, 0.7f );
-		UI_DrawStringSized( EDIT_CHAR_X + 14, charBottom + 36, va( "%s  -  %s", def->name, def->player ), UI_LEFT, zeq_text2, 7, 12 );
-		UI_DrawStringSized( EDIT_CHAR_X + 14, charBottom + 52, va( "Roster default: %s, %s", UI_Bots_SkillName( def->skill ),
+		UI_DProp( 72 + 14.0f * ( 1.0f - pop ), y, UI_Bots_DisplayName( def ), 30, UI_LEFT|UI_DROPSHADOW, zeq_white );
+		UI_DText( 72, y + 40, va( "%s  -  %s", def->name, def->player ), 18, UI_LEFT, zeq_text2 );
+		UI_DText( 72, y + 64, va( "Roster default: %s, %s", UI_Bots_SkillName( def->skill ),
 			UI_Bots_Style( UI_Bots_FindStyle( def->archetype ) ) ? UI_Bots_Style( UI_Bots_FindStyle( def->archetype ) )->label : "" ),
-			UI_LEFT, zeq_text3, 5, 9 );
+			15, UI_LEFT, zeq_text3 );
 	}
 
-	// style values of the chosen style
+	// values of the chosen style
 	style = UI_Bots_Style( s_edit.style );
 	if ( style ) {
-		y = EDIT_CHAR_Y + 124 + ( ( numBotStyles + 1 ) / 2 ) * 20 + 14;
+		y = 334 + ( ( numBotStyles + 3 ) / 4 ) * 42 + 24;
 		for ( i = 0; i < 6; i++ ) {
-			UI_DrawStatBar( EDIT_RIGHT_X + 14, y + i * 18, EDIT_RIGHT_W - 28, statLabels[i], style->values[i],
+			UI_DStatBar( 756 + ( i % 2 ) * 236, y + ( i / 2 ) * 30, 216, statLabels[i], style->values[i],
 				UI_AnimFrac( s_edit.styleTime, 40 * i, 420 ) );
 		}
 	}
 
-	UI_DrawKeyHints( hints, 2 );
+	UI_DHints( hints, 3 );
+}
+
+static void UI_BotEdit_DItem( menubitmap_s *b, int id, void (*draw)( void * ), int x, int y, int w, int h ) {
+	b->generic.type			= MTYPE_BITMAP;
+	b->generic.flags		= QMF_NODEFAULTINIT;
+	b->generic.id			= id;
+	b->generic.callback		= UI_BotEdit_Event;
+	b->generic.ownerdraw	= draw;
+	UI_DItem( b, x, y, w, h );
 }
 
 void UI_BotEditMenu( int slot ) {
@@ -1145,8 +1182,10 @@ void UI_BotEditMenu( int slot ) {
 	s_edit.menu.fullscreen = qtrue;
 	s_edit.menu.wrapAround = qtrue;
 	s_edit.slot = ( slot >= 0 && slot < rosterCount ) ? slot : -1;
+	s_edit.liveClient = -1;
 	s_edit.defTime = uis.realtime;
 	s_edit.styleTime = uis.realtime;
+	s_edit.acceptLabel = ( s_edit.slot < 0 ) ? "ADD BOT" : "SAVE";
 
 	if ( s_edit.slot >= 0 ) {
 		s_edit.def = roster[s_edit.slot].def;
@@ -1161,66 +1200,23 @@ void UI_BotEditMenu( int slot ) {
 		s_edit.style = UI_Bots_FindStyle( botDefs[s_edit.def].archetype );
 	}
 
-	s_edit.accept.generic.type		= MTYPE_PTEXT;
-	s_edit.accept.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_edit.accept.generic.id		= ID_EDIT_ACCEPT;
-	s_edit.accept.generic.callback	= UI_BotEdit_Event;
-	s_edit.accept.generic.x			= 28;
-	s_edit.accept.generic.y			= 119;
-	s_edit.accept.string			= ( s_edit.slot < 0 ) ? "ADD BOT" : "SAVE";
-	s_edit.accept.style				= UI_LEFT|UI_DROPSHADOW|UI_TINYFONT;
-	s_edit.accept.color				= color_white;
-
-	s_edit.back.generic.type		= MTYPE_PTEXT;
-	s_edit.back.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_edit.back.generic.id			= ID_EDIT_BACK;
-	s_edit.back.generic.callback	= UI_BotEdit_Event;
-	s_edit.back.generic.x			= 28;
-	s_edit.back.generic.y			= 157;
-	s_edit.back.string				= "BACK";
-	s_edit.back.style				= UI_LEFT|UI_DROPSHADOW|UI_TINYFONT;
-	s_edit.back.color				= color_white;
-
 	s_edit.charRows = ( numBotDefs + 3 ) / 4;
-	for ( i = 0; i < numBotDefs; i++ ) {
-		s_edit.chars[i].generic.type		= MTYPE_BITMAP;
-		s_edit.chars[i].generic.flags		= QMF_NODEFAULTINIT;
-		s_edit.chars[i].generic.id			= ID_EDIT_CHAR + i;
-		s_edit.chars[i].generic.callback	= UI_BotEdit_Event;
-		s_edit.chars[i].generic.ownerdraw	= UI_BotEdit_DrawChar;
-		s_edit.chars[i].generic.left		= EDIT_CHAR_X + 12 + ( i % 4 ) * EDIT_CELL;
-		s_edit.chars[i].generic.top			= EDIT_CHAR_Y + 32 + ( i / 4 ) * 62;
-		s_edit.chars[i].generic.right		= s_edit.chars[i].generic.left + 48;
-		s_edit.chars[i].generic.bottom		= s_edit.chars[i].generic.top + 54;
+	if ( s_edit.charRows > 3 ) {
+		s_edit.charRows = 3;
 	}
-
+	for ( i = 0; i < numBotDefs && i < 12; i++ ) {
+		UI_BotEdit_DItem( &s_edit.chars[i], ID_EDIT_CHAR + i, UI_BotEdit_DrawChar,
+			72 + ( i % 4 ) * EDIT_CELL_W, 176 + ( i / 4 ) * EDIT_CELL_H, 88, 104 );
+	}
 	for ( i = 0; i < 3; i++ ) {
-		s_edit.skills[i].generic.type		= MTYPE_BITMAP;
-		s_edit.skills[i].generic.flags		= QMF_NODEFAULTINIT;
-		s_edit.skills[i].generic.id			= ID_EDIT_SKILL + i;
-		s_edit.skills[i].generic.callback	= UI_BotEdit_Event;
-		s_edit.skills[i].generic.ownerdraw	= UI_BotEdit_DrawSkill;
-		s_edit.skills[i].generic.left		= EDIT_RIGHT_X + 12 + i * 70;
-		s_edit.skills[i].generic.top		= EDIT_CHAR_Y + 32;
-		s_edit.skills[i].generic.right		= s_edit.skills[i].generic.left + 66;
-		s_edit.skills[i].generic.bottom		= s_edit.skills[i].generic.top + 54;
+		UI_BotEdit_DItem( &s_edit.skills[i], ID_EDIT_SKILL + i, UI_BotEdit_DrawSkill, 756 + i * 154, 180, 146, 104 );
 	}
-
 	for ( i = 0; i < numBotStyles; i++ ) {
-		s_edit.styles[i].generic.type		= MTYPE_BITMAP;
-		s_edit.styles[i].generic.flags		= QMF_NODEFAULTINIT;
-		s_edit.styles[i].generic.id			= ID_EDIT_STYLE + i;
-		s_edit.styles[i].generic.callback	= UI_BotEdit_Event;
-		s_edit.styles[i].generic.ownerdraw	= UI_BotEdit_DrawStyle;
-		s_edit.styles[i].generic.left		= EDIT_RIGHT_X + 12 + ( i % 2 ) * 104;
-		s_edit.styles[i].generic.top		= EDIT_CHAR_Y + 124 + ( i / 2 ) * 20;
-		s_edit.styles[i].generic.right		= s_edit.styles[i].generic.left + 100;
-		s_edit.styles[i].generic.bottom		= s_edit.styles[i].generic.top + 16;
+		UI_BotEdit_DItem( &s_edit.styles[i], ID_EDIT_STYLE + i, UI_BotEdit_DrawStyle, 756 + ( i % 4 ) * 114, 334 + ( i / 4 ) * 42, 108, 34 );
 	}
+	UI_BotEdit_DItem( &s_edit.accept, ID_EDIT_ACCEPT, UI_BotEdit_DrawAccept, 1060, 664, 172, 46 );
 
-	Menu_AddItem( &s_edit.menu, &s_edit.accept );
-	Menu_AddItem( &s_edit.menu, &s_edit.back );
-	for ( i = 0; i < numBotDefs; i++ ) {
+	for ( i = 0; i < numBotDefs && i < 12; i++ ) {
 		Menu_AddItem( &s_edit.menu, &s_edit.chars[i] );
 	}
 	for ( i = 0; i < 3; i++ ) {
@@ -1229,9 +1225,10 @@ void UI_BotEditMenu( int slot ) {
 	for ( i = 0; i < numBotStyles; i++ ) {
 		Menu_AddItem( &s_edit.menu, &s_edit.styles[i] );
 	}
+	Menu_AddItem( &s_edit.menu, &s_edit.accept );
 
 	UI_PushMenu( &s_edit.menu );
-	uis.menuamount = 2;
+	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
 	uis.showFrame = qfalse;
 	Menu_SetCursorToItem( &s_edit.menu, &s_edit.chars[s_edit.def] );
@@ -1251,7 +1248,7 @@ static void UI_BotEditLive( int clientNum, int def, int skill, int style ) {
 	}
 	s_edit.live = qtrue;
 	s_edit.liveClient = clientNum;
-	s_edit.accept.string = ( clientNum >= 0 ) ? "APPLY" : "ADD BOT";
+	s_edit.acceptLabel = ( clientNum >= 0 ) ? "APPLY" : "ADD BOT";
 	if ( clientNum >= 0 && def >= 0 ) {
 		s_edit.def = def;
 		s_edit.skill = skill;

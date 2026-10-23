@@ -48,7 +48,7 @@ typedef struct {
 	const char *	question;
 	void			(*draw)( void );
 	void			(*action)( qboolean result );
-	
+
 	int style;
 	const char **lines;
 } confirmMenu_t;
@@ -118,16 +118,52 @@ static sfxHandle_t ConfirmMenu_Key( int key ) {
 MessaheMenu_Draw
 =================
 */
+/*
+=================
+Menu redesign: a glass dialog over the dimmed screen, the dragon ball of
+the old frame on its corner and the answers as ki buttons
+=================
+*/
+static void ConfirmMenu_DrawButton( void *self ) {
+	menutext_s *t;
+
+	t = (menutext_s *)self;
+	UI_DKiButton( t->generic.x, t->generic.y, 160, 46, t->string, NULL, UI_DFocus( &s_confirm.menu, self ), qfalse, qfalse );
+}
+
+static void ConfirmMenu_PlaceButton( menutext_s *t, int x, int y ) {
+	float vx, vy, vw, vh;
+
+	t->generic.x = x;
+	t->generic.y = y;
+	t->generic.ownerdraw = ConfirmMenu_DrawButton;
+	vx = x; vy = y; vw = 160; vh = 46;
+	UI_DToV( &vx, &vy, &vw, &vh );
+	t->generic.left = vx;
+	t->generic.top = vy;
+	t->generic.right = vx + vw;
+	t->generic.bottom = vy + vh;
+}
+
+static void ConfirmMenu_DrawDialog( float h ) {
+	float	bias;
+	vec4_t	shade;
+
+	uis.menuamount = -1;
+	bias = ( uis.scale > 0.0f ) ? ( uis.bias / uis.scale ) : 0.0f;
+	shade[0] = 0.02f; shade[1] = 0.024f; shade[2] = 0.10f; shade[3] = 0.6f;
+	UI_FillRect( -bias - uis.drawOffsetX, 0, 640 + 2 * bias, 480, shade );
+	UI_DGlass( 420, 240, 440, h );
+	trap_R_SetColor( NULL );
+	UI_DPic( 806, 196 + 2.0f * sin( uis.realtime / 300.0f ), 74, 89, uis.dragonBall );
+}
+
 static void MessageMenu_Draw( void ) {
-	int i,y;
-	
-	UI_DrawNamedPic( 142, 118, 359, 256, ART_CONFIRM_FRAME );
-	
-	y = 188;
-	for(i=0; s_confirm.lines[i]; i++)
-	{
-		UI_DrawProportionalString( 320, y, s_confirm.lines[i], s_confirm.style, color_red );
-		y += 18;
+	int i;
+
+	ConfirmMenu_DrawDialog( 240 );
+	for( i = 0; s_confirm.lines[i]; i++ ) {
+		UI_DText( 640, 276 + i * 26, s_confirm.lines[i], 20, UI_CENTER, i ? zeq_text2 : zeq_white );
 	}
 
 	Menu_Draw( &s_confirm.menu );
@@ -143,10 +179,11 @@ ConfirmMenu_Draw
 =================
 */
 static void ConfirmMenu_Draw( void ) {
-	uis.menuamount = 0;
-	UI_DrawNamedPic( 142, 118, 359, 256, ART_CONFIRM_FRAME );
-	UI_DrawProportionalString( 320, 204, s_confirm.question, UI_CENTER|UI_INVERSE|UI_DROPSHADOW, color_white );
-	UI_DrawProportionalString( s_confirm.slashX, 265, "/", UI_LEFT|UI_INVERSE|UI_DROPSHADOW, color_white );
+	static const char *hints[] = { "Y", "Yes", "N", "No", "ESC", "Cancel" };
+
+	ConfirmMenu_DrawDialog( 220 );
+	UI_DProp( 640, 286, s_confirm.question, 32, UI_CENTER|UI_DROPSHADOW, zeq_white );
+	UI_DHints( hints, 3 );
 
 	Menu_Draw( &s_confirm.menu );
 
@@ -207,8 +244,8 @@ void UI_ConfirmMenu_Style( const char *question, int style, void (*draw)( void )
 		s_confirm.menu.fullscreen = qtrue;
 	}
 
-	s_confirm.yes.generic.type		= MTYPE_PTEXT;      
-	s_confirm.yes.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS; 
+	s_confirm.yes.generic.type		= MTYPE_PTEXT;
+	s_confirm.yes.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_confirm.yes.generic.callback	= ConfirmMenu_Event;
 	s_confirm.yes.generic.id		= ID_CONFIRM_YES;
 	s_confirm.yes.generic.x			= l1;
@@ -217,8 +254,8 @@ void UI_ConfirmMenu_Style( const char *question, int style, void (*draw)( void )
 	s_confirm.yes.color				= color_white;
 	s_confirm.yes.style				= UI_LEFT|UI_DROPSHADOW;
 
-	s_confirm.no.generic.type		= MTYPE_PTEXT;      
-	s_confirm.no.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS; 
+	s_confirm.no.generic.type		= MTYPE_PTEXT;
+	s_confirm.no.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_confirm.no.generic.callback	= ConfirmMenu_Event;
 	s_confirm.no.generic.id			= ID_CONFIRM_NO;
 	s_confirm.no.generic.x		    = l3;
@@ -227,8 +264,10 @@ void UI_ConfirmMenu_Style( const char *question, int style, void (*draw)( void )
 	s_confirm.no.color			    = color_white;
 	s_confirm.no.style			    = UI_LEFT|UI_DROPSHADOW;
 
-	Menu_AddItem( &s_confirm.menu,	&s_confirm.yes );             
+	Menu_AddItem( &s_confirm.menu,	&s_confirm.yes );
 	Menu_AddItem( &s_confirm.menu,	&s_confirm.no );
+	ConfirmMenu_PlaceButton( &s_confirm.yes, 472, 368 );
+	ConfirmMenu_PlaceButton( &s_confirm.no, 648, 368 );
 
 	UI_PushMenu( &s_confirm.menu );
 
@@ -253,7 +292,7 @@ hacked over from Confirm stuff
 void UI_Message( const char **lines ) {
 	uiClientState_t	cstate;
 	int n1, l1;
-	
+
 	// zero set all our globals
 	memset( &s_confirm, 0, sizeof(s_confirm) );
 
@@ -261,14 +300,14 @@ void UI_Message( const char **lines ) {
 
 	n1 = UI_ProportionalStringWidth( "OK" );
 	l1 = 320 - ( n1 / 2 );
-	
+
 	s_confirm.lines = lines;
 	s_confirm.style = UI_CENTER|UI_INVERSE|UI_SMALLFONT;
 
 	s_confirm.menu.draw       = MessageMenu_Draw;
 	s_confirm.menu.key        = ConfirmMenu_Key;
 	s_confirm.menu.wrapAround = qtrue;
-	
+
 	trap_GetClientState( &cstate );
 	if ( cstate.connState >= CA_CONNECTED ) {
 		s_confirm.menu.fullscreen = qfalse;
@@ -277,8 +316,8 @@ void UI_Message( const char **lines ) {
 		s_confirm.menu.fullscreen = qtrue;
 	}
 
-	s_confirm.yes.generic.type		= MTYPE_PTEXT;      
-	s_confirm.yes.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS; 
+	s_confirm.yes.generic.type		= MTYPE_PTEXT;
+	s_confirm.yes.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_confirm.yes.generic.callback	= ConfirmMenu_Event;
 	s_confirm.yes.generic.id		= ID_CONFIRM_YES;
 	s_confirm.yes.generic.x			= l1;
@@ -288,7 +327,8 @@ void UI_Message( const char **lines ) {
 	s_confirm.yes.style				= UI_LEFT;
 
 	Menu_AddItem( &s_confirm.menu,	&s_confirm.yes );
-	
+	ConfirmMenu_PlaceButton( &s_confirm.yes, 560, 400 );
+
 	UI_PushMenu( &s_confirm.menu );
 
 	Menu_SetCursorToItem( &s_confirm.menu, &s_confirm.yes );

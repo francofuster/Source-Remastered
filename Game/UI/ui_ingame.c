@@ -25,13 +25,15 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 INGAME MENU
 
+Menu redesign: the match is dimmed, Shenron wraps a solid panel (the old
+frame let his body cross the text) and the entries are ki buttons.
+
 =======================================================================
 */
 
 #include "ui_local.h"
 
-#define INGAME_FRAME					"interface/art/addbotframe"
-#define INGAME_MENU_VERTICAL_SPACING	24
+#define INGAME_SHENRON			"interface/menu/shenron.png"
 
 #define ID_SETUP				13
 #define ID_PLAYER				14
@@ -42,21 +44,27 @@ INGAME MENU
 #define ID_RESUME				19
 #define ID_BOTS					20
 
+#define PAUSE_PANEL_X			483
+#define PAUSE_PANEL_Y			164
+#define PAUSE_PANEL_W			314
+#define PAUSE_PANEL_H			381
+#define PAUSE_BUTTON_X			527
+#define PAUSE_BUTTON_Y			210
+#define PAUSE_BUTTON_W			244
+#define PAUSE_BUTTON_H			38
+#define PAUSE_BUTTON_STEP		44
+#define PAUSE_ENTRIES			7
+
 typedef struct {
 	menuframework_s	menu;
-	menubitmap_s	frame;
-	menutext_s		setup;
-	menutext_s		player;
-	menutext_s		camera;
-	menutext_s		server;
-	menutext_s		leave;
-	menutext_s		restart;
-	menutext_s		quit;
-	menutext_s		resume;
-	menutext_s		bots;
+	menubitmap_s	entries[PAUSE_ENTRIES];
+	qhandle_t		shenron;
 } ingamemenu_t;
 
 static ingamemenu_t	s_ingame;
+
+static const int pauseIds[PAUSE_ENTRIES] = { ID_RESUME, ID_SETUP, ID_PLAYER, ID_BOTS, ID_CAMERA, ID_RESTART, ID_LEAVEARENA };
+static const char *pauseLabels[PAUSE_ENTRIES] = { "RESUME", "OPTIONS", "FIGHTER", "BOTS", "CAMERA", "RESTART", "LEAVE MATCH" };
 
 
 /*
@@ -102,14 +110,14 @@ void InGame_Event( void *ptr, int notification ) {
 	case ID_SETUP:
 		UI_SystemSettingsMenu();
 		break;
-	
+
 	case ID_PLAYER:
 		UI_PlayerModelMenu();
-		break;	
+		break;
 
 	case ID_CAMERA:
 		UI_CameraMenu();
-		break;		
+		break;
 
 	case ID_BOTS:
 		UI_PauseBotsMenu();
@@ -137,6 +145,114 @@ void InGame_Event( void *ptr, int notification ) {
 	}
 }
 
+/*
+=================
+InGame_DrawEntry
+=================
+*/
+static void InGame_DrawEntry( void *self ) {
+	menubitmap_s	*b;
+	int				index;
+	float			focus;
+	float			enter;
+	qboolean		disabled;
+	vec4_t			warn;
+
+	b = (menubitmap_s *)self;
+	index = ( b->generic.y - PAUSE_BUTTON_Y ) / PAUSE_BUTTON_STEP;
+	disabled = ( b->generic.flags & QMF_GRAYED ) != 0;
+	focus = disabled ? 0.0f : UI_DFocus( &s_ingame.menu, self );
+	enter = UI_AnimFrac( uis.transitionTime, 60 + index * 40, 260 );
+	UI_DKiButton( b->generic.x - 24.0f * ( 1.0f - enter ) + 6.0f * focus, b->generic.y, b->width, b->height, pauseLabels[index], NULL, focus, disabled, qfalse );
+
+	// dragon ball marker on the left of the focused entry
+	if ( focus > 0.0f ) {
+		trap_R_SetColor( NULL );
+		UI_DPic( PAUSE_PANEL_X + 10, b->generic.y + 5 + 1.5f * sin( uis.realtime / 300.0f ), 24, 29, uis.dragonBall );
+	}
+	if ( pauseIds[index] == ID_LEAVEARENA && focus <= 0.0f ) {
+		warn[0] = 0.94f; warn[1] = 0.63f; warn[2] = 0.53f; warn[3] = 0.35f;
+		UI_DFill( b->generic.x + 4, b->generic.y + b->height - 3, b->width * 0.6f, 1.5f, warn );
+	}
+}
+
+/*
+=================
+InGame_MenuDraw
+=================
+*/
+static void InGame_MenuDraw( void ) {
+	static const char *hints[] = { "ARROWS", "Navigate", "ENTER", "Select", "ESC", "Resume" };
+	char		info[MAX_INFO_STRING];
+	char		map[64];
+	char		players[64];
+	int			humans;
+	int			bots;
+	int			i;
+	int			value;
+	float		bias;
+	float		x;
+	vec4_t		shade;
+	vec4_t		edge;
+	vec4_t		top;
+	vec4_t		bottom;
+	vec4_t		warm;
+
+	// dim the match behind
+	bias = ( uis.scale > 0.0f ) ? ( uis.bias / uis.scale ) : 0.0f;
+	shade[0] = 0.02f; shade[1] = 0.024f; shade[2] = 0.10f; shade[3] = 0.55f;
+	UI_FillRect( -bias - uis.drawOffsetX, 0, 640 + 2 * bias, 480, shade );
+
+	// top strip with the match
+	shade[3] = 0.6f;
+	UI_DFill( -400, 0, 2080, 64, shade );
+	trap_GetConfigString( CS_SERVERINFO, info, sizeof( info ) );
+	Q_strncpyz( map, Info_ValueForKey( info, "mapname" ), sizeof( map ) );
+	Q_strupr( map );
+	UI_DProp( 40, 22, map, 19, UI_LEFT, zeq_white );
+	value = atoi( Info_ValueForKey( info, "fraglimit" ) );
+	UI_DText( 60 + UI_DPropWidth( map, 19 ), 22, value ? va( "KO limit %i", value ) : "No KO limit", 19, UI_LEFT, zeq_text2 );
+	humans = bots = 0;
+	for ( i = 0; i < MAX_CLIENTS; i++ ) {
+		trap_GetConfigString( CS_PLAYERS + i, info, sizeof( info ) );
+		if ( !info[0] ) {
+			continue;
+		}
+		if ( Info_ValueForKey( info, "skill" )[0] ) {
+			bots++;
+		}
+		else {
+			humans++;
+		}
+	}
+	Com_sprintf( players, sizeof( players ), "%s  -  %i human%s  -  %i bot%s", trap_Cvar_VariableValue( "sv_running" ) ? "Local match" : "Online",
+		humans, humans == 1 ? "" : "s", bots, bots == 1 ? "" : "s" );
+	UI_DText( 1240, 22, players, 19, UI_RIGHT, zeq_text2 );
+
+	// Shenron around a solid panel
+	trap_R_SetColor( NULL );
+	UI_DPic( 381, 8, 576, 707, s_ingame.shenron );
+	top[0] = 0.063f; top[1] = 0.075f; top[2] = 0.22f; top[3] = 0.97f;
+	bottom[0] = 0.04f; bottom[1] = 0.047f; bottom[2] = 0.15f; bottom[3] = 0.97f;
+	warm[0] = 0.26f; warm[1] = 0.16f; warm[2] = 0.09f; warm[3] = 0.97f;
+	UI_DFill( PAUSE_PANEL_X, PAUSE_PANEL_Y, PAUSE_PANEL_W, PAUSE_PANEL_H * 0.5f, top );
+	UI_DFill( PAUSE_PANEL_X, PAUSE_PANEL_Y + PAUSE_PANEL_H * 0.5f, PAUSE_PANEL_W, PAUSE_PANEL_H * 0.3f, bottom );
+	UI_DFill( PAUSE_PANEL_X, PAUSE_PANEL_Y + PAUSE_PANEL_H * 0.8f, PAUSE_PANEL_W, PAUSE_PANEL_H * 0.2f, warm );
+	edge[0] = 0.43f; edge[1] = 0.56f; edge[2] = 0.94f; edge[3] = 1.0f;
+	UI_DFrame( PAUSE_PANEL_X, PAUSE_PANEL_Y, PAUSE_PANEL_W, PAUSE_PANEL_H, edge );
+	edge[3] = 0.3f;
+	UI_DFrame( PAUSE_PANEL_X - 3, PAUSE_PANEL_Y - 3, PAUSE_PANEL_W + 6, PAUSE_PANEL_H + 6, edge );
+	UI_DSectionTitle( PAUSE_PANEL_X + 26, PAUSE_PANEL_Y + 20, "PAUSED" );
+
+	Menu_Draw( &s_ingame.menu );
+
+	// hints centered at the bottom
+	x = 640 - ( UI_DTextWidth( "ARROWSNavigateENTERSelectESCResume", 19 ) + 180 ) * 0.5f;
+	for ( i = 0; i < 3; i++ ) {
+		x += UI_DKeyHint( x, 672, hints[i * 2], hints[i * 2 + 1] );
+	}
+}
+
 
 /*
 =================
@@ -144,9 +260,7 @@ InGame_MenuInit
 =================
 */
 void InGame_MenuInit( void ) {
-	int		y;
-	uiClientState_t	cs;
-	char	info[MAX_INFO_STRING];
+	int i;
 
 	memset( &s_ingame, 0 ,sizeof(ingamemenu_t) );
 
@@ -154,111 +268,22 @@ void InGame_MenuInit( void ) {
 
 	s_ingame.menu.wrapAround = qtrue;
 	s_ingame.menu.fullscreen = qfalse;
+	s_ingame.menu.draw = InGame_MenuDraw;
 
-	s_ingame.frame.generic.type			= MTYPE_BITMAP;
-	s_ingame.frame.generic.flags		= QMF_INACTIVE;
-	s_ingame.frame.generic.name			= INGAME_FRAME;
-	s_ingame.frame.generic.x			= 320-233;//142;
-	s_ingame.frame.generic.y			= 240-166;//118;
-	s_ingame.frame.width				= 470;//359;
-	s_ingame.frame.height				= 350;//256;
+	for ( i = 0; i < PAUSE_ENTRIES; i++ ) {
+		s_ingame.entries[i].generic.type		= MTYPE_BITMAP;
+		s_ingame.entries[i].generic.flags		= QMF_NODEFAULTINIT;
+		s_ingame.entries[i].generic.id			= pauseIds[i];
+		s_ingame.entries[i].generic.callback	= InGame_Event;
+		s_ingame.entries[i].generic.ownerdraw	= InGame_DrawEntry;
+		UI_DItem( &s_ingame.entries[i], PAUSE_BUTTON_X, PAUSE_BUTTON_Y + i * PAUSE_BUTTON_STEP, PAUSE_BUTTON_W, PAUSE_BUTTON_H );
 
-	//y = 96;
-	y = 125;	// 7 entries at 24 keep inside the frame
-
-	y += INGAME_MENU_VERTICAL_SPACING;
-	s_ingame.resume.generic.type			= MTYPE_PTEXT;
-	s_ingame.resume.generic.flags			= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_ingame.resume.generic.x				= 320;
-	s_ingame.resume.generic.y				= y;
-	s_ingame.resume.generic.id				= ID_RESUME;
-	s_ingame.resume.generic.callback		= InGame_Event; 
-	s_ingame.resume.string					= "RESUME";
-	s_ingame.resume.color					= color_white;
-	s_ingame.resume.style					= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
-	
-	y += INGAME_MENU_VERTICAL_SPACING;
-	s_ingame.setup.generic.type			= MTYPE_PTEXT;
-	s_ingame.setup.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_ingame.setup.generic.x			= 320;
-	s_ingame.setup.generic.y			= y;
-	s_ingame.setup.generic.id			= ID_SETUP;
-	s_ingame.setup.generic.callback		= InGame_Event; 
-	s_ingame.setup.string				= "OPTIONS";
-	s_ingame.setup.color				= color_white;
-	s_ingame.setup.style				= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
-
-	y += INGAME_MENU_VERTICAL_SPACING;
-	s_ingame.player.generic.type		= MTYPE_PTEXT;
-	s_ingame.player.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_ingame.player.generic.x			= 320;
-	s_ingame.player.generic.y			= y;
-	s_ingame.player.generic.id			= ID_PLAYER;
-	s_ingame.player.generic.callback	= InGame_Event; 
-	s_ingame.player.string				= "PLAYER";
-	s_ingame.player.color				= color_white;
-	s_ingame.player.style				= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
-	
-	// bots of the match, only the host can manage them
-	y += INGAME_MENU_VERTICAL_SPACING;
-	s_ingame.bots.generic.type			= MTYPE_PTEXT;
-	s_ingame.bots.generic.flags			= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_ingame.bots.generic.x				= 320;
-	s_ingame.bots.generic.y				= y;
-	s_ingame.bots.generic.id			= ID_BOTS;
-	s_ingame.bots.generic.callback		= InGame_Event;
-	s_ingame.bots.string				= "BOTS";
-	s_ingame.bots.color					= color_white;
-	s_ingame.bots.style					= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
-	if( !trap_Cvar_VariableValue( "sv_running" ) ) {
-		s_ingame.bots.generic.flags |= QMF_GRAYED;
+		// restart and bots belong to the host
+		if ( ( pauseIds[i] == ID_RESTART || pauseIds[i] == ID_BOTS ) && !trap_Cvar_VariableValue( "sv_running" ) ) {
+			s_ingame.entries[i].generic.flags |= QMF_GRAYED;
+		}
+		Menu_AddItem( &s_ingame.menu, &s_ingame.entries[i] );
 	}
-
-	y += INGAME_MENU_VERTICAL_SPACING;
-	s_ingame.camera.generic.type		= MTYPE_PTEXT;
-	s_ingame.camera.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_ingame.camera.generic.x			= 320;
-	s_ingame.camera.generic.y			= y;
-	s_ingame.camera.generic.id			= ID_CAMERA;
-	s_ingame.camera.generic.callback	= InGame_Event; 
-	s_ingame.camera.string				= "CAMERA";
-	s_ingame.camera.color				= color_white;
-	s_ingame.camera.style				= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
-	
-	y += INGAME_MENU_VERTICAL_SPACING;
-	s_ingame.restart.generic.type		= MTYPE_PTEXT;
-	s_ingame.restart.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_ingame.restart.generic.x			= 320;
-	s_ingame.restart.generic.y			= y;
-	s_ingame.restart.generic.id			= ID_RESTART;
-	s_ingame.restart.generic.callback	= InGame_Event; 
-	s_ingame.restart.string				= "RESTART";
-	s_ingame.restart.color				= color_white;
-	s_ingame.restart.style				= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
-	if( !trap_Cvar_VariableValue( "sv_running" ) ) {
-		s_ingame.restart.generic.flags |= QMF_GRAYED;
-	}
-
-	y += INGAME_MENU_VERTICAL_SPACING;
-	s_ingame.leave.generic.type			= MTYPE_PTEXT;
-	s_ingame.leave.generic.flags		= QMF_CENTER_JUSTIFY|QMF_PULSEIFFOCUS;
-	s_ingame.leave.generic.x			= 320;
-	s_ingame.leave.generic.y			= y;
-	s_ingame.leave.generic.id			= ID_LEAVEARENA;
-	s_ingame.leave.generic.callback		= InGame_Event; 
-	s_ingame.leave.string				= "LEAVE";
-	s_ingame.leave.color				= color_white;
-	s_ingame.leave.style				= UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW;
-
-
-	Menu_AddItem( &s_ingame.menu, &s_ingame.frame );
-	Menu_AddItem( &s_ingame.menu, &s_ingame.resume );
-	Menu_AddItem( &s_ingame.menu, &s_ingame.restart );
-	Menu_AddItem( &s_ingame.menu, &s_ingame.setup );	
-	Menu_AddItem( &s_ingame.menu, &s_ingame.player );	
-	Menu_AddItem( &s_ingame.menu, &s_ingame.bots );
-	Menu_AddItem( &s_ingame.menu, &s_ingame.camera );
-	Menu_AddItem( &s_ingame.menu, &s_ingame.leave );
 }
 
 
@@ -268,7 +293,7 @@ InGame_Cache
 =================
 */
 void InGame_Cache( void ) {
-	trap_R_RegisterShaderNoMip( INGAME_FRAME );
+	s_ingame.shenron = trap_R_RegisterShaderNoMip( INGAME_SHENRON );
 }
 
 
@@ -279,7 +304,7 @@ UI_InGameMenu
 */
 void UI_InGameMenu( void ) {
 	// force as top level menu
-	uis.menusp = 0;  
+	uis.menusp = 0;
 
 	// set menu cursor to a nice location
 	uis.cursorx = 320;

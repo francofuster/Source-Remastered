@@ -28,7 +28,7 @@ typedef struct
 {
 	char*	name;
 	float	defaultvalue;
-	float	value;	
+	float	value;
 } cameraconfigcvar_t;
 
 typedef struct {
@@ -280,6 +280,25 @@ static sfxHandle_t Camera_MenuKey( int key )
 
 /*
 =================
+Camera_MenuDraw
+
+menu redesign: a glass panel on the left, the match stays visible on
+the right so the camera can be judged live
+=================
+*/
+static void Camera_MenuDraw( void ) {
+	static const char *hints[] = { "ARROWS", "Adjust", "ESC", "Back" };
+
+	UI_DGlass( 40, 96, 600, 500 );
+	UI_DProp( 64, 120, "CAMERA", 30, UI_LEFT|UI_DROPSHADOW, zeq_white );
+	UI_DOptionsDrawSections();
+	Menu_Draw( &s_camera.menu );
+	UI_DTextWrapped( 64, 548, 552, "The match behind shows the camera while you change it.", 17, zeq_text3 );
+	UI_DHints( hints, 2 );
+}
+
+/*
+=================
 Camera_MenuInit
 =================
 */
@@ -293,6 +312,7 @@ static void Camera_MenuInit( void )
 	s_camera.menu.wrapAround		= qtrue;
 	s_camera.menu.fullscreen		= qfalse;
 	s_camera.menu.key			= Camera_MenuKey;
+	s_camera.menu.draw			= Camera_MenuDraw;
 
 	s_camera.banner.generic.type	= MTYPE_BTEXT;
 	s_camera.banner.generic.flags	= QMF_CENTER_JUSTIFY;
@@ -415,6 +435,22 @@ static void Camera_MenuInit( void )
 	Menu_AddItem( &s_camera.menu, &s_camera.lockedAngleSlider );
 
 	Menu_AddItem( &s_camera.menu, &s_camera.back );
+
+	// menu redesign: rows on the design canvas
+	s_camera.banner.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+	s_camera.lockedBanner.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+	s_camera.back.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+	UI_DOptionsBegin( &s_camera.menu, 64, 172, 552, 32 );
+	UI_DOptionsSection( "FREE CAMERA" );
+	UI_DOptionsRow( &s_camera.rangeSlider, "Range", "Distance from your fighter.", qfalse );
+	UI_DOptionsRow( &s_camera.heightSlider, "Height", "Height above your fighter.", qfalse );
+	UI_DOptionsRow( &s_camera.slideSlider, "Slide", "Side offset, over the shoulder.", qfalse );
+	UI_DOptionsRow( &s_camera.angleSlider, "Angle", "Tilt of the camera.", qfalse );
+	UI_DOptionsSection( "LOCKED CAMERA" );
+	UI_DOptionsRow( &s_camera.lockedRangeSlider, "Locked range", "Distance while locked on.", qfalse );
+	UI_DOptionsRow( &s_camera.lockedHeightSlider, "Locked height", "Height while locked on.", qfalse );
+	UI_DOptionsRow( &s_camera.lockedSlideSlider, "Locked slide", "Side offset while locked on.", qfalse );
+	UI_DOptionsRow( &s_camera.lockedAngleSlider, "Locked angle", "Tilt while locked on.", qfalse );
 
 	// initialize the configurable cvars
 	Camera_InitCvars();
