@@ -839,3 +839,61 @@ void UI_DrawProportionalString( int x, int y, const char* str, int style, vec4_t
 
 	UI_DrawProportionalString2( x, y, str, color, sizeScale, cgs.media.charsetProp );
 }
+
+/*
+=================
+CG_PropStringWidthPx / CG_DrawPropStringPx
+
+proportional font (font1) in real screen pixels, cell height = PROP_HEIGHT * scale;
+used by the loading screen which lays itself out in its own pixel space
+=================
+*/
+float CG_PropStringWidthPx( const char *str, float scale ) {
+	return UI_ProportionalStringWidth( str ) * scale;
+}
+
+void CG_DrawPropStringPx( float x, float y, const char *str, float scale, int style, const float *color ) {
+	const char	*s;
+	unsigned char	ch;
+	float		ax, aw, ah;
+	float		fcol, frow, fwidth, fheight;
+	vec4_t		shadow;
+	int			pass;
+
+	switch ( style & UI_FORMATMASK ) {
+	case UI_CENTER:
+		x -= CG_PropStringWidthPx( str, scale ) * 0.5f;
+		break;
+	case UI_RIGHT:
+		x -= CG_PropStringWidthPx( str, scale );
+		break;
+	default:
+		break;
+	}
+
+	shadow[0] = shadow[1] = shadow[2] = 0.0f;
+	shadow[3] = 0.6f * color[3];
+	for ( pass = ( style & UI_DROPSHADOW ) ? 0 : 1; pass < 2; pass++ ) {
+		trap_R_SetColor( pass ? color : shadow );
+		ax = x + ( pass ? 0.0f : scale * 2.0f );
+		s = str;
+		while ( *s ) {
+			ch = *s & 127;
+			aw = 0;
+			if ( ch == ' ' ) {
+				aw = (float)PROP_SPACE_WIDTH * scale;
+			} else if ( propMap[ch][2] != -1 ) {
+				fcol = (float)propMap[ch][0] / 256.0f;
+				frow = (float)propMap[ch][1] / 256.0f;
+				fwidth = (float)propMap[ch][2] / 256.0f;
+				fheight = (float)PROP_HEIGHT / 256.0f;
+				aw = (float)propMap[ch][2] * scale;
+				ah = (float)PROP_HEIGHT * scale;
+				trap_R_DrawStretchPic( ax, y + ( pass ? 0.0f : scale * 2.0f ), aw, ah, fcol, frow, fcol + fwidth, frow + fheight, cgs.media.charsetProp );
+			}
+			ax += aw + (float)PROP_GAP_WIDTH * scale;
+			s++;
+		}
+	}
+	trap_R_SetColor( NULL );
+}

@@ -169,6 +169,11 @@ void Menu_Common( int amount ) {
 	float	follow;
 	vec4_t	color;
 
+	// screens laid out on the design canvas draw their own header
+	if ( amount < 0 ) {
+		return;
+	}
+
 	baseOffset = uis.drawOffsetX;
 
 	// the logo stays put, it is the same on every screen
@@ -492,6 +497,478 @@ void UI_DrawFocusRow( float x, float y, float w, float h, float focusFrac ) {
 	edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.55f * focusFrac;
 	UI_DrawRect( x, y, w, h, edge );
 	UI_FillRect( x, y, 2, h, zeq_gold );
+}
+
+/*
+=======================================================================
+
+DESIGN LAYER
+
+Screens of the redesign are laid out on the same 1280x720 canvas as the
+design artboards. The canvas is fitted to the real screen (letterboxed
+when the aspect differs) and converted to the 640x480 virtual units the
+rest of the UI uses. Sizes of text are line heights in design pixels.
+
+=======================================================================
+*/
+
+vec4_t zeq_shade	= { 0.02f, 0.024f, 0.10f, 0.35f };
+
+static qhandle_t	d_logo;
+static qhandle_t	d_cta;
+static qhandle_t	d_ctaGlow;
+static qhandle_t	d_tab;
+static qhandle_t	d_tabGlow;
+static qhandle_t	d_nameArea;
+static qhandle_t	d_switchOn;
+static qhandle_t	d_switchOff;
+static qhandle_t	d_sliderKnob;
+
+static void UI_DRegister( void ) {
+	if ( d_logo ) {
+		return;
+	}
+	d_logo			= trap_R_RegisterShaderNoMip( "interface/menu/zeq2litelogo.png" );
+	d_cta			= trap_R_RegisterShaderNoMip( "interface/menu/ctaButton.png" );
+	d_ctaGlow		= trap_R_RegisterShaderNoMip( "menuCtaGlow" );
+	d_tab			= trap_R_RegisterShaderNoMip( "interface/menu/mainButton3.png" );
+	d_tabGlow		= trap_R_RegisterShaderNoMip( "menuKiGlow3" );
+	d_nameArea		= trap_R_RegisterShaderNoMip( "interface/menu/nameArea.png" );
+	d_switchOn		= trap_R_RegisterShaderNoMip( "interface/art/switch_on.png" );
+	d_switchOff		= trap_R_RegisterShaderNoMip( "interface/art/switch_off.png" );
+	d_sliderKnob	= trap_R_RegisterShaderNoMip( "interface/art/sliderbutt_0.png" );
+}
+
+/*
+=================
+UI_DScale / UI_DToV
+
+design pixels to virtual units
+=================
+*/
+static void UI_DFit( float *s, float *offX, float *offY ) {
+	float sx, sy;
+
+	sx = uis.glconfig.vidWidth / 1280.0f;
+	sy = uis.glconfig.vidHeight / 720.0f;
+	*s = ( sx < sy ) ? sx : sy;
+	*offX = ( uis.glconfig.vidWidth - 1280.0f * *s ) * 0.5f;
+	*offY = ( uis.glconfig.vidHeight - 720.0f * *s ) * 0.5f;
+}
+
+float UI_DScale( void ) {
+	float s, ox, oy;
+
+	UI_DFit( &s, &ox, &oy );
+	return ( uis.scale > 0.0f ) ? s / uis.scale : 0.5f;
+}
+
+void UI_DToV( float *x, float *y, float *w, float *h ) {
+	float s, ox, oy;
+
+	UI_DFit( &s, &ox, &oy );
+	if ( uis.scale <= 0.0f ) {
+		return;
+	}
+	*x = ( ox + *x * s - uis.bias ) / uis.scale;
+	*y = ( oy + *y * s ) / uis.scale;
+	*w = *w * s / uis.scale;
+	*h = *h * s / uis.scale;
+}
+
+/*
+=================
+UI_DItem
+
+places a bitmap item on the design canvas: the design rect is kept in
+x, y, width and height for its ownerdraw, the hit box in virtual units
+=================
+*/
+void UI_DItem( menubitmap_s *b, int x, int y, int w, int h ) {
+	float vx, vy, vw, vh;
+
+	b->generic.x = x;
+	b->generic.y = y;
+	b->width = w;
+	b->height = h;
+	vx = x; vy = y; vw = w; vh = h;
+	UI_DToV( &vx, &vy, &vw, &vh );
+	b->generic.left = vx;
+	b->generic.top = vy;
+	b->generic.right = vx + vw;
+	b->generic.bottom = vy + vh;
+}
+
+void UI_DPicST( float x, float y, float w, float h, float s0, float t0, float s1, float t1, qhandle_t shader ) {
+	UI_DToV( &x, &y, &w, &h );
+	UI_AdjustFrom640( &x, &y, &w, &h );
+	trap_R_DrawStretchPic( x, y, w, h, s0, t0, s1, t1, shader );
+}
+
+void UI_DPic( float x, float y, float w, float h, qhandle_t shader ) {
+	UI_DPicST( x, y, w, h, 0, 0, 1, 1, shader );
+}
+
+void UI_DFill( float x, float y, float w, float h, const float *color ) {
+	trap_R_SetColor( color );
+	UI_DPic( x, y, w, h, uis.whiteShader );
+	trap_R_SetColor( NULL );
+}
+
+void UI_DFrame( float x, float y, float w, float h, const float *color ) {
+	UI_DFill( x, y, w, 1.5f, color );
+	UI_DFill( x, y + h - 1.5f, w, 1.5f, color );
+	UI_DFill( x, y, 1.5f, h, color );
+	UI_DFill( x + w - 1.5f, y, 1.5f, h, color );
+}
+
+void UI_DGlass( float x, float y, float w, float h ) {
+	float	c, cs, ct;
+	float	xs[4], ys[4], ss[4], ts[4];
+	int		i, j;
+
+	c = 24.0f;
+	cs = 40.0f / 587.0f;
+	ct = 40.0f / 496.0f;
+	xs[0] = x; xs[1] = x + c; xs[2] = x + w - c; xs[3] = x + w;
+	ys[0] = y; ys[1] = y + c; ys[2] = y + h - c; ys[3] = y + h;
+	ss[0] = 0; ss[1] = cs; ss[2] = 1.0f - cs; ss[3] = 1.0f;
+	ts[0] = 0; ts[1] = ct; ts[2] = 1.0f - ct; ts[3] = 1.0f;
+	trap_R_SetColor( NULL );
+	for ( j = 0; j < 3; j++ ) {
+		for ( i = 0; i < 3; i++ ) {
+			UI_DPicST( xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], ss[i], ts[j], ss[i + 1], ts[j + 1], uis.glassPanel );
+		}
+	}
+}
+
+/*
+=================
+Text on the design canvas
+
+UI_DText: condensed console font (font0), size = line height
+UI_DProp: the title font (font1), size = cell height
+=================
+*/
+float UI_DTextWidth( const char *str, float size ) {
+	return UI_DrawStrlen( str ) * size * 0.40f;
+}
+
+void UI_DText( float x, float y, const char *str, float size, int style, vec4_t color ) {
+	float k;
+
+	if ( !str ) {
+		return;
+	}
+	k = UI_DScale();
+	switch ( style & UI_FORMATMASK ) {
+	case UI_CENTER:
+		x -= UI_DTextWidth( str, size ) * 0.5f;
+		break;
+	case UI_RIGHT:
+		x -= UI_DTextWidth( str, size );
+		break;
+	default:
+		break;
+	}
+	{
+		float vx, vy, vw, vh;
+		vx = x; vy = y; vw = 1; vh = 1;
+		UI_DToV( &vx, &vy, &vw, &vh );
+		UI_DrawStringSized( vx, vy, str, ( style & ~UI_FORMATMASK ), color, size * 0.58f * k, size * k );
+	}
+}
+
+float UI_DPropWidth( const char *str, float size ) {
+	return UI_ProportionalStringWidth( str ) * size / (float)PROP_HEIGHT;
+}
+
+void UI_DProp( float x, float y, const char *str, float size, int style, vec4_t color ) {
+	float vx, vy, vw, vh;
+
+	switch ( style & UI_FORMATMASK ) {
+	case UI_CENTER:
+		x -= UI_DPropWidth( str, size ) * 0.5f;
+		break;
+	case UI_RIGHT:
+		x -= UI_DPropWidth( str, size );
+		break;
+	default:
+		break;
+	}
+	vx = x; vy = y; vw = 1; vh = 1;
+	UI_DToV( &vx, &vy, &vw, &vh );
+	UI_DrawPropScaled( vx, vy, str, style & ~UI_FORMATMASK, color, size / (float)PROP_HEIGHT * UI_DScale() );
+}
+
+/*
+=================
+Pieces of the redesign
+=================
+*/
+void UI_DLogo( float x, float y, float w ) {
+	UI_DRegister();
+	trap_R_SetColor( NULL );
+	UI_DPicST( x, y, w, w * 364.0f / 719.0f, 155.0f / 1024.0f, 194.0f / 768.0f, 874.0f / 1024.0f, 558.0f / 768.0f, d_logo );
+}
+
+// logo, divider, breadcrumb and title of a sub screen
+void UI_DHeader( const char *crumb, const char *title ) {
+	vec4_t line;
+
+	line[0] = 0.35f; line[1] = 0.51f; line[2] = 0.90f; line[3] = 0.45f;
+	UI_DLogo( 40, 22, 170 );
+	UI_DFill( 236, 34, 1.5f, 62, line );
+	UI_DText( 262, 38, crumb, 18, UI_LEFT, zeq_text3 );
+	UI_DProp( 262, 58, title, 34, UI_LEFT|UI_DROPSHADOW, zeq_white );
+}
+
+void UI_DSectionTitle( float x, float y, const char *text ) {
+	UI_DProp( x, y, text, 17, UI_LEFT, zeq_gold );
+}
+
+// a key cap and its action; returns the width used
+float UI_DKeyHint( float x, float y, const char *key, const char *label ) {
+	float	capW;
+	vec4_t	capFill;
+	vec4_t	capEdge;
+
+	capFill[0] = 0.07f; capFill[1] = 0.09f; capFill[2] = 0.26f; capFill[3] = 0.85f;
+	capEdge[0] = 0.29f; capEdge[1] = 0.39f; capEdge[2] = 0.74f; capEdge[3] = 1.0f;
+	capW = UI_DTextWidth( key, 15 ) + 16;
+	if ( capW < 30 ) {
+		capW = 30;
+	}
+	UI_DFill( x, y, capW, 26, capFill );
+	UI_DFrame( x, y, capW, 26, capEdge );
+	UI_DText( x + capW * 0.5f, y + 5, key, 15, UI_CENTER, zeq_white );
+	UI_DText( x + capW + 8, y + 3, label, 19, UI_LEFT|UI_DROPSHADOW, zeq_text2 );
+	return capW + 8 + UI_DTextWidth( label, 19 ) + 26;
+}
+
+// footer at the bottom left: pairs = key, label, key, label...
+void UI_DHints( const char **pairs, int count ) {
+	int		i;
+	float	x;
+
+	x = 60;
+	for ( i = 0; i < count; i++ ) {
+		x += UI_DKeyHint( x, 672, pairs[i * 2], pairs[i * 2 + 1] );
+	}
+}
+
+/*
+=================
+UI_DKiButton
+
+the slanted main button with an optional caption under the label; focus
+brightens it with the pulsing ki glow and shows the dragon ball on its left
+=================
+*/
+void UI_DKiButton( float x, float y, float w, float h, const char *label, const char *caption, float focus, qboolean disabled, qboolean marker ) {
+	vec4_t	color;
+	float	labelY;
+
+	trap_R_SetColor( NULL );
+	UI_DPic( x, y, w, h, uis.kiButton );
+	if ( focus > 0.0f && !disabled ) {
+		color[0] = zeq_ki[0]; color[1] = zeq_ki[1]; color[2] = zeq_ki[2];
+		color[3] = focus * ( 0.75f + 0.25f * sin( uis.realtime / 220.0f ) );
+		trap_R_SetColor( color );
+		UI_DPic( x, y, w, h, uis.kiButtonGlow );
+		UI_DPic( x, y, w, h, uis.kiButtonGlow );
+		trap_R_SetColor( NULL );
+		if ( marker ) {
+			UI_DPic( x - 40, y + h * 0.5f - 16 + 1.5f * sin( uis.realtime / 300.0f ), 26, 31, uis.dragonBall );
+		}
+	}
+	labelY = caption ? y + h * 0.5f - 21 : y + h * 0.5f - h * 0.24f;
+	UI_DProp( x + 26, labelY, label, caption ? 24 : h * 0.44f, UI_LEFT|UI_DROPSHADOW|( focus > 0.0f && !disabled ? UI_PULSE : 0 ),
+		disabled ? zeq_text3 : ( focus > 0.0f ? zeq_white : zeq_text2 ) );
+	if ( caption ) {
+		UI_DText( x + 26, y + h * 0.5f + 5, caption, 17, UI_LEFT, focus > 0.0f ? zeq_text2 : zeq_text3 );
+	}
+}
+
+// gold call to action (FIGHT!, CONFIRM, APPLY...)
+void UI_DCta( float x, float y, float w, float h, const char *label, float focus ) {
+	vec4_t dark;
+	vec4_t glow;
+
+	UI_DRegister();
+	trap_R_SetColor( NULL );
+	UI_DPic( x, y, w, h, d_cta );
+	if ( focus > 0.0f ) {
+		glow[0] = 1.0f; glow[1] = 0.85f; glow[2] = 0.45f;
+		glow[3] = focus * ( 0.45f + 0.25f * sin( uis.realtime / 200.0f ) );
+		trap_R_SetColor( glow );
+		UI_DPic( x, y, w, h, d_ctaGlow );
+		trap_R_SetColor( NULL );
+	}
+	dark[0] = 0.11f; dark[1] = 0.06f; dark[2] = 0.01f; dark[3] = 1.0f;
+	UI_DProp( x + w * 0.46f, y + h * 0.5f - h * 0.26f, label, h * 0.52f, UI_CENTER, dark );
+}
+
+// tab of a tab strip, active = the shown page
+void UI_DTab( float x, float y, float w, float h, const char *label, qboolean active, float focus ) {
+	vec4_t color;
+
+	UI_DRegister();
+	trap_R_SetColor( NULL );
+	UI_DPic( x, y, w, h, d_tab );
+	if ( active || focus > 0.0f ) {
+		color[0] = zeq_ki[0]; color[1] = zeq_ki[1]; color[2] = zeq_ki[2];
+		color[3] = active ? 0.8f : 0.5f * focus;
+		if ( focus > 0.0f ) {
+			color[3] += 0.2f * sin( uis.realtime / 220.0f );
+		}
+		trap_R_SetColor( color );
+		UI_DPic( x, y, w, h, d_tabGlow );
+		trap_R_SetColor( NULL );
+	}
+	UI_DProp( x + w * 0.46f, y + h * 0.5f - 8, label, 16, UI_CENTER|UI_DROPSHADOW, ( active || focus > 0.0f ) ? zeq_white : zeq_text3 );
+}
+
+// two chevron boxes around a value
+void UI_DSelector( float x, float y, float w, const char *value, float focus ) {
+	vec4_t box;
+	vec4_t edge;
+
+	box[0] = 0.02f; box[1] = 0.03f; box[2] = 0.12f; box[3] = 0.7f;
+	edge[0] = 0.24f; edge[1] = 0.33f; edge[2] = 0.66f; edge[3] = 1.0f;
+	UI_DFill( x, y, 22, 22, box );
+	UI_DFrame( x, y, 22, 22, edge );
+	UI_DText( x + 11, y + 2, "<", 17, UI_CENTER, focus > 0.0f ? zeq_white : zeq_text2 );
+	UI_DFill( x + w - 22, y, 22, 22, box );
+	UI_DFrame( x + w - 22, y, 22, 22, edge );
+	UI_DText( x + w - 11, y + 2, ">", 17, UI_CENTER, focus > 0.0f ? zeq_white : zeq_text2 );
+	UI_DText( x + w * 0.5f, y + 1, value, 19, UI_CENTER, zeq_white );
+}
+
+void UI_DToggle( float x, float y, qboolean on ) {
+	UI_DRegister();
+	trap_R_SetColor( NULL );
+	UI_DPic( x, y, 22, 22, on ? d_switchOn : d_switchOff );
+	UI_DText( x + 30, y + 1, on ? "On" : "Off", 19, UI_LEFT, zeq_white );
+}
+
+// track with a ki fill and the slider knob of the game
+void UI_DSlider( float x, float y, float w, float frac, float focus ) {
+	vec4_t track, edge, fill, shine;
+
+	UI_DRegister();
+	if ( frac < 0 ) {
+		frac = 0;
+	}
+	if ( frac > 1 ) {
+		frac = 1;
+	}
+	track[0] = 0.02f; track[1] = 0.03f; track[2] = 0.12f; track[3] = 0.9f;
+	edge[0] = 0.24f; edge[1] = 0.33f; edge[2] = 0.66f; edge[3] = 1.0f;
+	fill[0] = 0.18f; fill[1] = 0.37f; fill[2] = 0.82f; fill[3] = 1.0f;
+	shine[0] = 0.47f; shine[1] = 0.70f; shine[2] = 1.0f; shine[3] = 1.0f;
+	UI_DFill( x, y + 7, w, 8, track );
+	UI_DFrame( x, y + 7, w, 8, edge );
+	UI_DFill( x + 1, y + 8, ( w - 2 ) * frac, 6, fill );
+	UI_DFill( x + 1, y + 8, ( w - 2 ) * frac, 2, shine );
+	trap_R_SetColor( NULL );
+	UI_DPic( x + w * frac - 7, y - 2 - focus * 1.5f, 14, 26 + focus * 3.0f, d_sliderKnob );
+}
+
+void UI_DPips( float x, float y, int filled, int total, float anim ) {
+	int		i;
+	float	lit;
+	vec4_t	off;
+	vec4_t	on;
+
+	off[0] = 0.56f; off[1] = 0.59f; off[2] = 0.74f; off[3] = 0.35f;
+	for ( i = 0; i < total; i++ ) {
+		UI_DFill( x + i * 15, y, 12, 7, off );
+		if ( i < filled ) {
+			lit = anim * total - i;
+			if ( lit > 1.0f ) {
+				lit = 1.0f;
+			}
+			if ( lit > 0.0f ) {
+				on[0] = zeq_gold[0]; on[1] = zeq_gold[1]; on[2] = zeq_gold[2]; on[3] = lit;
+				UI_DFill( x + i * 15, y, 12, 7, on );
+			}
+		}
+	}
+}
+
+void UI_DStatBar( float x, float y, float w, const char *label, float value, float anim ) {
+	vec4_t	track, fill, shine;
+	float	tx, tw;
+
+	track[0] = 0.02f; track[1] = 0.03f; track[2] = 0.12f; track[3] = 0.9f;
+	fill[0] = 0.18f; fill[1] = 0.37f; fill[2] = 0.82f; fill[3] = 1.0f;
+	shine[0] = 0.47f; shine[1] = 0.70f; shine[2] = 1.0f; shine[3] = 1.0f;
+	tx = x + 100;
+	tw = w - 100 - 40;
+	UI_DText( x, y - 4, label, 16, UI_LEFT, zeq_text2 );
+	UI_DFill( tx, y, tw, 7, track );
+	if ( value * anim > 0.0f ) {
+		UI_DFill( tx, y, tw * value * anim, 7, fill );
+		UI_DFill( tx, y, tw * value * anim, 2, shine );
+	}
+	UI_DText( x + w, y - 4, va( "%i", (int)( value * 100.0f + 0.5f ) ), 16, UI_RIGHT, zeq_white );
+}
+
+void UI_DPortrait( float x, float y, float size, qhandle_t shader, qboolean selected, float focus ) {
+	vec4_t ring;
+	vec4_t dim;
+	float grow;
+
+	grow = 4.0f * focus;
+	x -= grow * 0.5f;
+	y -= grow * 0.5f;
+	size += grow;
+	if ( selected ) {
+		ring[0] = zeq_gold[0]; ring[1] = zeq_gold[1]; ring[2] = zeq_gold[2];
+		ring[3] = 0.3f + 0.15f * sin( uis.realtime / 250.0f );
+		UI_DFill( x - 6, y - 6, size + 12, size + 12, ring );
+		ring[3] = 1.0f;
+		UI_DFrame( x - 4, y - 4, size + 8, size + 8, ring );
+		UI_DFrame( x - 3, y - 3, size + 6, size + 6, ring );
+	}
+	if ( selected || focus > 0.0f ) {
+		trap_R_SetColor( NULL );
+	}
+	else {
+		dim[0] = dim[1] = dim[2] = 0.82f;
+		dim[3] = 1.0f;
+		trap_R_SetColor( dim );
+	}
+	UI_DPic( x, y, size, size, shader );
+	trap_R_SetColor( NULL );
+}
+
+void UI_DFocusRow( float x, float y, float w, float h, float focus ) {
+	vec4_t fill;
+	vec4_t edge;
+
+	if ( focus <= 0.0f ) {
+		return;
+	}
+	fill[0] = zeq_ki[0]; fill[1] = zeq_ki[1]; fill[2] = zeq_ki[2]; fill[3] = 0.30f * focus;
+	UI_DFill( x, y, w * ( 0.55f + 0.45f * focus ), h, fill );
+	edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.45f * focus;
+	UI_DFrame( x, y, w, h, edge );
+}
+
+// a focus value that eases in after the cursor lands on item
+float UI_DFocus( menuframework_s *menu, void *item ) {
+	if ( Menu_ItemAtCursor( menu ) != item ) {
+		return 0.0f;
+	}
+	return UI_AnimFrac( uis.focusTime, 0, 160 );
+}
+
+void UI_DNamePlate( float x, float y, float w, float h ) {
+	UI_DRegister();
+	trap_R_SetColor( NULL );
+	UI_DPic( x, y, w, h, d_nameArea );
 }
 
 /*

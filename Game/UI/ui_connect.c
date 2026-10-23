@@ -166,36 +166,41 @@ void UI_DrawConnectScreen( qboolean overlay ) {
 
 	Menu_Cache();
 
-	if ( !overlay ) {
-		// draw the dialog background
-		UI_SetColor( color_white );
-#if 0	// JUHOX: draw background picture for connect screen
-		UI_DrawHandlePic( 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, uis.menuBackShader );
-#else
-		UI_DrawBackPic(qtrue);
-		UI_MenuScene();
-//		UI_DrawHandlePic(30, 35, 580, 36, uis.menuBackTitleShader);	// "H U N T"
-#endif
+	// while the level loads the cgame draws the whole loading screen,
+	// this overlay only stays out of its way
+	if ( overlay ) {
+		return;
 	}
+
+	// background, logo and a glass panel, like the rest of the redesign
+	UI_DrawBackPic( qtrue );
+	UI_FillRect( -( ( uis.scale > 0.0f ) ? uis.bias / uis.scale : 0.0f ), 0, 640 + 2 * ( ( uis.scale > 0.0f ) ? uis.bias / uis.scale : 0.0f ), 480, zeq_shade );
+	UI_DLogo( 40, 22, 170 );
 
 	// see what information we should display
 	trap_GetClientState( &cstate );
 
+	UI_DGlass( 440, 240, 400, 190 );
+	trap_R_SetColor( NULL );
+	UI_DPic( 620, 262 + 3.0f * sin( uis.realtime / 160.0f ), 40, 48, uis.dragonBall );
+	UI_DProp( 640, 322, "CONNECTING", 26, UI_CENTER|UI_DROPSHADOW, zeq_gold );
+	UI_DText( 640, 356, cstate.servername, 20, UI_CENTER, zeq_white );
+
 	info[0] = '\0';
-	if( trap_GetConfigString( CS_SERVERINFO, info, sizeof(info) ) ) {
-		UI_DrawProportionalString( 320, 16, va( "Loading %s", Info_ValueForKey( info, "mapname" ) ), UI_BIGFONT|UI_CENTER|UI_DROPSHADOW, color_white );
+	if( trap_GetConfigString( CS_SERVERINFO, info, sizeof(info) ) && Info_ValueForKey( info, "mapname" )[0] ) {
+		UI_DText( 640, 446, va( "Map: %s", Info_ValueForKey( info, "mapname" ) ), 18, UI_CENTER, zeq_text3 );
 	}
 
-	UI_DrawProportionalString( 320, 64, va("Connecting to %s", cstate.servername), UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW, menu_text_color );
-	//UI_DrawProportionalString( 320, 96, "Press Esc to abort", UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW, menu_text_color );
-
 	// display global MOTD at bottom
-	UI_DrawProportionalString( SCREEN_WIDTH/2, SCREEN_HEIGHT-32, 
-		Info_ValueForKey( cstate.updateInfoString, "motd" ), UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW, menu_text_color );
-	
+	UI_DText( 640, 630, Info_ValueForKey( cstate.updateInfoString, "motd" ), 18, UI_CENTER, zeq_text3 );
+
 	// print any server info (server full, bad version, etc)
 	if ( cstate.connState < CA_CONNECTED ) {
-		UI_DrawProportionalString( 320, 192, cstate.messageString, UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW, menu_text_color );
+		UI_DText( 640, 470, cstate.messageString, 18, UI_CENTER, zeq_gold );
+	}
+	{
+		static const char *hints[] = { "ESC", "Cancel" };
+		UI_DHints( hints, 1 );
 	}
 
 #if 0
@@ -253,7 +258,7 @@ void UI_DrawConnectScreen( qboolean overlay ) {
 		return;
 	}
 
-	UI_DrawProportionalString( 320, 128, s, UI_CENTER|UI_SMALLFONT|UI_DROPSHADOW, color_white );
+	UI_DText( 640, 392, s, 19, UI_CENTER, zeq_text2 );
 
 	// password required / connection rejected information goes here
 }
