@@ -1413,6 +1413,9 @@ static void ServerOptions_MapTitle( const char *map, char *out, int size ) {
 	out[n] = 0;
 }
 
+// the menu background behind the map pictures, for their rounded corners
+static vec4_t soBack = { 0.03f, 0.03f, 0.105f, 1.0f };
+
 static void ServerOptions_DrawPreview( void *self ) {
 	menubitmap_s	*b;
 	const char		*info;
@@ -1426,6 +1429,8 @@ static void ServerOptions_DrawPreview( void *self ) {
 	focus = UI_DFocus( &s_serveroptions.menu, self );
 	pop = UI_AnimFrac( soMapTime, 0, 300 );
 
+	edge[0] = 0.33f; edge[1] = 0.59f; edge[2] = 1.0f; edge[3] = 0.25f + 0.15f * focus;
+	UI_DRoundGlow( 48, 128, 640, 360, 26, edge );
 	trap_R_SetColor( NULL );
 	UI_DPic( 48, 128, 640, 360, trap_R_RegisterShaderNoMip( va( "maps/%s.jpg", s_serveroptions.mapnamebuffer ) ) );
 	for ( i = 0; i < 12; i++ ) {
@@ -1435,8 +1440,9 @@ static void ServerOptions_DrawPreview( void *self ) {
 		shade[3] = 0.08f * i;
 		UI_DFill( 48, 368 + i * 10, 640, 10, shade );
 	}
+	UI_DRoundCorners( 48, 128, 640, 360, 8, soBack );
 	edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.55f + 0.45f * focus;
-	UI_DFrame( 48, 128, 640, 360, edge );
+	UI_DRoundEdge( 48, 128, 640, 360, 8, edge );
 
 	ServerOptions_MapTitle( s_serveroptions.mapnamebuffer, title, sizeof( title ) );
 	UI_DProp( 72 + 14.0f * ( 1.0f - pop ), 420, title, 34, UI_LEFT|UI_DROPSHADOW, zeq_white );
@@ -1466,15 +1472,23 @@ static void ServerOptions_DrawThumb( void *self ) {
 	info = UI_GetArenaInfoByNumber( s_startserver.maplist[index] );
 	focus = UI_DFocus( &s_serveroptions.menu, self );
 	selected = ( index == s_startserver.currentmap );
-	if ( selected ) {
-		UI_DFrame( b->generic.x - 4, b->generic.y - 4, b->width + 8, 84 + 8, zeq_gold );
-		UI_DFrame( b->generic.x - 3, b->generic.y - 3, b->width + 6, 84 + 6, zeq_gold );
-	}
 	dim[0] = dim[1] = dim[2] = ( selected || focus > 0.0f ) ? 1.0f : 0.7f;
 	dim[3] = 1.0f;
 	trap_R_SetColor( dim );
 	UI_DPic( b->generic.x, b->generic.y, b->width, 84, trap_R_RegisterShaderNoMip( va( "maps/%s.jpg", Info_ValueForKey( info, "map" ) ) ) );
 	trap_R_SetColor( NULL );
+	UI_DRoundCorners( b->generic.x, b->generic.y, b->width, 84, 5, soBack );
+
+	// 1 px blue border, the chosen map a 3 px gold outline, the focused one ki
+	if ( selected ) {
+		UI_DRoundEdge( b->generic.x - 4, b->generic.y - 4, b->width + 8, 84 + 8, 9, zeq_gold );
+		UI_DRoundEdge( b->generic.x - 3, b->generic.y - 3, b->width + 6, 84 + 6, 8, zeq_gold );
+		UI_DRoundEdge( b->generic.x - 2.5f, b->generic.y - 2.5f, b->width + 5, 84 + 5, 7.5f, zeq_gold );
+	}
+	else {
+		dim[0] = 0.47f; dim[1] = 0.63f; dim[2] = 1.0f; dim[3] = 0.4f + 0.6f * focus;
+		UI_DRoundEdge( b->generic.x, b->generic.y, b->width, 84, 5, dim );
+	}
 	UI_DText( b->generic.x, b->generic.y + 92, Info_ValueForKey( info, "map" ), 16, UI_LEFT, ( selected || focus > 0.0f ) ? zeq_white : zeq_text2 );
 }
 
@@ -1512,7 +1526,7 @@ static void ServerOptions_DrawFighters( void *self ) {
 	if ( focus > 0.0f ) {
 		edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f;
 		edge[3] = focus * ( 0.6f + 0.3f * sin( uis.realtime / 220.0f ) );
-		UI_DFrame( 720, 448, 504, 186, edge );
+		UI_DRoundEdge( 720, 448, 504, 186, 10, edge );
 	}
 
 	count = UI_Bots_RosterCount();
@@ -1527,7 +1541,9 @@ static void ServerOptions_DrawFighters( void *self ) {
 	px = 736;
 	rise = 10.0f * ( 1.0f - UI_AnimFrac( uis.transitionTime, 80, 300 ) );
 	UI_DPortrait( px, 500 + rise, 72, UI_Bots_Portrait( model ), qfalse, 0.0f );
-	UI_DFrame( px - 3, 497 + rise, 78, 78, zeq_ki );
+	edge[0] = 0.33f; edge[1] = 0.59f; edge[2] = 1.0f; edge[3] = 1.0f;
+	UI_DRoundEdge( px - 4, 496 + rise, 80, 80, 14, edge );
+	UI_DRoundEdge( px - 3.5f, 496.5f + rise, 79, 79, 13.5f, edge );
 	UI_DProp( px + 36, 584 + rise, "YOU", 12, UI_CENTER, zeq_ki );
 
 	shown = count < 5 ? count : 5;
@@ -1545,9 +1561,14 @@ static void ServerOptions_DrawFighters( void *self ) {
 		UI_DProp( px + 10, 520, va( "+%i", count - shown ), 26, UI_LEFT, zeq_white );
 	}
 	else if ( count < UI_MAX_ROSTER && px < 1160 ) {
-		edge[0] = 0.29f; edge[1] = 0.39f; edge[2] = 0.74f; edge[3] = 0.8f;
-		UI_DFrame( px, 500, 72, 72, edge );
-		UI_DProp( px + 36, 520, "+", 30, UI_CENTER, zeq_ki );
+		// open slot: rounded box with a plus
+		edge[0] = 0.024f; edge[1] = 0.03f; edge[2] = 0.12f; edge[3] = 0.5f;
+		UI_DRoundFill( px, 500, 72, 72, 11, edge );
+		edge[0] = 0.29f; edge[1] = 0.39f; edge[2] = 0.74f; edge[3] = 0.9f;
+		UI_DRoundEdge( px, 500, 72, 72, 11, edge );
+		edge[0] = 0.56f; edge[1] = 0.71f; edge[2] = 1.0f; edge[3] = 1.0f;
+		UI_DFill( px + 35, 528, 2, 16, edge );
+		UI_DFill( px + 28, 535, 16, 2, edge );
 		UI_DText( px + 36, 588, "Add bot", 14, UI_CENTER, zeq_text3 );
 	}
 }

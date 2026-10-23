@@ -354,7 +354,7 @@ void UI_MainMenu( void ) {
 	s_main.player.generic.id				= ID_MODEL;
 	s_main.player.generic.callback			= Main_MenuEvent;
 	// the fighter stands over its name plate on every aspect ratio
-	vx = 890 + UI_DExtra(); vy = -255; vw = 480; vh = 1215;
+	vx = 825 + UI_DExtra(); vy = -185; vw = 480; vh = 1215;	// feet on the blob shadow at 1070, 629
 	UI_DToV( &vx, &vy, &vw, &vh );
 	s_main.player.generic.x					= vx;
 	s_main.player.generic.y					= vy;
