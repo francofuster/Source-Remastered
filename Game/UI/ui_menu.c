@@ -97,11 +97,12 @@ static void MainMenu_DrawPlayer( void *self ) {
 		viewangles[YAW]   = 180 - 30;
 		viewangles[PITCH] = 0;
 		viewangles[ROLL]  = 0;
-		UI_PlayerInfo_SetInfo( &s_main.playerinfo, ANIM_IDLE, ANIM_IDLE, viewangles, vec3_origin, WP_NONE, qfalse );
+		UI_PlayerInfo_SetInfo( &s_main.playerinfo, ANIM_FLY_IDLE, ANIM_FLY_IDLE, viewangles, vec3_origin, WP_NONE, qfalse );
 	}
 
+	// floating over its shadow, bobbing gently
 	b = (menubitmap_s*) self;
-	UI_DrawPlayer( b->generic.x, b->generic.y, b->width, b->height, &s_main.playerinfo, uis.realtime / PLAYER_MODEL_SPEED );
+	UI_DrawPlayer( b->generic.x, b->generic.y + 3.0f * sin( uis.realtime / 650.0f ), b->width, b->height, &s_main.playerinfo, uis.realtime / PLAYER_MODEL_SPEED );
 }
 
 /*
@@ -354,7 +355,7 @@ void UI_MainMenu( void ) {
 	s_main.player.generic.id				= ID_MODEL;
 	s_main.player.generic.callback			= Main_MenuEvent;
 	// the fighter stands over its name plate on every aspect ratio
-	vx = 825 + UI_DExtra(); vy = -185; vw = 480; vh = 1215;	// feet on the blob shadow at 1070, 629
+	vx = 825 + UI_DExtra(); vy = -240; vw = 480; vh = 1215;	// floating above the blob shadow at 1070, 629
 	UI_DToV( &vx, &vy, &vw, &vh );
 	s_main.player.generic.x					= vx;
 	s_main.player.generic.y					= vy;
