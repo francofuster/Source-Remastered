@@ -43,6 +43,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 static int			dp_realtime;
 static float		jumpHeight;
+static int			ui_loadTier;		// 0 = base form, see UI_PlayerInfo_SetModelTier
 
 
 /*
@@ -274,11 +275,11 @@ static void UI_LegsSequencing( playerInfo_t *pi ) {
 UI_PositionEntityOnTag
 ======================
 */
-static void UI_PositionEntityOnTag( refEntity_t *entity, const refEntity_t *parent, 
+static void UI_PositionEntityOnTag( refEntity_t *entity, const refEntity_t *parent,
 							clipHandle_t parentModel, char *tagName ) {
 	int				i;
 	orientation_t	lerped;
-	
+
 	// lerp the tag
 	trap_CM_LerpTag( &lerped, parentModel, parent->oldframe, parent->frame,
 		1.0 - parent->backlerp, tagName );
@@ -300,7 +301,7 @@ static void UI_PositionEntityOnTag( refEntity_t *entity, const refEntity_t *pare
 UI_PositionRotatedEntityOnTag
 ======================
 */
-static void UI_PositionRotatedEntityOnTag( refEntity_t *entity, const refEntity_t *parent, 
+static void UI_PositionRotatedEntityOnTag( refEntity_t *entity, const refEntity_t *parent,
 							clipHandle_t parentModel, char *tagName ) {
 	int				i;
 	orientation_t	lerped;
@@ -411,7 +412,7 @@ static void UI_RunLerpFrame( playerInfo_t *ci, lerpFrame_t *lf, int newAnimation
 UI_PlayerAnimation
 ===============
 */
-static void UI_PlayerAnimation( playerInfo_t *pi, 
+static void UI_PlayerAnimation( playerInfo_t *pi,
 						int *legsOld, int *legs, float *legsBackLerp,
 						int *torsoOld, int *torso, float *torsoBackLerp,
 						int *headOld, int *head, float *headBackLerp) {
@@ -625,7 +626,7 @@ static void UI_SwingAngles( float destination, float swingTolerance, float clamp
 	if ( !*swinging ) {
 		return;
 	}
-	
+
 	// modify the speed depending on the delta
 	// so it doesn't seem so linear
 	swing = AngleSubtract( destination, *angle );
@@ -727,7 +728,7 @@ static void UI_PlayerAngles( playerInfo_t *pi, vec3_t legs[3], vec3_t torso[3], 
 	// --------- yaw -------------
 
 	// allow yaw to drift a bit
-	if ( ( pi->legsAnim & ~ANIM_TOGGLEBIT ) != ANIM_IDLE 
+	if ( ( pi->legsAnim & ~ANIM_TOGGLEBIT ) != ANIM_IDLE
 		|| ( pi->torsoAnim & ~ANIM_TOGGLEBIT ) != ANIM_IDLE  ) {
 		// if not standing still, always point all in the same direction
 		pi->torso.yawing = qtrue;	// always center
@@ -835,6 +836,528 @@ float	UI_MachinegunSpinAngle( playerInfo_t *pi ) {
 }
 
 
+
+/*
+=======================================================================
+
+TRANSFORMATION AURA
+
+The convex hull aura of cg_auras.c, rebuilt for the menu preview: the
+tag_aura points of the three models are projected on the screen, their
+convex hull gets spikes along its edge and a tail points up. Lightning is
+the boltEffect sprite flickering around the fighter, as in the game.
+
+=======================================================================
+*/
+
+#define UI_AURA_MAXPOINTS		49		// 16 tags per model and the tail
+#define UI_AURA_SPIKES			50
+#define UI_AURA_FLATTEN			0.75f
+#define UI_AURA_ROOTCUT_FRAC	0.80f
+#define UI_AURA_ROOTCUT_DIST	7.00f
+#define UI_BOLT_LIFE			250
+#define UI_AURA_SIZE			0.55f	// the preview is seen up close, the spikes of the game would fill the frame
+
+typedef struct {
+	vec3_t		pos_world;
+	vec2_t		pos_screen;
+	vec3_t		normal;
+	float		length;
+} uiAuraTag_t;
+
+static uiAuraTag_t	auraHull[UI_AURA_MAXPOINTS];
+static int			auraHullCount;
+static float		auraCircumference;
+static vec3_t		auraOrigin;
+static vec3_t		auraRoot;
+static vec3_t		auraTail;
+static float		auraTanX;
+static float		auraTanY;
+
+/*
+===============
+UI_ParseAura
+
+the aura keys of tierDefault.cfg and tier.cfg
+===============
+*/
+static void UI_ParseAura( uiAura_t *aura, qboolean *exists, qboolean *always, const char *filename ) {
+	static char		text[8192];
+	fileHandle_t	f;
+	int				len;
+	int				i;
+	char			*p;
+	char			*token;
+
+	len = trap_FS_FOpenFile( filename, &f, FS_READ );
+	if ( len <= 0 ) {
+		return;
+	}
+	if ( len >= (int)sizeof( text ) ) {
+		len = sizeof( text ) - 1;
+	}
+	trap_FS_Read( text, len, f );
+	text[len] = 0;
+	trap_FS_FCloseFile( f );
+
+	p = text;
+	while ( 1 ) {
+		token = COM_Parse( &p );
+		if ( !token[0] ) {
+			break;
+		}
+		if ( !Q_stricmp( token, "auraExists" ) ) {
+			*exists = ( strlen( COM_Parse( &p ) ) == 4 );
+		}
+		else if ( !Q_stricmp( token, "auraAlways" ) ) {
+			*always = ( strlen( COM_Parse( &p ) ) == 4 );
+		}
+		else if ( !Q_stricmp( token, "showLightning" ) ) {
+			aura->lightning = ( strlen( COM_Parse( &p ) ) == 4 );
+		}
+		else if ( !Q_stricmp( token, "auraColor" ) ) {
+			for ( i = 0; i < 3; i++ ) {
+				aura->color[i] = atof( COM_Parse( &p ) );
+			}
+		}
+		else if ( !Q_stricmp( token, "auraLightColor" ) ) {
+			for ( i = 0; i < 3; i++ ) {
+				aura->lightColor[i] = atof( COM_Parse( &p ) );
+			}
+		}
+		else if ( !Q_stricmp( token, "auraScale" ) ) {
+			aura->scale = atof( COM_Parse( &p ) );
+		}
+		else if ( !Q_stricmp( token, "auraLength" ) ) {
+			aura->length = atof( COM_Parse( &p ) );
+		}
+		else if ( !Q_stricmp( token, "auraTagCount" ) ) {
+			for ( i = 0; i < 3; i++ ) {
+				aura->numTags[i] = atoi( COM_Parse( &p ) );
+				if ( aura->numTags[i] > 16 ) {
+					aura->numTags[i] = 16;
+				}
+			}
+		}
+		else if ( !Q_stricmp( token, "auraShader" ) ) {
+			aura->shader = trap_R_RegisterShaderNoMip( COM_Parse( &p ) );
+		}
+		else if ( !Q_stricmp( token, "lightningShader" ) ) {
+			aura->lightningShader = trap_R_RegisterShaderNoMip( COM_Parse( &p ) );
+		}
+	}
+}
+
+/*
+===============
+UI_LoadAura
+
+transformations show their aura (always on in the preview), the base form
+only when its tier.cfg says auraAlways
+===============
+*/
+static void UI_LoadAura( uiAura_t *aura, const char *modelName, int tier ) {
+	qboolean	exists;
+	qboolean	always;
+
+	memset( aura, 0, sizeof( *aura ) );
+	exists = qtrue;
+	always = qfalse;
+	aura->scale = 1.5f;
+	aura->length = 32.0f;
+	UI_ParseAura( aura, &exists, &always, "players/tierDefault.cfg" );
+	UI_ParseAura( aura, &exists, &always, va( "players/%s/tier%i/tier.cfg", modelName, tier + 1 ) );
+	aura->show = exists && aura->shader && ( always || tier > 0 );
+	if ( aura->lightning && !aura->lightningShader ) {
+		aura->lightningShader = trap_R_RegisterShaderNoMip( "boltEffect" );
+	}
+	aura->startTime = uis.realtime;
+}
+
+// same projection as CG_WorldCoordToScreenCoordVec, for a view at the origin looking down +x
+static qboolean UI_Aura_Project( const vec3_t p, vec2_t out ) {
+	if ( p[0] < 0.01f ) {
+		return qfalse;
+	}
+	out[0] = 320.0f - 320.0f / p[0] / auraTanX * p[1];
+	out[1] = 240.0f - 240.0f / p[0] / auraTanY * p[2];
+	return qtrue;
+}
+
+static void UI_Aura_AddTags( const refEntity_t *ent, qhandle_t model, int count ) {
+	orientation_t	lerped;
+	char			tagName[16];
+	uiAuraTag_t		*t;
+	int				i;
+	int				j;
+
+	for ( i = 0; i < count && auraHullCount < UI_AURA_MAXPOINTS - 1; i++ ) {
+		Com_sprintf( tagName, sizeof( tagName ), "tag_aura%i", i );
+		// the UI syscall always returns 0; a missing tag comes back at the origin
+		trap_CM_LerpTag( &lerped, model, ent->oldframe, ent->frame, 1.0f - ent->backlerp, tagName );
+		if ( !lerped.origin[0] && !lerped.origin[1] && !lerped.origin[2] ) {
+			continue;
+		}
+		t = &auraHull[auraHullCount];
+		VectorCopy( ent->origin, t->pos_world );
+		for ( j = 0; j < 3; j++ ) {
+			VectorMA( t->pos_world, lerped.origin[j], ent->axis[j], t->pos_world );
+		}
+		if ( UI_Aura_Project( t->pos_world, t->pos_screen ) ) {
+			auraHullCount++;
+		}
+	}
+}
+
+// the hull point furthest down the tail axis is where the aura opens up
+static void UI_Aura_MarkRoot( void ) {
+	vec3_t	prj;
+	vec3_t	tailDir;
+	float	maxDist;
+	float	dist;
+	int		i;
+
+	maxDist = 0;
+	VectorCopy( auraOrigin, auraRoot );
+	for ( i = 0; i < auraHullCount; i++ ) {
+		ProjectPointOnLine( auraHull[i].pos_world, auraOrigin, auraTail, prj );
+		dist = Distance( prj, auraTail );
+		if ( dist > maxDist ) {
+			maxDist = dist;
+			VectorCopy( prj, auraRoot );
+		}
+	}
+	VectorSubtract( auraTail, auraOrigin, tailDir );
+	VectorNormalize( tailDir );
+	VectorMA( auraRoot, -4.8f, tailDir, auraRoot );
+}
+
+static void UI_Aura_SortAngle( uiAuraTag_t *points, float *angles, int lowbound, int highbound ) {
+	int			low, high;
+	float		mid;
+	uiAuraTag_t	tempPoint;
+	float		tempAngle;
+
+	low = lowbound;
+	high = highbound;
+	mid = angles[( low + high ) / 2];
+	do {
+		while ( angles[low] < mid ) low++;
+		while ( angles[high] > mid ) high--;
+		if ( low <= high ) {
+			tempPoint = points[low];
+			points[low] = points[high];
+			points[high] = tempPoint;
+			tempAngle = angles[low];
+			angles[low] = angles[high];
+			angles[high] = tempAngle;
+			low++;
+			high--;
+		}
+	} while ( !( low > high ) );
+	if ( high > lowbound ) UI_Aura_SortAngle( points, angles, lowbound, high );
+	if ( low < highbound ) UI_Aura_SortAngle( points, angles, low, highbound );
+}
+
+// Graham scan on the screen positions, as CG_Aura_ArrangeConvexHull
+static qboolean UI_Aura_ArrangeHull( uiAuraTag_t *points, int *nr_points ) {
+	static float		angles[UI_AURA_MAXPOINTS];
+	static uiAuraTag_t	buffer[UI_AURA_MAXPOINTS];
+	int					amount, index, pivotIndex;
+	uiAuraTag_t			pivot, behind, infront;
+	qboolean			rightTurn;
+	float				dx, dy;
+
+	amount = *nr_points;
+	if ( amount == 3 ) {
+		return qtrue;
+	}
+	if ( amount < 3 ) {
+		return qfalse;
+	}
+
+	pivotIndex = 0;
+	for ( index = 1; index < amount; index++ ) {
+		if ( points[index].pos_screen[1] < points[pivotIndex].pos_screen[1] ) {
+			pivotIndex = index;
+		}
+		else if ( points[index].pos_screen[1] == points[pivotIndex].pos_screen[1] &&
+			points[index].pos_screen[0] > points[pivotIndex].pos_screen[0] ) {
+			pivotIndex = index;
+		}
+	}
+	pivot = points[pivotIndex];
+	points[pivotIndex] = points[amount - 1];
+	amount--;
+
+	for ( index = 0; index < amount; index++ ) {
+		dx = pivot.pos_screen[0] - points[index].pos_screen[0];
+		dy = pivot.pos_screen[1] - points[index].pos_screen[1];
+		angles[index] = ( dx || dy ) ? dx / Q_hypot( dx, dy ) : 0.0f;
+	}
+	UI_Aura_SortAngle( points, angles, 0, amount - 1 );
+
+	index = 1;
+	do {
+		if ( index == 0 ) {
+			rightTurn = qtrue;
+		}
+		else {
+			behind = points[index - 1];
+			infront = ( index == amount - 1 ) ? pivot : points[index + 1];
+			rightTurn = ( ( behind.pos_screen[0] - points[index].pos_screen[0] ) * ( infront.pos_screen[1] - points[index].pos_screen[1] ) -
+				( infront.pos_screen[0] - points[index].pos_screen[0] ) * ( behind.pos_screen[1] - points[index].pos_screen[1] ) ) < 0;
+		}
+		if ( rightTurn ) {
+			index++;
+		}
+		else {
+			if ( index == amount - 1 ) {
+				amount--;
+			}
+			else {
+				memcpy( buffer, &points[index + 1], sizeof( uiAuraTag_t ) * ( amount - index - 1 ) );
+				memcpy( &points[index], buffer, sizeof( uiAuraTag_t ) * ( amount - index - 1 ) );
+				amount--;
+			}
+			index--;
+		}
+	} while ( index < amount - 1 );
+
+	points[amount] = pivot;
+	amount++;
+	*nr_points = amount;
+	return qtrue;
+}
+
+// segment lengths and outward normals, the view is at the origin
+static void UI_Aura_SetHullAttributes( void ) {
+	int		index, behind, infront;
+	vec3_t	lineBehind, lineInfront, viewLine;
+	vec3_t	tempBehind, tempInfront;
+
+	auraCircumference = 0.0f;
+	for ( index = 0; index < auraHullCount; index++ ) {
+		behind = ( index == 0 ) ? auraHullCount - 1 : index - 1;
+		infront = ( index == auraHullCount - 1 ) ? 0 : index + 1;
+
+		VectorCopy( auraHull[index].pos_world, viewLine );
+		VectorSubtract( auraHull[index].pos_world, auraHull[behind].pos_world, lineBehind );
+		VectorSubtract( auraHull[infront].pos_world, auraHull[index].pos_world, lineInfront );
+		VectorNormalize( lineBehind );
+		auraCircumference += ( auraHull[index].length = VectorNormalize( lineInfront ) );
+
+		CrossProduct( lineBehind, viewLine, tempBehind );
+		CrossProduct( lineInfront, viewLine, tempInfront );
+		VectorNormalize( tempBehind );
+		VectorNormalize( tempInfront );
+		VectorAdd( tempBehind, tempInfront, auraHull[index].normal );
+		VectorNormalize( auraHull[index].normal );
+	}
+}
+
+static void UI_Aura_DrawSpike( vec3_t start, vec3_t end, float width, qhandle_t shader, vec4_t rgba ) {
+	vec3_t		line, offset;
+	polyVert_t	verts[4];
+	int			i, j;
+
+	VectorSubtract( end, start, line );
+	CrossProduct( start, line, offset );
+	if ( !VectorNormalize( offset ) ) {
+		return;
+	}
+	VectorMA( end, -width, offset, verts[0].xyz );
+	verts[0].st[0] = 1; verts[0].st[1] = 0;
+	VectorMA( end, width, offset, verts[1].xyz );
+	verts[1].st[0] = 0; verts[1].st[1] = 0;
+	VectorMA( start, width, offset, verts[2].xyz );
+	verts[2].st[0] = 0; verts[2].st[1] = 1;
+	VectorMA( start, -width, offset, verts[3].xyz );
+	verts[3].st[0] = 1; verts[3].st[1] = 1;
+	for ( i = 0; i < 4; i++ ) {
+		for ( j = 0; j < 4; j++ ) {
+			verts[i].modulate[j] = 255 * rgba[j];
+		}
+	}
+	trap_R_AddPolyToScene( shader, 4, verts );
+}
+
+static void UI_Aura_Spike( uiAura_t *aura, int spikeNr, float alphaModulate ) {
+	int		start, end;
+	float	progress, lengthPos, lengthSoFar;
+	vec3_t	lerpPos, lerpNormal, lerpDir, endPos, basePos;
+	vec3_t	edge, tailDir, tempVec, viewLine;
+	float	lerpTime, lerpModulate, lerpBorder, baseBorder, lerpSize;
+	vec4_t	color;
+
+	if ( !( spikeNr % 3 ) ) {
+		lerpTime = ( uis.realtime % 400 ) / 400.0f;
+		lerpSize = 14.0f * ( 1 + lerpTime );
+		lerpBorder = 2.5f * ( 1.75f + lerpTime );
+		baseBorder = 2.5f * 1.75f;
+	}
+	else if ( !( spikeNr % 2 ) ) {
+		lerpTime = ( ( uis.realtime + 200 ) % 400 ) / 400.0f;
+		lerpSize = 12.0f * ( 1 + lerpTime );
+		lerpBorder = 3.0f * ( 1.75f + lerpTime );
+		baseBorder = 3.0f * 1.75f;
+	}
+	else {
+		lerpTime = ( uis.realtime % 500 ) / 500.0f;
+		lerpSize = 10.0f * ( 1 + lerpTime );
+		lerpBorder = 2.75f * ( 1.75f + lerpTime );
+		baseBorder = 2.75f * 1.75f;
+	}
+	lerpModulate = -4 * lerpTime * lerpTime + 4 * lerpTime;
+	lerpSize *= UI_AURA_SIZE;
+	lerpBorder *= UI_AURA_SIZE;
+	baseBorder *= UI_AURA_SIZE;
+	color[0] = aura->color[0];
+	color[1] = aura->color[1];
+	color[2] = aura->color[2];
+	color[3] = lerpModulate * alphaModulate;
+
+	// position along the hull
+	lengthPos = auraCircumference * ( (float)spikeNr / (float)( UI_AURA_SPIKES - 1 ) );
+	lengthSoFar = 0;
+	for ( start = 0; start < auraHullCount - 1 && lengthSoFar + auraHull[start].length < lengthPos; start++ ) {
+		lengthSoFar += auraHull[start].length;
+	}
+	end = ( start + 1 == auraHullCount ) ? 0 : start + 1;
+	progress = auraHull[start].length > 0.0f ? ( lengthPos - lengthSoFar ) / auraHull[start].length : 0.0f;
+
+	VectorClear( lerpNormal );
+	VectorMA( lerpNormal, 1.0f - progress, auraHull[start].normal, lerpNormal );
+	VectorMA( lerpNormal, progress, auraHull[end].normal, lerpNormal );
+	VectorNormalize( lerpNormal );
+
+	VectorSubtract( auraHull[end].pos_world, auraHull[start].pos_world, edge );
+	VectorMA( auraHull[start].pos_world, progress, edge, lerpPos );
+	VectorMA( lerpPos, baseBorder, lerpNormal, basePos );
+	VectorMA( lerpPos, lerpBorder, lerpNormal, lerpPos );
+
+	// flatten the direction so it does not point at the tip too much
+	VectorSubtract( lerpPos, auraRoot, lerpDir );
+	VectorSubtract( auraTail, auraOrigin, tailDir );
+	VectorPllComponent( lerpDir, tailDir, edge );
+	VectorScale( edge, UI_AURA_FLATTEN, edge );
+	VectorSubtract( lerpDir, edge, lerpDir );
+	VectorNormalize( lerpDir );
+
+	// skip spikes running into the screen near the root
+	VectorCopy( lerpPos, viewLine );
+	VectorNormalize( viewLine );
+	CrossProduct( viewLine, lerpDir, tempVec );
+	if ( VectorLength( tempVec ) < UI_AURA_ROOTCUT_FRAC && Distance( basePos, auraRoot ) < UI_AURA_ROOTCUT_DIST ) {
+		return;
+	}
+
+	VectorMA( lerpPos, lerpBorder, lerpDir, lerpPos );
+	VectorMA( lerpPos, lerpSize, lerpDir, endPos );
+	UI_Aura_DrawSpike( lerpPos, endPos, lerpSize / 1.25f, aura->shader, color );
+}
+
+/*
+===============
+UI_AddAura
+===============
+*/
+static void UI_AddAura( playerInfo_t *pi, const refdef_t *refdef, const refEntity_t *legs, const refEntity_t *torso, const refEntity_t *head ) {
+	uiAura_t	*aura;
+	float		fade;
+	int			i;
+
+	aura = &pi->aura;
+	if ( !aura->show ) {
+		return;
+	}
+	fade = ( uis.realtime - aura->startTime ) / 400.0f;
+	if ( fade > 1.0f ) {
+		fade = 1.0f;
+	}
+	if ( fade <= 0.0f ) {
+		return;
+	}
+
+	auraTanX = tan( refdef->fov_x / 360.0f * M_PI );
+	auraTanY = tan( refdef->fov_y / 360.0f * M_PI );
+	VectorCopy( legs->origin, auraOrigin );
+	VectorCopy( auraOrigin, auraTail );
+	auraTail[2] += aura->scale * aura->length;
+
+	auraHullCount = 0;
+	UI_Aura_AddTags( head, pi->headModel, aura->numTags[0] );
+	UI_Aura_AddTags( torso, pi->torsoModel, aura->numTags[1] );
+	UI_Aura_AddTags( legs, pi->legsModel, aura->numTags[2] );
+	VectorCopy( auraTail, auraHull[auraHullCount].pos_world );
+	if ( UI_Aura_Project( auraHull[auraHullCount].pos_world, auraHull[auraHullCount].pos_screen ) ) {
+		auraHullCount++;
+	}
+	UI_Aura_MarkRoot();
+	if ( !UI_Aura_ArrangeHull( auraHull, &auraHullCount ) ) {
+		return;
+	}
+	UI_Aura_SetHullAttributes();
+	if ( auraCircumference <= 0.0f ) {
+		return;
+	}
+	for ( i = 0; i < UI_AURA_SPIKES; i++ ) {
+		UI_Aura_Spike( aura, i, fade );
+	}
+
+}
+
+/*
+===============
+UI_AddLightning
+
+short bolt sprites around the fighter, spawned every few hundred ms and
+fading out like the LE_FADE_ALPHA ones of CG_LightningEffect
+===============
+*/
+static void UI_AddLightning( playerInfo_t *pi, const vec3_t origin ) {
+	uiAura_t	*aura;
+	refEntity_t	ent;
+	int			i;
+	int			slot;
+	int			age;
+
+	aura = &pi->aura;
+	if ( !aura->lightning || !aura->lightningShader ) {
+		return;
+	}
+
+	if ( uis.realtime >= aura->nextBolt ) {
+		slot = 0;
+		for ( i = 1; i < UI_AURA_BOLTS; i++ ) {
+			if ( aura->boltTime[i] < aura->boltTime[slot] ) {
+				slot = i;
+			}
+		}
+		aura->boltTime[slot] = uis.realtime;
+		aura->boltOffset[slot][0] = ( random() * 24 + 8 ) - ( random() * 24 + 8 );
+		aura->boltOffset[slot][1] = ( random() * 24 + 8 ) - ( random() * 24 + 8 );
+		aura->boltOffset[slot][2] = ( random() * 32 + 16 ) - random() * 40;
+		aura->nextBolt = uis.realtime + 120 + random() * 380;
+	}
+
+	for ( i = 0; i < UI_AURA_BOLTS; i++ ) {
+		age = uis.realtime - aura->boltTime[i];
+		if ( !aura->boltTime[i] || age >= UI_BOLT_LIFE ) {
+			continue;
+		}
+		memset( &ent, 0, sizeof( ent ) );
+		ent.reType = RT_SPRITE;
+		ent.customShader = aura->lightningShader;
+		ent.radius = 16;
+		ent.shaderRGBA[0] = ent.shaderRGBA[1] = ent.shaderRGBA[2] = 255;
+		ent.shaderRGBA[3] = 255 * ( 1.0f - (float)age / UI_BOLT_LIFE );
+		VectorAdd( origin, aura->boltOffset[i], ent.origin );
+		AxisClear( ent.axis );
+		trap_R_AddRefEntityToScene( &ent );
+	}
+}
+
 /*
 ===============
 UI_DrawPlayer
@@ -897,7 +1420,7 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	refdef.fov_y *= ( 360 / M_PI );
 
 	// calculate distance so the player nearly fills the box
-	len = 0.6 * ( maxs[2] - mins[2] );		
+	len = 0.6 * ( maxs[2] - mins[2] );
 	origin[0] = len / tan( DEG2RAD(refdef.fov_x) * 0.5 );
 	origin[1] = 0.5 * ( mins[1] + maxs[1] );
 	origin[2] = -0.5 * ( mins[2] + maxs[2] );
@@ -908,7 +1431,7 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 
 	// get the rotation information
 	UI_PlayerAngles( pi, legs.axis, torso.axis, head.axis );
-	
+
 	// get the animation state (after rotation, to allow feet shuffle)
 	UI_PlayerAnimation( pi, &legs.oldframe, &legs.frame, &legs.backlerp,
 		 &torso.oldframe, &torso.frame, &torso.backlerp,
@@ -968,6 +1491,10 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	head.renderfx = renderfx;
 
 	trap_R_AddRefEntityToScene( &head );
+
+	// transformation preview
+	UI_AddAura( pi, &refdef, &legs, &torso, &head );
+	UI_AddLightning( pi, legs.origin );
 /*
 	//
 	// add the gun
@@ -1036,10 +1563,13 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	//
 	// add an accent light
 	//
+	// not on a transformation: its lightingDynamic cel stages would saturate to white
 	origin[0] -= 0;//100;	// + = behind, - = in front
 	origin[1] += 100;	// + = left, - = right
 	origin[2] += 0;//100;	// + = above, - = below
-	trap_R_AddLightToScene( origin, 500, 1.0, 1.0, 1.0 );
+	if ( !pi->aura.show ) {
+		trap_R_AddLightToScene( origin, 500, 1.0, 1.0, 1.0 );
+	}
 /*
 	origin[0] -= 100;
 	origin[1] -= 100;
@@ -1098,7 +1628,7 @@ void UI_DrawPlayer_zMesh( float x, float y, float w, float h, playerInfo_t *pi, 
 	refdef.fov_y *= ( 360 / M_PI );
 
 	// calculate distance so the player nearly fills the box
-	len = 0.6 * ( maxs[2] - mins[2] );		
+	len = 0.6 * ( maxs[2] - mins[2] );
 	origin[0] = len / tan( DEG2RAD(refdef.fov_x) * 0.5 );
 	origin[1] = 0.5 * ( mins[1] + maxs[1] );
 	origin[2] = -0.5 * ( mins[2] + maxs[2] );
@@ -1109,7 +1639,7 @@ void UI_DrawPlayer_zMesh( float x, float y, float w, float h, playerInfo_t *pi, 
 
 	// get the rotation information
 	UI_PlayerAngles( pi, legs.axis, torso.axis, head.axis );
-	
+
 	// get the animation state (after rotation, to allow feet shuffle)
 	UI_PlayerAnimation( pi, &legs.oldframe, &legs.frame, &legs.backlerp,
 		 &torso.oldframe, &torso.frame, &torso.backlerp,
@@ -1164,26 +1694,31 @@ void UI_DrawPlayer_zMesh( float x, float y, float w, float h, playerInfo_t *pi, 
 UI_RegisterClientSkin
 ==========================
 */
+static void UI_RegisterTierSkin( qhandle_t *skin, const char *modelName, int tier, const char *prefix, const char *skinName ) {
+	char	filename[MAX_QPATH];
+
+	Com_sprintf( filename, sizeof( filename ), "players//%s/tier%i/%s%s.skin", modelName, tier, prefix, skinName );
+	if ( trap_FS_FOpenFile( filename, 0, FS_READ ) > 0 ) {
+		*skin = trap_R_RegisterSkin( filename );
+	}
+}
+
 static qboolean UI_RegisterClientSkin( playerInfo_t *pi, const char *modelName, const char *skinName ) {
 	char		filename[MAX_QPATH];
-	char headPrefix[8],upperPrefix[8],lowerPrefix[8];
-	strcpy(headPrefix,"head_");
-	strcpy(lowerPrefix,"lower_");
-	strcpy(upperPrefix,"upper_");
-	Com_sprintf(filename,sizeof(filename),"players//%s/tier1/%s.skin",modelName,skinName);
-	if(trap_FS_FOpenFile(filename,0,FS_READ)>0){
-		strcpy(headPrefix,"");
-		strcpy(lowerPrefix,"");
-		strcpy(upperPrefix,"");
+	int			tier;
+
+	// like cg_tiers.c: a transformation keeps the skins of the tier below where it has none
+	pi->legsSkin = pi->torsoSkin = pi->headSkin = 0;
+	for ( tier = 1; tier <= ui_loadTier + 1; tier++ ) {
+		Com_sprintf( filename, sizeof( filename ), "players//%s/tier%i/%s.skin", modelName, tier, skinName );
+		if ( trap_FS_FOpenFile( filename, 0, FS_READ ) > 0 ) {
+			pi->legsSkin = pi->torsoSkin = pi->headSkin = trap_R_RegisterSkin( filename );
+			continue;
+		}
+		UI_RegisterTierSkin( &pi->legsSkin, modelName, tier, "lower_", skinName );
+		UI_RegisterTierSkin( &pi->torsoSkin, modelName, tier, "upper_", skinName );
+		UI_RegisterTierSkin( &pi->headSkin, modelName, tier, "head_", skinName );
 	}
-	Com_sprintf( filename, sizeof( filename ), "players//%s/tier1/%s%s.skin", modelName, lowerPrefix,skinName );
-	pi->legsSkin = trap_R_RegisterSkin( filename );
-
-	Com_sprintf( filename, sizeof( filename ), "players//%s/tier1/%s%s.skin", modelName, upperPrefix,skinName );
-	pi->torsoSkin = trap_R_RegisterSkin( filename );
-
-	Com_sprintf( filename, sizeof( filename ), "players//%s/tier1/%s%s.skin", modelName, headPrefix,skinName );
-	pi->headSkin = trap_R_RegisterSkin( filename );
 
 	if ( !pi->legsSkin || !pi->torsoSkin || !pi->headSkin ) {
 		return qfalse;
@@ -1349,6 +1884,22 @@ static qboolean UI_ParseAnimationFile( const char *filename, animation_t *animat
 UI_RegisterClientModelname
 ==========================
 */
+// the md3 of the tier being loaded, or of the closest tier below that has one
+static qhandle_t UI_RegisterTierModel( const char *modelName, const char *file ) {
+	char		filename[MAX_QPATH];
+	qhandle_t	model;
+	int			tier;
+
+	model = 0;
+	for ( tier = 1; tier <= ui_loadTier + 1; tier++ ) {
+		Com_sprintf( filename, sizeof( filename ), "players//%s/tier%i/%s", modelName, tier, file );
+		if ( trap_FS_FOpenFile( filename, 0, FS_READ ) > 0 ) {
+			model = trap_R_RegisterModel( filename );
+		}
+	}
+	return model;
+}
+
 qboolean UI_RegisterClientModelname( playerInfo_t *pi, const char *modelSkinName ) {
 	char		modelName[MAX_QPATH];
 	char		skinName[MAX_QPATH];
@@ -1375,29 +1926,26 @@ qboolean UI_RegisterClientModelname( playerInfo_t *pi, const char *modelSkinName
 	}
 
 	// load cmodels before models so filecache works
-	
+
 	Com_sprintf( filename, sizeof( filename ), "players//%s/tier1/body.zMesh", modelName );
 	pi->legsModel = trap_R_RegisterModel( filename );
 	if ( !pi->legsModel ) {
 		//Com_Printf( "Failed to load model file %s, trying players//%s/tier1/body.zMesh\n", filename, modelName );
-	
 
-		Com_sprintf( filename, sizeof( filename ), "players//%s/tier1/lower.md3", modelName );
-		pi->legsModel = trap_R_RegisterModel( filename );
+
+		pi->legsModel = UI_RegisterTierModel( modelName, "lower.md3" );
 		if ( !pi->legsModel ) {
 			//Com_Printf( "Failed to load model file %s\n", filename );
 			return qfalse;
 		}
 
-		Com_sprintf( filename, sizeof( filename ), "players//%s/tier1/upper.md3", modelName );
-		pi->torsoModel = trap_R_RegisterModel( filename );
+		pi->torsoModel = UI_RegisterTierModel( modelName, "upper.md3" );
 		if ( !pi->torsoModel ) {
 			//Com_Printf( "Failed to load model file %s\n", filename );
 			return qfalse;
 		}
 
-		Com_sprintf( filename, sizeof( filename ), "players//%s/tier1/head.md3", modelName );
-		pi->headModel = trap_R_RegisterModel( filename );
+		pi->headModel = UI_RegisterTierModel( modelName, "head.md3" );
 		if ( !pi->headModel ) {
 			//Com_Printf( "Failed to load model file %s\n", filename );
 			return qfalse;
@@ -1438,6 +1986,31 @@ void UI_PlayerInfo_SetModel( playerInfo_t *pi, const char *model ) {
 	pi->chat = qfalse;
 	pi->newModel = qtrue;
 	UI_PlayerInfo_SetWeapon( pi, pi->weapon );
+}
+
+
+/*
+===============
+UI_PlayerInfo_SetModelTier
+
+a transformation of the fighter (tier 0 = base form) with its aura and
+lightning, for the Fighter preview
+===============
+*/
+void UI_PlayerInfo_SetModelTier( playerInfo_t *pi, const char *model, int tier ) {
+	char	modelName[MAX_QPATH];
+	char	*slash;
+
+	ui_loadTier = tier;
+	UI_PlayerInfo_SetModel( pi, model );
+	ui_loadTier = 0;
+
+	Q_strncpyz( modelName, model, sizeof( modelName ) );
+	slash = strchr( modelName, '/' );
+	if ( slash ) {
+		*slash = 0;
+	}
+	UI_LoadAura( &pi->aura, modelName, tier );
 }
 
 

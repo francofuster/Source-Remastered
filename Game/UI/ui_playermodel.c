@@ -46,6 +46,7 @@ transformations their tier<N>/icon.png and tier.cfg.
 #define ID_PREVPAGE			40
 #define ID_NEXTPAGE			41
 #define ID_CONFIRM			42
+#define ID_TIER0			50		// + tier
 
 typedef struct {
 	char		model[MAX_QPATH];
@@ -58,6 +59,7 @@ typedef struct
 	menuframework_s	menu;
 	menubitmap_s	fighters[FIGHTERS_PER_PAGE];
 	menubitmap_s	skins[MAX_SKINS];
+	menubitmap_s	tiers[MAX_TIERS];
 	menubitmap_s	prevPage;
 	menubitmap_s	nextPage;
 	menufield_s		name;
@@ -75,6 +77,8 @@ typedef struct
 
 	char			tierNames[MAX_TIERS][32];
 	int				numTiers;
+	int				tier;			// transformation shown, 0 = base form
+	int				tierTime;
 } playermodel_t;
 
 static playermodel_t s_playermodel;
@@ -148,15 +152,13 @@ static void PlayerModel_LoadTiers( void ) {
 PlayerModel_UpdateModel
 =================
 */
-static void PlayerModel_UpdateModel( void )
+static void PlayerModel_LoadModel( void )
 {
 	vec3_t	viewangles;
 	vec3_t	moveangles;
 	char	modelskin[MAX_QPATH];
+	int		i;
 
-	if ( !s_playermodel.numDefs ) {
-		return;
-	}
 	memset( &s_playermodel.playerinfo, 0, sizeof(playerInfo_t) );
 
 	viewangles[YAW]   = 180 - 30;
@@ -166,11 +168,41 @@ static void PlayerModel_UpdateModel( void )
 
 	PlayerModel_ModelSkin( modelskin, sizeof( modelskin ) );
 	if( trap_MemoryRemaining() > LOW_MEMORY ) {
-		UI_PlayerInfo_SetModel( &s_playermodel.playerinfo, modelskin );
+		UI_PlayerInfo_SetModelTier( &s_playermodel.playerinfo, modelskin, s_playermodel.tier );
 		UI_PlayerInfo_SetInfo( &s_playermodel.playerinfo, ANIM_IDLE, ANIM_IDLE, viewangles, moveangles, WP_NONE, qfalse );
 	}
+
+	for ( i = 0; i < MAX_TIERS; i++ ) {
+		if ( i < s_playermodel.numTiers ) {
+			s_playermodel.tiers[i].generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+		}
+		else {
+			s_playermodel.tiers[i].generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		}
+	}
+	s_playermodel.tierTime = uis.realtime;
+}
+
+static void PlayerModel_UpdateModel( void )
+{
+	if ( !s_playermodel.numDefs ) {
+		return;
+	}
 	PlayerModel_LoadTiers();
+	if ( s_playermodel.tier >= s_playermodel.numTiers ) {
+		s_playermodel.tier = 0;
+	}
+	PlayerModel_LoadModel();
 	s_playermodel.selectTime = uis.realtime;
+}
+
+// shows a transformation in the preview, the selection is not saved
+static void PlayerModel_SetTier( int tier ) {
+	if ( tier < 0 || tier >= s_playermodel.numTiers || tier == s_playermodel.tier ) {
+		return;
+	}
+	s_playermodel.tier = tier;
+	PlayerModel_LoadModel();
 }
 
 /*
@@ -239,6 +271,7 @@ static void PlayerModel_Select( int def ) {
 	if ( def != s_playermodel.selected ) {
 		s_playermodel.selected = def;
 		s_playermodel.skin = 0;
+		s_playermodel.tier = 0;
 		PlayerModel_UpdateModel();
 	}
 	PlayerModel_Refresh();
@@ -264,6 +297,10 @@ static void PlayerModel_MenuEvent( void* ptr, int event )
 	if ( id >= ID_SKIN0 && id < ID_SKIN0 + MAX_SKINS ) {
 		s_playermodel.skin = id - ID_SKIN0;
 		PlayerModel_UpdateModel();
+		return;
+	}
+	if ( id >= ID_TIER0 && id < ID_TIER0 + MAX_TIERS ) {
+		PlayerModel_SetTier( id - ID_TIER0 );
 		return;
 	}
 
@@ -333,6 +370,15 @@ static sfxHandle_t PlayerModel_MenuKey( int key )
 			PlayerModel_UpdateModel();
 			return menu_move_sound;
 		}
+		if ( m && m->id >= ID_TIER0 && m->id < ID_TIER0 + MAX_TIERS ) {
+			slot = m->id - ID_TIER0 + ( ( key == K_LEFTARROW || key == K_KP_LEFTARROW ) ? -1 : 1 );
+			if ( slot < 0 || slot >= s_playermodel.numTiers ) {
+				return menu_buzz_sound;
+			}
+			Menu_SetCursorToItem( &s_playermodel.menu, &s_playermodel.tiers[slot] );
+			PlayerModel_SetTier( slot );
+			return menu_move_sound;
+		}
 		break;
 
 	case K_MOUSE2:
@@ -383,6 +429,25 @@ static void PlayerModel_DrawSkin( void *self ) {
 	UI_DPortrait( b->generic.x, b->generic.y, 64, trap_R_RegisterShaderNoMip( va( "players/%s/icon_%s.png", def->model, def->skins[skin] ) ),
 		skin == s_playermodel.skin, UI_DFocus( &s_playermodel.menu, self ) );
 	UI_DText( b->generic.x + 32, b->generic.y + 72, def->skins[skin], 15, UI_CENTER, skin == s_playermodel.skin ? zeq_white : zeq_text2 );
+}
+
+static void PlayerModel_DrawTier( void *self ) {
+	menubitmap_s	*b;
+	int				tier;
+	float			focus;
+	fighterDef_t	*def;
+
+	b = (menubitmap_s *)self;
+	tier = b->generic.id - ID_TIER0;
+	if ( tier >= s_playermodel.numTiers ) {
+		return;
+	}
+	def = &s_playermodel.defs[s_playermodel.selected];
+	focus = UI_DFocus( &s_playermodel.menu, self );
+	UI_DPortrait( b->generic.x, b->generic.y + 8.0f * ( 1.0f - UI_AnimFrac( s_playermodel.selectTime, tier * 60, 260 ) ), 58,
+		trap_R_RegisterShaderNoMip( va( "players/%s/tier%i/icon.png", def->model, tier + 1 ) ), tier == s_playermodel.tier, focus );
+	UI_DText( b->generic.x + 29, b->generic.y + 66, s_playermodel.tierNames[tier], 15, UI_CENTER,
+		( tier == s_playermodel.tier || focus > 0.0f ) ? zeq_white : zeq_text2 );
 }
 
 static void PlayerModel_DrawPage( void *self ) {
@@ -477,21 +542,11 @@ static void PlayerModel_MenuDraw( void ) {
 	Q_strupr( title );
 	UI_DProp( 928, 136, "SELECTED", 14, UI_LEFT, zeq_text3 );
 	UI_DProp( 928 + 16.0f * ( 1.0f - pop ), 158, title, 46, UI_LEFT|UI_DROPSHADOW, zeq_white );
-	UI_DText( 928, 214, va( "%s skin  -  %i power tier%s", def->skins[s_playermodel.skin], s_playermodel.numTiers,
-		s_playermodel.numTiers == 1 ? "" : "s" ), 19, UI_LEFT, zeq_text2 );
+	pop = UI_AnimFrac( s_playermodel.tierTime, 0, 240 );
+	UI_DText( 928 + 10.0f * ( 1.0f - pop ), 214, va( "%s skin  -  %s", def->skins[s_playermodel.skin], s_playermodel.tierNames[s_playermodel.tier] ),
+		19, UI_LEFT, zeq_text2 );
 
 	UI_DSectionTitle( 928, 262, "TRANSFORMATIONS" );
-	for ( i = 0; i < s_playermodel.numTiers; i++ ) {
-		x = 928 + ( i % 3 ) * 104;
-		y = 296 + ( i / 3 ) * 96;
-		trap_R_SetColor( NULL );
-		UI_DPortrait( x, y + 8.0f * ( 1.0f - UI_AnimFrac( s_playermodel.selectTime, i * 60, 260 ) ), 58,
-			trap_R_RegisterShaderNoMip( va( "players/%s/tier%i/icon.png", def->model, i + 1 ) ), qfalse, 0.0f );
-		if ( i == 0 ) {
-			UI_DFrame( x - 3, y - 3, 64, 64, zeq_ki );
-		}
-		UI_DText( x + 29, y + 64, s_playermodel.tierNames[i], 15, UI_CENTER, zeq_text2 );
-	}
 	if ( s_playermodel.numTiers > 1 ) {
 		y = 296 + ( ( s_playermodel.numTiers + 2 ) / 3 ) * 96 + 6;
 		x = 928 + UI_DKeyHint( 928, y, "F", "+" ) - 26;
@@ -669,6 +724,10 @@ static void PlayerModel_MenuInit( void )
 	s_playermodel.player.generic.right			= vx + vw;
 	s_playermodel.player.generic.bottom			= vy + vh;
 
+	for ( i = 0; i < MAX_TIERS; i++ ) {
+		PlayerModel_DItem( &s_playermodel.tiers[i], ID_TIER0 + i, PlayerModel_DrawTier,
+			928 + ( i % 3 ) * 104, 296 + ( i / 3 ) * 96, 64, 84 );
+	}
 	PlayerModel_DItem( &s_playermodel.confirm, ID_CONFIRM, PlayerModel_DrawConfirm, 1060 + UI_DExtra(), 652, 172, 48 );
 
 	for ( i = 0; i < FIGHTERS_PER_PAGE; i++ ) {
@@ -680,6 +739,9 @@ static void PlayerModel_MenuInit( void )
 	}
 	Menu_AddItem( &s_playermodel.menu, &s_playermodel.name );
 	Menu_AddItem( &s_playermodel.menu, &s_playermodel.player );
+	for ( i = 0; i < MAX_TIERS; i++ ) {
+		Menu_AddItem( &s_playermodel.menu, &s_playermodel.tiers[i] );
+	}
 	Menu_AddItem( &s_playermodel.menu, &s_playermodel.confirm );
 
 	PlayerModel_SetMenuItems();

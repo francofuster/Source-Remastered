@@ -284,6 +284,37 @@ void UI_DrawGlassPanel( float x, float y, float w, float h ) {
 	}
 }
 
+// button art: texture size and the end caps that must keep their shape
+#define KI_ART		199, 54, 10, 29
+#define TAB_ART		163, 54, 8, 8
+#define CTA_ART		400, 108, 12, 42
+
+/*
+=================
+UI_PicSliced
+
+button art in three slices: the end caps keep the proportions of the art
+(scaled by the height) and only the middle stretches, so the slanted edge
+keeps its angle at any width or aspect ratio
+=================
+*/
+static void UI_PicSliced( float x, float y, float w, float h, qhandle_t shader, float texW, float texH, float capL, float capR ) {
+	float	lw, rw;
+
+	lw = capL * h / texH;
+	rw = capR * h / texH;
+	if ( lw + rw >= w ) {
+		UI_DrawHandlePic( x, y, w, h, shader );
+		return;
+	}
+	UI_AdjustFrom640( &x, &y, &w, &h );
+	lw = capL * h / texH;
+	rw = capR * h / texH;
+	trap_R_DrawStretchPic( x, y, lw, h, 0, 0, capL / texW, 1, shader );
+	trap_R_DrawStretchPic( x + lw, y, w - lw - rw, h, capL / texW, 0, 1.0f - capR / texW, 1, shader );
+	trap_R_DrawStretchPic( x + w - rw, y, rw, h, 1.0f - capR / texW, 0, 1, 1, shader );
+}
+
 /*
 =================
 UI_DrawKiBar
@@ -295,15 +326,15 @@ void UI_DrawKiBar( float x, float y, float w, float h, qboolean focus, float foc
 	vec4_t color;
 
 	trap_R_SetColor( NULL );
-	UI_DrawHandlePic( x, y, w, h, uis.kiButton );
+	UI_PicSliced( x, y, w, h, uis.kiButton, KI_ART );
 	if ( focus ) {
 		color[0] = zeq_ki[0];
 		color[1] = zeq_ki[1];
 		color[2] = zeq_ki[2];
 		color[3] = focusFrac * ( 0.75f + 0.25f * sin( uis.realtime / 220.0f ) );
 		trap_R_SetColor( color );
-		UI_DrawHandlePic( x, y, w, h, uis.kiButtonGlow );
-		UI_DrawHandlePic( x, y, w, h, uis.kiButtonGlow );
+		UI_PicSliced( x, y, w, h, uis.kiButtonGlow, KI_ART );
+		UI_PicSliced( x, y, w, h, uis.kiButtonGlow, KI_ART );
 		trap_R_SetColor( NULL );
 	}
 }
@@ -636,6 +667,21 @@ void UI_DPic( float x, float y, float w, float h, qhandle_t shader ) {
 	UI_DPicST( x, y, w, h, 0, 0, 1, 1, shader );
 }
 
+// UI_PicSliced on the design canvas
+void UI_DPicSliced( float x, float y, float w, float h, qhandle_t shader, float texW, float texH, float capL, float capR ) {
+	float	lw, rw;
+
+	lw = capL * h / texH;
+	rw = capR * h / texH;
+	if ( lw + rw >= w ) {
+		UI_DPic( x, y, w, h, shader );
+		return;
+	}
+	UI_DPicST( x, y, lw, h, 0, 0, capL / texW, 1, shader );
+	UI_DPicST( x + lw, y, w - lw - rw, h, capL / texW, 0, 1.0f - capR / texW, 1, shader );
+	UI_DPicST( x + w - rw, y, rw, h, 1.0f - capR / texW, 0, 1, 1, shader );
+}
+
 void UI_DFill( float x, float y, float w, float h, const float *color ) {
 	trap_R_SetColor( color );
 	UI_DPic( x, y, w, h, uis.whiteShader );
@@ -800,13 +846,13 @@ void UI_DKiButton( float x, float y, float w, float h, const char *label, const 
 	float	labelY;
 
 	trap_R_SetColor( NULL );
-	UI_DPic( x, y, w, h, uis.kiButton );
+	UI_DPicSliced( x, y, w, h, uis.kiButton, KI_ART );
 	if ( focus > 0.0f && !disabled ) {
 		color[0] = zeq_ki[0]; color[1] = zeq_ki[1]; color[2] = zeq_ki[2];
 		color[3] = focus * ( 0.75f + 0.25f * sin( uis.realtime / 220.0f ) );
 		trap_R_SetColor( color );
-		UI_DPic( x, y, w, h, uis.kiButtonGlow );
-		UI_DPic( x, y, w, h, uis.kiButtonGlow );
+		UI_DPicSliced( x, y, w, h, uis.kiButtonGlow, KI_ART );
+		UI_DPicSliced( x, y, w, h, uis.kiButtonGlow, KI_ART );
 		trap_R_SetColor( NULL );
 		if ( marker ) {
 			UI_DPic( x - 40, y + h * 0.5f - 16 + 1.5f * sin( uis.realtime / 300.0f ), 26, 31, uis.dragonBall );
@@ -827,12 +873,12 @@ void UI_DCta( float x, float y, float w, float h, const char *label, float focus
 
 	UI_DRegister();
 	trap_R_SetColor( NULL );
-	UI_DPic( x, y, w, h, d_cta );
+	UI_DPicSliced( x, y, w, h, d_cta, CTA_ART );
 	if ( focus > 0.0f ) {
 		glow[0] = 1.0f; glow[1] = 0.85f; glow[2] = 0.45f;
 		glow[3] = focus * ( 0.45f + 0.25f * sin( uis.realtime / 200.0f ) );
 		trap_R_SetColor( glow );
-		UI_DPic( x, y, w, h, d_ctaGlow );
+		UI_DPicSliced( x, y, w, h, d_ctaGlow, CTA_ART );
 		trap_R_SetColor( NULL );
 	}
 	dark[0] = 0.11f; dark[1] = 0.06f; dark[2] = 0.01f; dark[3] = 1.0f;
@@ -845,7 +891,7 @@ void UI_DTab( float x, float y, float w, float h, const char *label, qboolean ac
 
 	UI_DRegister();
 	trap_R_SetColor( NULL );
-	UI_DPic( x, y, w, h, d_tab );
+	UI_DPicSliced( x, y, w, h, d_tab, TAB_ART );
 	if ( active || focus > 0.0f ) {
 		color[0] = zeq_ki[0]; color[1] = zeq_ki[1]; color[2] = zeq_ki[2];
 		color[3] = active ? 0.8f : 0.5f * focus;
@@ -853,7 +899,7 @@ void UI_DTab( float x, float y, float w, float h, const char *label, qboolean ac
 			color[3] += 0.2f * sin( uis.realtime / 220.0f );
 		}
 		trap_R_SetColor( color );
-		UI_DPic( x, y, w, h, d_tabGlow );
+		UI_DPicSliced( x, y, w, h, d_tabGlow, TAB_ART );
 		trap_R_SetColor( NULL );
 	}
 	UI_DProp( x + w * 0.46f, y + h * 0.5f - 8, label, 16, UI_CENTER|UI_DROPSHADOW, ( active || focus > 0.0f ) ? zeq_white : zeq_text3 );

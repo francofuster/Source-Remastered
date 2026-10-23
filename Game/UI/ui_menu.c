@@ -138,8 +138,6 @@ player name on the right
 static void MainMenu_DrawName( void *self ) {
 	menufield_s		*f;
 	qboolean		focus;
-	char			model[MAX_QPATH];
-	char			*slash;
 	char			*txt;
 	char			clean[64];
 	float			x, y;
@@ -157,26 +155,17 @@ static void MainMenu_DrawName( void *self ) {
 		UI_DFrame( 934 + e, 640, 304, 44, edge );
 	}
 
-	trap_Cvar_VariableStringBuffer( "model", model, sizeof( model ) );
-	slash = strchr( model, '/' );
-	if ( slash ) {
-		*slash = 0;
-	}
-	Q_strupr( model );
-	UI_DProp( 954 + e, 646, model, 13, UI_LEFT, zeq_gold );
-	UI_DText( 954 + e, 662, focus ? "Type your name" : "Your fighter", 15, UI_LEFT, zeq_text2 );
-
-	// the name, colors shown unless it is being edited
+	// only the name, centered; colors shown unless it is being edited
 	txt = f->field.buffer;
 	Q_strncpyz( clean, txt, sizeof( clean ) );
 	if ( focus ) {
 		Q_CleanStr( clean );
 	}
-	x = 1222 + e;
+	x = 1086 + e;
 	y = 648;
-	UI_DText( x, y, focus ? clean : txt, 26, UI_RIGHT|UI_DROPSHADOW, zeq_white );
+	UI_DText( x, y, focus ? clean : txt, 26, UI_CENTER|UI_DROPSHADOW, zeq_white );
 	if ( focus && ( ( uis.realtime / 400 ) & 1 ) ) {
-		UI_DFill( x + 3, y + 2, 2, 24, zeq_white );
+		UI_DFill( x + UI_DTextWidth( clean, 26 ) * 0.5f + 3, y + 2, 2, 24, zeq_white );
 	}
 }
 

@@ -305,6 +305,7 @@ extern void			UI_DToV( float *x, float *y, float *w, float *h );
 extern void			UI_DItem( menubitmap_s *b, int x, int y, int w, int h );
 extern void			UI_DPicST( float x, float y, float w, float h, float s0, float t0, float s1, float t1, qhandle_t shader );
 extern void			UI_DPic( float x, float y, float w, float h, qhandle_t shader );
+extern void			UI_DPicSliced( float x, float y, float w, float h, qhandle_t shader, float texW, float texH, float capL, float capR );
 extern void			UI_DFill( float x, float y, float w, float h, const float *color );
 extern void			UI_DFrame( float x, float y, float w, float h, const float *color );
 extern void			UI_DGlass( float x, float y, float w, float h );
@@ -577,6 +578,25 @@ typedef struct {
 	int			animationTime;		// time when the first frame of the animation will be exact
 } lerpFrame_t;
 
+#define UI_AURA_BOLTS		4
+
+// aura and lightning of a transformation, for the menu preview
+typedef struct {
+	qboolean	show;			// aura around the fighter
+	qboolean	lightning;		// lightning bolts (showLightning in tier.cfg)
+	vec3_t		color;
+	vec3_t		lightColor;
+	float		scale;
+	float		length;
+	int			numTags[3];		// tag_aura count on head, torso, legs
+	qhandle_t	shader;
+	qhandle_t	lightningShader;
+	int			startTime;
+	int			nextBolt;
+	int			boltTime[UI_AURA_BOLTS];
+	vec3_t		boltOffset[UI_AURA_BOLTS];
+} uiAura_t;
+
 typedef struct {
 	// model info
 	qboolean		fixedlegs;		// true if legs yaw is always the same as torso yaw
@@ -632,11 +652,14 @@ typedef struct {
 	int				barrelTime;
 
 	int				realWeapon;
+
+	uiAura_t		aura;
 } playerInfo_t;
 
 void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int time );
 void UI_DrawPlayer_zMesh( float x, float y, float w, float h, playerInfo_t *pi, int time );
 void UI_PlayerInfo_SetModel( playerInfo_t *pi, const char *model );
+void UI_PlayerInfo_SetModelTier( playerInfo_t *pi, const char *model, int tier );
 void UI_PlayerInfo_SetInfo( playerInfo_t *pi, int legsAnim, int torsoAnim, vec3_t viewAngles, vec3_t moveAngles, weapon_t weaponNum, qboolean chat );
 qboolean UI_RegisterClientModelname( playerInfo_t *pi, const char *modelSkinName );
 
