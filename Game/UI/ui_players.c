@@ -952,8 +952,8 @@ static void UI_ParseAura( uiAura_t *aura, qboolean *exists, qboolean *always, co
 ===============
 UI_LoadAura
 
-transformations show their aura (always on in the preview), the base form
-only when its tier.cfg says auraAlways
+only tiers with a constant aura (auraAlways, like Kaioken) show it, the
+others power up in the game
 ===============
 */
 static void UI_LoadAura( uiAura_t *aura, const char *modelName, int tier ) {
@@ -967,7 +967,7 @@ static void UI_LoadAura( uiAura_t *aura, const char *modelName, int tier ) {
 	aura->length = 32.0f;
 	UI_ParseAura( aura, &exists, &always, "players/tierDefault.cfg" );
 	UI_ParseAura( aura, &exists, &always, va( "players/%s/tier%i/tier.cfg", modelName, tier + 1 ) );
-	aura->show = exists && aura->shader && ( always || tier > 0 );
+	aura->show = exists && aura->shader && always;
 	if ( aura->lightning && !aura->lightningShader ) {
 		aura->lightningShader = trap_R_RegisterShaderNoMip( "boltEffect" );
 	}
@@ -1563,11 +1563,18 @@ void UI_DrawPlayer( float x, float y, float w, float h, playerInfo_t *pi, int ti
 	//
 	// add an accent light
 	//
-	// not on a transformation: its lightingDynamic cel stages would saturate to white
+	// the cel shading takes its direction from this light. With an aura it
+	// is the aura that lights the fighter, in its color and softer: the
+	// lightingDynamic stages of those skins add the light color and a white
+	// 500 light would wash them out
 	origin[0] -= 0;//100;	// + = behind, - = in front
 	origin[1] += 100;	// + = left, - = right
 	origin[2] += 0;//100;	// + = above, - = below
-	if ( !pi->aura.show ) {
+	if ( pi->aura.show ) {
+		trap_R_AddLightToScene( origin, 230 + 12 * sin( uis.realtime / 90.0f ),
+			pi->aura.lightColor[0], pi->aura.lightColor[1], pi->aura.lightColor[2] );
+	}
+	else {
 		trap_R_AddLightToScene( origin, 500, 1.0, 1.0, 1.0 );
 	}
 /*
