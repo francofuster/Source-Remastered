@@ -972,6 +972,309 @@ void UI_DNamePlate( float x, float y, float w, float h ) {
 }
 
 /*
+=======================================================================
+
+OPTION ROWS
+
+Options screens keep their menu items (spin controls, sliders, radio
+buttons, fields, actions) and only hand them to these rows: the row
+takes the hit box, draws label and value on the design canvas, and the
+help panel shows the text of the focused row.
+
+=======================================================================
+*/
+
+#define DOPT_MAX_ROWS		48
+#define DOPT_MAX_SECTIONS	8
+#define DOPT_TAB_W			172
+#define DOPT_TAB_H			44
+
+typedef struct {
+	void		*item;
+	const char	*label;
+	const char	*help;
+	qboolean	restart;
+	float		y;
+	void		(*value)( void *item, char *buf, int size );
+} dOptRow_t;
+
+typedef struct {
+	const char	*title;
+	float		y;
+} dOptSection_t;
+
+static dOptRow_t		dOptRows[DOPT_MAX_ROWS];
+static int				dOptNumRows;
+static dOptSection_t	dOptSections[DOPT_MAX_SECTIONS];
+static int				dOptNumSections;
+static float			dOptX, dOptY, dOptW, dOptRowH, dOptCursor;
+static menuframework_s	*dOptMenu;
+
+// wraps text into lines of at most w design pixels, returns the line count
+int UI_DTextWrapped( float x, float y, float w, const char *text, float size, vec4_t color ) {
+	char		line[256];
+	char		word[96];
+	const char	*p;
+	int			n;
+	int			lines;
+
+	line[0] = 0;
+	lines = 0;
+	p = text;
+	while ( *p ) {
+		while ( *p == ' ' ) {
+			p++;
+		}
+		n = 0;
+		while ( *p && *p != ' ' && n < (int)sizeof( word ) - 1 ) {
+			word[n++] = *p++;
+		}
+		word[n] = 0;
+		if ( !n ) {
+			break;
+		}
+		if ( line[0] && UI_DTextWidth( va( "%s %s", line, word ), size ) > w ) {
+			UI_DText( x, y + lines * size * 1.3f, line, size, UI_LEFT, color );
+			lines++;
+			Q_strncpyz( line, word, sizeof( line ) );
+		}
+		else {
+			Q_strcat( line, sizeof( line ), line[0] ? va( " %s", word ) : word );
+		}
+	}
+	if ( line[0] ) {
+		UI_DText( x, y + lines * size * 1.3f, line, size, UI_LEFT, color );
+		lines++;
+	}
+	return lines;
+}
+
+void UI_DOptionsBegin( menuframework_s *menu, float x, float y, float w, float rowH ) {
+	dOptMenu = menu;
+	dOptX = x;
+	dOptY = y;
+	dOptW = w;
+	dOptRowH = rowH;
+	dOptCursor = y;
+	dOptNumRows = 0;
+	dOptNumSections = 0;
+}
+
+void UI_DOptionsSection( const char *title ) {
+	if ( dOptNumSections >= DOPT_MAX_SECTIONS ) {
+		return;
+	}
+	if ( dOptNumRows || dOptNumSections ) {
+		dOptCursor += 10;
+	}
+	dOptSections[dOptNumSections].title = title;
+	dOptSections[dOptNumSections].y = dOptCursor;
+	dOptNumSections++;
+	dOptCursor += 26;
+}
+
+void UI_DOptionsSkip( float h ) {
+	dOptCursor += h;
+}
+
+static dOptRow_t *UI_DOptRowOf( void *item ) {
+	int i;
+
+	for ( i = 0; i < dOptNumRows; i++ ) {
+		if ( dOptRows[i].item == item ) {
+			return &dOptRows[i];
+		}
+	}
+	return NULL;
+}
+
+static float UI_DOptSliderW( void ) {
+	// the slider key maps the mouse over 10 small chars, keep the same width
+	return ( 10 * SMALLCHAR_WIDTH ) / UI_DScale();
+}
+
+static void UI_DOptRowDraw( void *self ) {
+	dOptRow_t		*row;
+	menucommon_s	*item;
+	float			focus;
+	float			vx, y;
+	qboolean		grayed;
+	char			buf[64];
+	vec4_t			*labelColor;
+	menuslider_s	*s;
+	menulist_s		*l;
+
+	row = UI_DOptRowOf( self );
+	if ( !row ) {
+		return;
+	}
+	item = (menucommon_s *)self;
+	grayed = ( item->flags & QMF_GRAYED ) != 0;
+	focus = grayed ? 0.0f : UI_DFocus( dOptMenu, self );
+	y = row->y;
+	vx = dOptX + dOptW * 0.50f;
+
+	UI_DFocusRow( dOptX, y - 4, dOptW, dOptRowH - 2, focus );
+	labelColor = grayed ? &zeq_text3 : ( focus > 0.0f ? &zeq_gold : &zeq_text2 );
+	// labels of old menus are lower case, show them capitalized
+	Q_strncpyz( buf, row->label, sizeof( buf ) );
+	if ( buf[0] >= 'a' && buf[0] <= 'z' ) {
+		buf[0] += 'A' - 'a';
+	}
+	UI_DText( dOptX + 12, y, buf, 19, UI_LEFT, *labelColor );
+
+	if ( row->value ) {
+		row->value( self, buf, sizeof( buf ) );
+		UI_DText( vx, y, buf, 19, UI_LEFT, grayed ? zeq_text3 : zeq_white );
+		return;
+	}
+
+	switch ( item->type ) {
+	case MTYPE_SPINCONTROL:
+		l = (menulist_s *)self;
+		if ( l->itemnames && l->curvalue >= 0 && l->curvalue < l->numitems ) {
+			float sw;
+
+			sw = UI_DTextWidth( l->itemnames[l->curvalue], 19 ) + 70;
+			UI_DSelector( vx, y - 2, sw > 190 ? sw : 190, l->itemnames[l->curvalue], focus );
+		}
+		break;
+	case MTYPE_SLIDER:
+		s = (menuslider_s *)self;
+		UI_DSlider( vx, y - 2, UI_DOptSliderW(), ( s->maxvalue > s->minvalue ) ? ( s->curvalue - s->minvalue ) / ( s->maxvalue - s->minvalue ) : 0.0f, focus );
+		UI_DText( vx + UI_DOptSliderW() + 16, y, va( "%i", (int)( s->curvalue + 0.5f ) ), 19, UI_LEFT, zeq_white );
+		break;
+	case MTYPE_RADIOBUTTON:
+		UI_DToggle( vx, y - 2, ((menuradiobutton_s *)self)->curvalue != 0 );
+		break;
+	case MTYPE_FIELD:
+		UI_DText( vx, y, ((menufield_s *)self)->field.buffer, 19, UI_LEFT, zeq_white );
+		if ( focus > 0.0f && ( ( uis.realtime / 400 ) & 1 ) ) {
+			UI_DFill( vx + UI_DTextWidth( ((menufield_s *)self)->field.buffer, 19 ) + 2, y, 2, 20, zeq_white );
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void UI_DOptAdd( void *item, const char *label, const char *help, qboolean restart, void (*value)( void *, char *, int ) ) {
+	menucommon_s	*c;
+	dOptRow_t		*row;
+	float			vx, vy, vw, vh;
+
+	if ( dOptNumRows >= DOPT_MAX_ROWS ) {
+		return;
+	}
+	c = (menucommon_s *)item;
+	row = &dOptRows[dOptNumRows++];
+	row->item = item;
+	row->label = label;
+	row->help = help;
+	row->restart = restart;
+	row->value = value;
+	row->y = dOptCursor;
+	dOptCursor += dOptRowH;
+
+	// hit box over the whole row
+	vx = dOptX; vy = row->y - 4; vw = dOptW; vh = dOptRowH;
+	UI_DToV( &vx, &vy, &vw, &vh );
+	c->left = vx;
+	c->top = vy;
+	c->right = vx + vw;
+	c->bottom = vy + vh;
+	c->ownerdraw = UI_DOptRowDraw;
+	c->statusbar = 0;	// the help panel replaces the old status lines
+
+	// sliders read the mouse from their x
+	if ( c->type == MTYPE_SLIDER ) {
+		vx = dOptX + dOptW * 0.50f; vy = row->y; vw = 1; vh = 1;
+		UI_DToV( &vx, &vy, &vw, &vh );
+		c->x = vx - 2 * SMALLCHAR_WIDTH;
+	}
+}
+
+// call after Menu_AddItem so the default init does not undo the layout
+void UI_DOptionsRow( void *item, const char *label, const char *help, qboolean restart ) {
+	UI_DOptAdd( item, label, help, restart, 0 );
+}
+
+void UI_DOptionsRowValue( void *item, const char *label, const char *help, void (*value)( void *item, char *buf, int size ) ) {
+	UI_DOptAdd( item, label, help, qfalse, value );
+}
+
+void UI_DOptionsDrawSections( void ) {
+	int		i;
+	vec4_t	line;
+
+	line[0] = 0.35f; line[1] = 0.51f; line[2] = 0.90f; line[3] = 0.25f;
+	for ( i = 0; i < dOptNumSections; i++ ) {
+		UI_DProp( dOptX + 12, dOptSections[i].y, dOptSections[i].title, 14, UI_LEFT, zeq_gold );
+		UI_DFill( dOptX + 12 + UI_DPropWidth( dOptSections[i].title, 14 ) + 12, dOptSections[i].y + 7, dOptW - 36 - UI_DPropWidth( dOptSections[i].title, 14 ), 1, line );
+	}
+}
+
+// right panel: the focused option, what it does and if it needs a restart
+void UI_DOptionsDrawHelp( float x, float y, float w, float h ) {
+	dOptRow_t	*row;
+	int			lines;
+	vec4_t		warn;
+	vec4_t		warnFill;
+	float		pop;
+
+	UI_DGlass( x, y, w, h );
+	row = UI_DOptRowOf( Menu_ItemAtCursor( dOptMenu ) );
+	UI_DProp( x + 26, y + 26, "SELECTED OPTION", 13, UI_LEFT, zeq_text3 );
+	if ( !row ) {
+		UI_DTextWrapped( x + 26, y + 56, w - 52, "Pick an option on the left to read what it does.", 19, zeq_text2 );
+		return;
+	}
+	pop = UI_AnimFrac( uis.focusTime, 0, 240 );
+	UI_DProp( x + 26 + 10.0f * ( 1.0f - pop ), y + 48, row->label, 24, UI_LEFT|UI_DROPSHADOW, zeq_white );
+	lines = UI_DTextWrapped( x + 26, y + 92, w - 52, row->help ? row->help : "", 19, zeq_text2 );
+	if ( row->restart ) {
+		warn[0] = zeq_gold[0]; warn[1] = zeq_gold[1]; warn[2] = zeq_gold[2]; warn[3] = 0.55f;
+		warnFill[0] = zeq_gold[0]; warnFill[1] = zeq_gold[1]; warnFill[2] = zeq_gold[2]; warnFill[3] = 0.08f;
+		UI_DFill( x + 26, y + 110 + lines * 25, w - 52, 40, warnFill );
+		UI_DFrame( x + 26, y + 110 + lines * 25, w - 52, 40, warn );
+		UI_DText( x + 40, y + 120 + lines * 25, "Applies after a video restart", 18, UI_LEFT, zeq_gold );
+	}
+}
+
+/*
+=================
+Tabs of a screen made from text items (CONTROLS / SYSTEM / GENERAL)
+=================
+*/
+static void UI_DTabItemDraw( void *self ) {
+	menutext_s *t;
+
+	t = (menutext_s *)self;
+	UI_DTab( t->generic.x, t->generic.y, DOPT_TAB_W, DOPT_TAB_H, t->string, ( t->generic.flags & QMF_HIGHLIGHT ) != 0,
+		UI_DFocus( (menuframework_s *)t->generic.parent, self ) );
+}
+
+// call after Menu_AddItem; label replaces the text of the item
+void UI_DTabItem( menutext_s *t, int index, const char *label, qboolean active ) {
+	float vx, vy, vw, vh;
+
+	t->generic.x = 48 + index * ( DOPT_TAB_W + 6 );
+	t->generic.y = 128;
+	t->string = (char *)label;
+	t->generic.ownerdraw = UI_DTabItemDraw;
+	t->generic.flags &= ~QMF_HIGHLIGHT;
+	if ( active ) {
+		t->generic.flags |= QMF_HIGHLIGHT;
+	}
+	vx = t->generic.x; vy = t->generic.y; vw = DOPT_TAB_W; vh = DOPT_TAB_H;
+	UI_DToV( &vx, &vy, &vw, &vh );
+	t->generic.left = vx;
+	t->generic.top = vy;
+	t->generic.right = vx + vw;
+	t->generic.bottom = vy + vh;
+}
+
+/*
 =================
 UI_FadeSetColor
 

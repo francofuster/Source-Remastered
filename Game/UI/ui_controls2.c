@@ -52,7 +52,7 @@ typedef struct
 {
 	char*	name;
 	float	defaultvalue;
-	float	value;	
+	float	value;
 } configcvar_t;
 
 #define SAVE_NOOP		0
@@ -78,31 +78,31 @@ typedef struct
 
 // bindable actions
 #define ID_SHOWSCORES	0
-#define ID_USEITEM		1	
-#define ID_SPEED		2	
-#define ID_FORWARD		3	
+#define ID_USEITEM		1
+#define ID_SPEED		2
+#define ID_FORWARD		3
 #define ID_BACKPEDAL	4
 #define ID_MOVELEFT		5
 #define ID_MOVERIGHT	6
-#define ID_MOVEUP		7	
+#define ID_MOVEUP		7
 #define ID_MOVEDOWN		8
-#define ID_LEFT			9	
-#define ID_RIGHT		10	
-#define ID_STRAFE		11	
-#define ID_LOOKUP		12	
+#define ID_LEFT			9
+#define ID_RIGHT		10
+#define ID_STRAFE		11
+#define ID_LOOKUP		12
 #define ID_LOOKDOWN		13
 #define ID_MOUSELOOK	14
 #define ID_CENTERVIEW	15
 #define ID_ZOOMVIEW		16
-#define ID_WEAPON1		17	
-#define ID_WEAPON2		18	
-#define ID_WEAPON3		19	
-#define ID_WEAPON4		20	
-#define ID_WEAPON5		21	
-#define ID_WEAPON6		22	
-#define ID_WEAPON7		23	
-#define ID_WEAPON8		24	
-#define ID_WEAPON9		25	
+#define ID_WEAPON1		17
+#define ID_WEAPON2		18
+#define ID_WEAPON3		19
+#define ID_WEAPON4		20
+#define ID_WEAPON5		21
+#define ID_WEAPON6		22
+#define ID_WEAPON7		23
+#define ID_WEAPON8		24
+#define ID_WEAPON9		25
 #define ID_ATTACK		26
 #define ID_WEAPPREV		27
 #define ID_WEAPNEXT		28
@@ -256,13 +256,18 @@ typedef struct
 
 	menubitmap_s		back;
 	menutext_s			name;
-} controls_t; 	
+
+	// menu redesign: tabs to the other option pages
+	menutext_s			tabControls;
+	menutext_s			tabSystem;
+	menutext_s			tabGeneral;
+} controls_t;
 
 static controls_t s_controls;
 
 static vec4_t controls_binding_color  = {0.75f, 0.75f, 1.00f, 1.00f}; // bk: Win32 C4305
 
-static bind_t g_bindings[] = 
+static bind_t g_bindings[] =
 {
 	{"+scores",			"show scores",		ID_SHOWSCORES,	UI_ANIM_IDLE,			K_TAB,			-1,		-1, -1},
 	{"+button2",		"use item",			ID_USEITEM,		UI_ANIM_IDLE,			K_ENTER,		-1,		-1, -1},
@@ -324,16 +329,16 @@ static configcvar_t g_configcvars[] =
 
 static menucommon_s *g_movement_controls[] =
 {
-	(menucommon_s *)&s_controls.alwaysrun,     
-	(menucommon_s *)&s_controls.run,            
+	(menucommon_s *)&s_controls.alwaysrun,
+	(menucommon_s *)&s_controls.run,
 	(menucommon_s *)&s_controls.walkforward,
 	(menucommon_s *)&s_controls.backpedal,
-	(menucommon_s *)&s_controls.stepleft,      
-	(menucommon_s *)&s_controls.stepright,     
-	(menucommon_s *)&s_controls.moveup,        
-	(menucommon_s *)&s_controls.movedown,      
-	(menucommon_s *)&s_controls.turnleft,      
-	(menucommon_s *)&s_controls.turnright,     
+	(menucommon_s *)&s_controls.stepleft,
+	(menucommon_s *)&s_controls.stepright,
+	(menucommon_s *)&s_controls.moveup,
+	(menucommon_s *)&s_controls.movedown,
+	(menucommon_s *)&s_controls.turnleft,
+	(menucommon_s *)&s_controls.turnright,
 	(menucommon_s *)&s_controls.sidestep,
 	(menucommon_s *)&s_controls.jump,
 	(menucommon_s *)&s_controls.zanzoken,
@@ -378,7 +383,7 @@ static menucommon_s *g_looking_controls[] = {
 };
 
 static menucommon_s *g_misc_controls[] = {
-	(menucommon_s *)&s_controls.showscores, 
+	(menucommon_s *)&s_controls.showscores,
 	(menucommon_s *)&s_controls.chargepl,
 	(menucommon_s *)&s_controls.block,
 	(menucommon_s *)&s_controls.useitem,
@@ -487,47 +492,47 @@ static void Controls_UpdateModel( int anim ) {
 	s_controls.playerChat			 = qfalse;
 
 	switch( anim ) {
-	case UI_ANIM_DASH_LEFT:	
+	case UI_ANIM_DASH_LEFT:
 		s_controls.playerLegs = ANIM_DASH_LEFT;
 		s_controls.playerTorso = ANIM_DASH_LEFT;
 		break;
 
-	case UI_ANIM_DASH_RIGHT:	
+	case UI_ANIM_DASH_RIGHT:
 		s_controls.playerLegs = ANIM_DASH_RIGHT;
 		s_controls.playerTorso = ANIM_DASH_RIGHT;
 		break;
 
-	case UI_ANIM_DASH_FORWARD:	
+	case UI_ANIM_DASH_FORWARD:
 		s_controls.playerLegs = ANIM_DASH_FORWARD;
 		s_controls.playerTorso = ANIM_DASH_FORWARD;
 		break;
 
-	case UI_ANIM_DASH_BACKWARD:	
+	case UI_ANIM_DASH_BACKWARD:
 		s_controls.playerLegs = ANIM_DASH_BACKWARD;
 		s_controls.playerTorso = ANIM_DASH_BACKWARD;
 		break;
 
-	case UI_ANIM_RUN:	
+	case UI_ANIM_RUN:
 		s_controls.playerLegs = ANIM_RUN;
 		s_controls.playerTorso = ANIM_RUN;
 		break;
 
-	case UI_ANIM_WALK:	
+	case UI_ANIM_WALK:
 		s_controls.playerLegs = ANIM_WALK;
 		s_controls.playerTorso = ANIM_WALK;
 		break;
 
-	case UI_ANIM_BACK:	
+	case UI_ANIM_BACK:
 		s_controls.playerLegs = ANIM_RUN;
 		s_controls.playerTorso = ANIM_RUN;
 		break;
 
-	case UI_ANIM_JUMP:	
+	case UI_ANIM_JUMP:
 		s_controls.playerLegs = ANIM_JUMP_UP;
 		s_controls.playerTorso = ANIM_JUMP_UP;
 		break;
 
-	case UI_ANIM_CROUCH:	
+	case UI_ANIM_CROUCH:
 		//s_controls.playerLegs = ANIM_IDLECR;
 		break;
 
@@ -683,6 +688,135 @@ static void Controls_UpdateModel( int anim ) {
 Controls_Update
 =================
 */
+static void Controls_SetConfig( void );
+
+/*
+=================
+Menu redesign: rows of the active group on the design canvas
+=================
+*/
+static void Controls_BindValue( void *item, char *buf, int size ) {
+	menuaction_s	*a;
+	int				b1, b2;
+	char			name[32];
+	char			name2[32];
+
+	a = (menuaction_s *)item;
+	if ( s_controls.waitingforkey && Menu_ItemAtCursor( &s_controls.menu ) == item ) {
+		Q_strncpyz( buf, "Press a key...  ESC to cancel", size );
+		return;
+	}
+	b1 = g_bindings[a->generic.id].bind1;
+	if ( b1 == -1 ) {
+		Q_strncpyz( buf, "---", size );
+		return;
+	}
+	trap_Key_KeynumToStringBuf( b1, name, sizeof( name ) );
+	Q_strupr( name );
+	b2 = g_bindings[a->generic.id].bind2;
+	if ( b2 != -1 ) {
+		trap_Key_KeynumToStringBuf( b2, name2, sizeof( name2 ) );
+		Q_strupr( name2 );
+		Com_sprintf( buf, size, "%s  or  %s", name, name2 );
+	}
+	else {
+		Q_strncpyz( buf, name, size );
+	}
+}
+
+static const char *Controls_Help( menucommon_s *control ) {
+	if ( control == (menucommon_s *)&s_controls.sensitivity ) {
+		return "How fast the camera turns with the mouse.";
+	}
+	if ( control == (menucommon_s *)&s_controls.invertmouse ) {
+		return "Moving the mouse up looks down.";
+	}
+	if ( control == (menucommon_s *)&s_controls.smoothmouse ) {
+		return "Averages the mouse over two frames for smoother turns.";
+	}
+	if ( control == (menucommon_s *)&s_controls.freelook ) {
+		return "The mouse always looks around, no key needed.";
+	}
+	if ( control == (menucommon_s *)&s_controls.joyenable ) {
+		return "Use a joystick or gamepad.";
+	}
+	if ( control == (menucommon_s *)&s_controls.joythreshold ) {
+		return "How far the stick has to move before it counts.";
+	}
+	if ( control == (menucommon_s *)&s_controls.autoswitch ) {
+		return "Switch to a new skill as soon as you get it.";
+	}
+	return "Press ENTER or click to bind a new key, BACKSPACE clears the binding. Each action takes up to two keys.";
+}
+
+static void Controls_DesignLayout( void ) {
+	menucommon_s	**controls;
+	menucommon_s	*control;
+	int				j;
+
+	UI_DOptionsBegin( &s_controls.menu, 72, 256, 712, 24 );
+	controls = g_controls[s_controls.section];
+	for ( j = 0; ( control = controls[j] ); j++ ) {
+		if ( control->type == MTYPE_ACTION ) {
+			UI_DOptionsRowValue( control, g_bindings[control->id].label, Controls_Help( control ), Controls_BindValue );
+		}
+		else {
+			UI_DOptionsRow( control, control->name, Controls_Help( control ), qfalse );
+		}
+	}
+}
+
+static void Controls_DrawGroupTab( void *self ) {
+	menutext_s *t;
+
+	t = (menutext_s *)self;
+	UI_DTab( t->generic.x, t->generic.y, 146, 36, t->string, ( t->generic.flags & QMF_HIGHLIGHT ) != 0, UI_DFocus( &s_controls.menu, self ) );
+}
+
+static void Controls_GroupTab( menutext_s *t, int index ) {
+	float vx, vy, vw, vh;
+
+	t->generic.x = 72 + index * 152;
+	t->generic.y = 204;
+	t->generic.ownerdraw = Controls_DrawGroupTab;
+	vx = t->generic.x; vy = t->generic.y; vw = 146; vh = 36;
+	UI_DToV( &vx, &vy, &vw, &vh );
+	t->generic.left = vx;
+	t->generic.top = vy;
+	t->generic.right = vx + vw;
+	t->generic.bottom = vy + vh;
+}
+
+static void Controls_TabEvent( void *ptr, int event ) {
+	if ( event != QM_ACTIVATED ) {
+		return;
+	}
+	if ( ptr == &s_controls.tabSystem ) {
+		Controls_SetConfig();
+		UI_PopMenu();
+		UI_SystemSettingsMenu();
+	}
+	else if ( ptr == &s_controls.tabGeneral ) {
+		Controls_SetConfig();
+		UI_PopMenu();
+		UI_PreferencesMenu();
+	}
+}
+
+static void Controls_MenuDraw( void ) {
+	static const char *hints[] = { "ENTER", "Bind", "BACKSPACE", "Clear", "ESC", "Back" };
+
+	uis.menuamount = -1;
+	uis.hideEarth = qtrue;
+	uis.showFrame = qfalse;
+
+	UI_DHeader( "MAIN MENU  >", "OPTIONS" );
+	UI_DGlass( 48, 186, 760, 466 );
+	Menu_Draw( &s_controls.menu );
+	UI_DOptionsDrawHelp( 832, 186, 400, 466 );
+	UI_DHints( hints, 3 );
+}
+
 static void Controls_Update( void ) {
 	int		i;
 	int		j;
@@ -715,6 +849,7 @@ static void Controls_Update( void ) {
 		control->top    = y;
 		control->bottom = y + SMALLCHAR_HEIGHT;
 	}
+	Controls_DesignLayout();
 
 	if( s_controls.waitingforkey ) {
 		// disable everybody
@@ -753,16 +888,16 @@ static void Controls_Update( void ) {
 		s_controls.movement.generic.flags &= ~QMF_PULSEIFFOCUS;
 		s_controls.movement.generic.flags |= (QMF_HIGHLIGHT|QMF_HIGHLIGHT_IF_FOCUS);
 		break;
-	
+
 	case C_LOOKING:
 		s_controls.looking.generic.flags &= ~QMF_PULSEIFFOCUS;
 		s_controls.looking.generic.flags |= (QMF_HIGHLIGHT|QMF_HIGHLIGHT_IF_FOCUS);
 		break;
-	
+
 	case C_WEAPONS:
 		s_controls.weapons.generic.flags &= ~QMF_PULSEIFFOCUS;
 		s_controls.weapons.generic.flags |= (QMF_HIGHLIGHT|QMF_HIGHLIGHT_IF_FOCUS);
-		break;		
+		break;
 
 	case C_MISC:
 		s_controls.misc.generic.flags &= ~QMF_PULSEIFFOCUS;
@@ -816,7 +951,7 @@ static void Controls_DrawKeyBinding( void *self )
 
 	if (c)
 	{
-		UI_FillRect( a->generic.left, a->generic.top, a->generic.right-a->generic.left+1, a->generic.bottom-a->generic.top+1, listbar_color ); 
+		UI_FillRect( a->generic.left, a->generic.top, a->generic.right-a->generic.left+1, a->generic.bottom-a->generic.top+1, listbar_color );
 
 		UI_DrawString( x - SMALLCHAR_WIDTH, y, g_bindings[a->generic.id].label, UI_RIGHT|UI_TINYFONT|UI_DROPSHADOW, text_color_highlight );
 		UI_DrawString( x + SMALLCHAR_WIDTH, y, name, UI_LEFT|UI_TINYFONT|UI_PULSE|UI_DROPSHADOW, text_color_highlight );
@@ -965,7 +1100,7 @@ static void Controls_SetConfig( void )
 			break;
 
 		if (bindptr->bind1 != -1)
-		{	
+		{
 			trap_Key_SetBinding( bindptr->bind1, bindptr->command );
 
 			if (bindptr->bind2 != -1)
@@ -1043,12 +1178,12 @@ static sfxHandle_t Controls_MenuKey( int key )
 			case K_KP_DEL:
 				key = -1;
 				break;
-		
+
 			case K_MOUSE2:
 			case K_ESCAPE:
 				if (s_controls.changesmade)
 					Controls_SetConfig();
-				goto ignorekey;	
+				goto ignorekey;
 
 			default:
 				goto ignorekey;
@@ -1065,21 +1200,21 @@ static sfxHandle_t Controls_MenuKey( int key )
 				s_controls.waitingforkey = qfalse;
 				Controls_Update();
 				return (menu_out_sound);
-	
+
 			case '`':
 				goto ignorekey;
 		}
 	}
 
 	s_controls.changesmade = qtrue;
-	
+
 	if (key != -1)
 	{
 		// remove from any other bind
 		bindptr = g_bindings;
 		for (i=0; ;i++,bindptr++)
 		{
-			if (!bindptr->label)	
+			if (!bindptr->label)
 				break;
 
 			if (bindptr->bind2 == key)
@@ -1087,7 +1222,7 @@ static sfxHandle_t Controls_MenuKey( int key )
 
 			if (bindptr->bind1 == key)
 			{
-				bindptr->bind1 = bindptr->bind2;	
+				bindptr->bind1 = bindptr->bind2;
 				bindptr->bind2 = -1;
 			}
 		}
@@ -1098,9 +1233,9 @@ static sfxHandle_t Controls_MenuKey( int key )
 	bindptr = g_bindings;
 	for (i=0; ;i++,bindptr++)
 	{
-		if (!bindptr->label)	
+		if (!bindptr->label)
 			break;
-		
+
 		if (bindptr->id == id)
 		{
 			found = qtrue;
@@ -1127,15 +1262,15 @@ static sfxHandle_t Controls_MenuKey( int key )
 				trap_Key_SetBinding( bindptr->bind2, "" );
 				bindptr->bind1 = key;
 				bindptr->bind2 = -1;
-			}						
+			}
 			break;
 		}
-	}				
-		
+	}
+
 	s_controls.waitingforkey = qfalse;
 
 	if (found)
-	{	
+	{
 		Controls_Update();
 		return (menu_out_sound);
 	}
@@ -1181,7 +1316,7 @@ static void Controls_MenuEvent( void* ptr, int event )
 		case ID_MOVEMENT:
 			if (event == QM_ACTIVATED)
 			{
-				s_controls.section = C_MOVEMENT; 
+				s_controls.section = C_MOVEMENT;
 				Controls_Update();
 			}
 			break;
@@ -1189,7 +1324,7 @@ static void Controls_MenuEvent( void* ptr, int event )
 		case ID_LOOKING:
 			if (event == QM_ACTIVATED)
 			{
-				s_controls.section = C_LOOKING; 
+				s_controls.section = C_LOOKING;
 				Controls_Update();
 			}
 			break;
@@ -1197,7 +1332,7 @@ static void Controls_MenuEvent( void* ptr, int event )
 		case ID_WEAPONS:
 			if (event == QM_ACTIVATED)
 			{
-				s_controls.section = C_WEAPONS; 
+				s_controls.section = C_WEAPONS;
 				Controls_Update();
 			}
 			break;
@@ -1205,7 +1340,7 @@ static void Controls_MenuEvent( void* ptr, int event )
 		case ID_MISC:
 			if (event == QM_ACTIVATED)
 			{
-				s_controls.section = C_MISC; 
+				s_controls.section = C_MISC;
 				Controls_Update();
 			}
 			break;
@@ -1253,7 +1388,7 @@ static void Controls_MenuEvent( void* ptr, int event )
 			{
 				s_controls.changesmade = qtrue;
 			}
-			break;		
+			break;
 	}
 }
 
@@ -1316,6 +1451,7 @@ static void Controls_MenuInit( void )
 	Controls_Cache();
 
 	s_controls.menu.key        = Controls_MenuKey;
+	s_controls.menu.draw       = Controls_MenuDraw;
 	s_controls.menu.wrapAround = qtrue;
 	s_controls.menu.fullscreen = qtrue;
 
@@ -1786,6 +1922,28 @@ static void Controls_MenuInit( void )
 
 	Menu_AddItem( &s_controls.menu, &s_controls.back );
 
+	// menu redesign: page tabs on top, group tabs inside the panel
+	s_controls.tabControls.generic.type		= MTYPE_PTEXT;
+	s_controls.tabControls.generic.flags	= QMF_INACTIVE;
+	s_controls.tabSystem.generic.type		= MTYPE_PTEXT;
+	s_controls.tabSystem.generic.callback	= Controls_TabEvent;
+	s_controls.tabGeneral.generic.type		= MTYPE_PTEXT;
+	s_controls.tabGeneral.generic.callback	= Controls_TabEvent;
+	s_controls.tabControls.string = s_controls.tabSystem.string = s_controls.tabGeneral.string = "";
+	s_controls.tabControls.style = s_controls.tabSystem.style = s_controls.tabGeneral.style = UI_LEFT;
+	Menu_AddItem( &s_controls.menu, &s_controls.tabControls );
+	Menu_AddItem( &s_controls.menu, &s_controls.tabSystem );
+	Menu_AddItem( &s_controls.menu, &s_controls.tabGeneral );
+	UI_DTabItem( &s_controls.tabControls, 0, "CONTROLS", qtrue );
+	UI_DTabItem( &s_controls.tabSystem, 1, "VIDEO & AUDIO", qfalse );
+	UI_DTabItem( &s_controls.tabGeneral, 2, "GAME", qfalse );
+	Controls_GroupTab( &s_controls.looking, 0 );
+	Controls_GroupTab( &s_controls.movement, 1 );
+	Controls_GroupTab( &s_controls.weapons, 2 );
+	Controls_GroupTab( &s_controls.misc, 3 );
+	s_controls.back.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+	s_controls.player.generic.flags |= QMF_HIDDEN;
+
 	trap_Cvar_VariableStringBuffer( "name", s_controls.name.string, 16 );
 	Q_CleanStr( s_controls.name.string );
 
@@ -1829,6 +1987,8 @@ UI_ControlsMenu
 */
 void UI_ControlsMenu( void ) {
 	Controls_MenuInit();
-	uis.menuamount = 0;
 	UI_PushMenu( &s_controls.menu );
+	uis.menuamount = -1;
+	uis.hideEarth = qtrue;
+	uis.showFrame = qfalse;
 }

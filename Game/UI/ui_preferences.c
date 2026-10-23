@@ -58,13 +58,13 @@ typedef struct{
 	menubitmap_s		framer;
 	menutext_s			controls;
 	menutext_s			system;
-	menutext_s			general;	
+	menutext_s			general;
 	menulist_s			crosshair;
 	menulist_s			crosshairSize;
 	menulist_s			camerastyle;
 	menulist_s			beamdetail;
 	menulist_s			particlesOptimise;
-	menulist_s			particlesQuality;	
+	menulist_s			particlesQuality;
 	menulist_s			bloomQuality;
 	menuslider_s		bloomIntensity;
 	menulist_s			bloomDarken;
@@ -177,7 +177,7 @@ static void Preferences_Event( void* ptr, int notification ) {
 		break;
 	case ID_FLIGHT:
 		trap_Cvar_SetValue( "cg_advancedFlight", s_preferences.flight.curvalue );
-		break;		
+		break;
 	case ID_BLOOMQUALITY:
 		switch ( s_preferences.bloomQuality.curvalue  )
 		{
@@ -226,13 +226,13 @@ static void Preferences_Event( void* ptr, int notification ) {
 	case ID_CONTROLS:
 		UI_PopMenu();
 		UI_ControlsMenu();
-		break;		
+		break;
 	case ID_SYSTEM:
 		UI_PopMenu();
 		UI_SystemSettingsMenu();
 		break;
 	case ID_GENERAL:
-		break;		
+		break;
 	case ID_BACK2:
 		UI_PopMenu();
 		break;
@@ -270,7 +270,7 @@ static void Crosshair_Draw( void *self ) {
 	}
 	if(focus){
 		// draw cursor
-		UI_FillRect( s->generic.left, s->generic.top, s->generic.right-s->generic.left+1, s->generic.bottom-s->generic.top+1, listbar_color ); 
+		UI_FillRect( s->generic.left, s->generic.top, s->generic.right-s->generic.left+1, s->generic.bottom-s->generic.top+1, listbar_color );
 		UI_DrawChar( x, y, 13, UI_CENTER|UI_BLINK|UI_SMALLFONT|UI_DROPSHADOW, color);
 	}
 	UI_DrawString( x - SMALLCHAR_WIDTH, y, s->generic.name, style|UI_RIGHT, color );
@@ -295,15 +295,41 @@ static void Bloom_ApplyChanges( void *unused, int notification )
 Preferences_MenuDraw
 ================
 */
+static void Preferences_CrosshairValue( void *item, char *buf, int size ) {
+	int value;
+
+	value = ((menulist_s *)item)->curvalue;
+	Q_strncpyz( buf, value ? va( "Type %i", value ) : "None", size );
+}
+
+static void Preferences_DrawApply( void *self ) {
+	menubitmap_s *b;
+
+	b = (menubitmap_s *)self;
+	UI_DCta( b->generic.x, b->generic.y, b->width, b->height, "APPLY", UI_DFocus( &s_preferences.menu, self ) );
+}
+
 void Preferences_MenuDraw (void)
 {
+	static const char *hints[] = { "ARROWS", "Change", "ENTER", "Select", "ESC", "Back" };
+
 	s_preferences.apply.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 
 	if ( initialBloomQuality != s_preferences.bloomQuality.curvalue )
 	{
 		s_preferences.apply.generic.flags &= ~(QMF_HIDDEN|QMF_INACTIVE);
 	}
+
+	uis.menuamount = -1;
+	uis.hideEarth = qtrue;
+	uis.showFrame = qfalse;
+
+	UI_DHeader( "MAIN MENU  >", "OPTIONS" );
+	UI_DGlass( 48, 186, 760, 466 );
+	UI_DOptionsDrawSections();
 	Menu_Draw( &s_preferences.menu );
+	UI_DOptionsDrawHelp( 832, 186, 400, 466 );
+	UI_DHints( hints, 3 );
 }
 
 static void Preferences_MenuInit( void ) {
@@ -350,7 +376,7 @@ static void Preferences_MenuInit( void ) {
 	s_preferences.system.string				= "SYSTEM";
 	s_preferences.system.style				= style;
 	s_preferences.system.color				= color_white;
-	y+=offset;		
+	y+=offset;
 	s_preferences.general.generic.type		= MTYPE_PTEXT;
 	s_preferences.general.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_preferences.general.generic.id			= ID_GENERAL;
@@ -360,7 +386,7 @@ static void Preferences_MenuInit( void ) {
 	s_preferences.general.string				= "GENERAL";
 	s_preferences.general.style				= style;
 	s_preferences.general.color				= color_white;
-	y+=offset;	
+	y+=offset;
 	s_preferences.back.generic.type			= MTYPE_PTEXT;
 	s_preferences.back.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_preferences.back.generic.id			= ID_BACK2;
@@ -370,8 +396,8 @@ static void Preferences_MenuInit( void ) {
 	s_preferences.back.string				= "BACK";
 	s_preferences.back.style				= style;
 	s_preferences.back.color				= color_white;
-	y+=offset;	
-	
+	y+=offset;
+
 	y = 88;
 	s_preferences.crosshair.generic.type		= MTYPE_TEXT;
 	s_preferences.crosshair.generic.flags		= QMF_PULSEIFFOCUS|QMF_SMALLFONT|QMF_NODEFAULTINIT|QMF_OWNERDRAW;
@@ -404,7 +430,7 @@ static void Preferences_MenuInit( void ) {
 	s_preferences.crosshairNames.generic.id			= ID_CROSSHAIRNAMES;
 	s_preferences.crosshairNames.generic.x			= PREFERENCES_X_POS;
 	s_preferences.crosshairNames.generic.y			= y;
-	
+
 	y += BIGCHAR_HEIGHT+2;
 	s_preferences.camerastyle.generic.type        = MTYPE_SPINCONTROL;
 	s_preferences.camerastyle.generic.name	      = "Camera style:";
@@ -471,7 +497,7 @@ static void Preferences_MenuInit( void ) {
 	s_preferences.flight.generic.callback	= Preferences_Event;
 	s_preferences.flight.generic.id			= ID_FLIGHT;
 	s_preferences.flight.generic.x			= PREFERENCES_X_POS;
-	s_preferences.flight.generic.y			= y;	
+	s_preferences.flight.generic.y			= y;
 
 	y += BIGCHAR_HEIGHT+2;
 	s_preferences.bloomQuality.generic.type			= MTYPE_SPINCONTROL;
@@ -528,7 +554,7 @@ static void Preferences_MenuInit( void ) {
 	Menu_AddItem( &s_preferences.menu, ( void * ) &s_preferences.controls );
 	Menu_AddItem( &s_preferences.menu, ( void * ) &s_preferences.system );
 	Menu_AddItem( &s_preferences.menu, ( void * ) &s_preferences.general );
-	
+
 	Menu_AddItem( &s_preferences.menu, &s_preferences.framel );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.framer );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.crosshair );
@@ -540,13 +566,41 @@ static void Preferences_MenuInit( void ) {
 	Menu_AddItem( &s_preferences.menu, &s_preferences.particlesQuality );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.particlesOptimise );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.outlines );
-	Menu_AddItem( &s_preferences.menu, &s_preferences.flight );		
+	Menu_AddItem( &s_preferences.menu, &s_preferences.flight );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.bloomQuality );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.bloomIntensity );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.bloomDarken );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.bloomAlpha );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.back );
 	Menu_AddItem( &s_preferences.menu, &s_preferences.apply );
+
+	// menu redesign: tabs, rows and the help panel on the design canvas
+	UI_DTabItem( &s_preferences.controls, 0, "CONTROLS", qfalse );
+	UI_DTabItem( &s_preferences.system, 1, "VIDEO & AUDIO", qfalse );
+	UI_DTabItem( &s_preferences.general, 2, "GAME", qtrue );
+	s_preferences.back.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+
+	UI_DOptionsBegin( &s_preferences.menu, 72, 206, 712, 23 );
+	UI_DOptionsSection( "HUD" );
+	UI_DOptionsRowValue( &s_preferences.crosshair, "Crosshair", "Shape of the aiming mark in the middle of the screen. ENTER cycles through them.", Preferences_CrosshairValue );
+	UI_DOptionsRow( &s_preferences.crosshairSize, "Crosshair size", "How big the aiming mark is drawn.", qfalse );
+	UI_DOptionsRow( &s_preferences.crosshairNames, "Player names", "Shows the name of the fighter under your crosshair.", qfalse );
+	UI_DOptionsSection( "CAMERA AND CONTROL" );
+	UI_DOptionsRow( &s_preferences.camerastyle, "Camera style", "Where the third person camera sits: locked behind the head, locked behind the character, or following it with a short delay.", qfalse );
+	UI_DOptionsRow( &s_preferences.beamcontrol, "Beam control", "What steers a beam while you hold it: the head of the beam or your crosshair.", qfalse );
+	UI_DOptionsRow( &s_preferences.flight, "Advanced flight", "Full flight controls instead of the simplified ones.", qfalse );
+	UI_DOptionsSection( "EFFECTS" );
+	UI_DOptionsRow( &s_preferences.beamdetail, "Beam detail", "Geometry of energy beams. Lower it on slow machines.", qfalse );
+	UI_DOptionsRow( &s_preferences.particlesQuality, "Particle quality", "Debris and sparks as flat sprites, as 3D models, or off.", qfalse );
+	UI_DOptionsRow( &s_preferences.particlesOptimise, "Particle physics", "When debris disappears: after a while, or as soon as it stops moving.", qfalse );
+	UI_DOptionsRow( &s_preferences.outlines, "Character outlines", "The black cel shading outline around fighters.", qfalse );
+	UI_DOptionsRow( &s_preferences.bloomQuality, "Bloom quality", "Glow around bright light such as auras and blasts. Higher sizes look softer and cost more.", qtrue );
+	UI_DOptionsRow( &s_preferences.bloomIntensity, "Bloom intensity", "How strong the glow is.", qfalse );
+	UI_DOptionsRow( &s_preferences.bloomDarken, "Bloom darken", "How much of the scene is kept out of the glow.", qfalse );
+	UI_DOptionsRow( &s_preferences.bloomAlpha, "Bloom alpha", "How much the glow is blended over the picture.", qfalse );
+
+	UI_DItem( &s_preferences.apply, 1012, 590, 196, 46 );
+	s_preferences.apply.generic.ownerdraw = Preferences_DrawApply;
 
 	Preferences_SetMenuItems();
 	initialBloomQuality = s_preferences.bloomQuality.curvalue;
@@ -570,10 +624,10 @@ void Preferences_Cache(void){
 UI_PreferencesMenu
 ===============*/
 void UI_PreferencesMenu( void ) {
-	uis.menuamount = 4;
-	uis.hideEarth = qtrue;
-	uis.showFrame = qtrue;
 	Preferences_MenuInit();
 	UI_PushMenu( &s_preferences.menu );
-	Menu_SetCursorToItem(&s_preferences.menu,&s_preferences.general);	
+	uis.menuamount = -1;
+	uis.hideEarth = qtrue;
+	uis.showFrame = qfalse;
+	Menu_SetCursorToItem(&s_preferences.menu,&s_preferences.crosshair);
 }

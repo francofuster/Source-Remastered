@@ -120,12 +120,12 @@ extern vmCvar_t s_mastermusicvolume;
 #define MAX_MENUITEMS			64
 
 #define MTYPE_NULL				0
-#define MTYPE_SLIDER			1	
+#define MTYPE_SLIDER			1
 #define MTYPE_ACTION			2
 #define MTYPE_SPINCONTROL		3
 #define MTYPE_FIELD				4
 #define MTYPE_RADIOBUTTON		5
-#define MTYPE_BITMAP			6	
+#define MTYPE_BITMAP			6
 #define MTYPE_TEXT				7
 #define MTYPE_SCROLLLIST		8
 #define MTYPE_PTEXT				9
@@ -208,7 +208,7 @@ typedef struct
 	mfield_t		field;
 } menufield_s;
 
-typedef struct 
+typedef struct
 {
 	menucommon_s generic;
 
@@ -227,7 +227,7 @@ typedef struct
 	int curvalue;
 	int	numitems;
 	int	top;
-		
+
 	const char **itemnames;
 
 	int width;
@@ -250,7 +250,7 @@ typedef struct
 typedef struct
 {
 	menucommon_s	generic;
-	char*			focuspic;	
+	char*			focuspic;
 	char*			errorpic;
 	qhandle_t		shader;
 	int				width;
@@ -328,6 +328,15 @@ extern void			UI_DPortrait( float x, float y, float size, qhandle_t shader, qboo
 extern void			UI_DFocusRow( float x, float y, float w, float h, float focus );
 extern float		UI_DFocus( menuframework_s *menu, void *item );
 extern void			UI_DNamePlate( float x, float y, float w, float h );
+extern int			UI_DTextWrapped( float x, float y, float w, const char *text, float size, vec4_t color );
+extern void			UI_DOptionsBegin( menuframework_s *menu, float x, float y, float w, float rowH );
+extern void			UI_DOptionsSection( const char *title );
+extern void			UI_DOptionsSkip( float h );
+extern void			UI_DOptionsRow( void *item, const char *label, const char *help, qboolean restart );
+extern void			UI_DOptionsRowValue( void *item, const char *label, const char *help, void (*value)( void *item, char *buf, int size ) );
+extern void			UI_DOptionsDrawSections( void );
+extern void			UI_DOptionsDrawHelp( float x, float y, float w, float h );
+extern void			UI_DTabItem( menutext_s *t, int index, const char *label, qboolean active );
 extern void			Menu_Draw( menuframework_s *menu );
 extern void			*Menu_ItemAtCursor( menuframework_s *m );
 extern sfxHandle_t	Menu_ActivateItem( menuframework_s *s, menucommon_s* item );
@@ -361,7 +370,7 @@ extern vec4_t		color_dim;
 extern vec4_t		name_color;
 extern vec4_t		list_color;
 extern vec4_t		listbar_color;
-extern vec4_t		text_color_disabled; 
+extern vec4_t		text_color_disabled;
 extern vec4_t		text_color_normal;
 extern vec4_t		text_color_highlight;
 
@@ -696,7 +705,7 @@ extern qboolean		UI_ConsoleCommand( int realTime );
 extern float		UI_ClampCvar( float min, float max, float value );
 extern void			UI_DrawNamedPic( float x, float y, float width, float height, const char *picname );
 extern void			UI_DrawHandlePic( float x, float y, float w, float h, qhandle_t hShader );
-extern void			UI_DrawHandlePicAspectFill( qhandle_t hShader ); 
+extern void			UI_DrawHandlePicAspectFill( qhandle_t hShader );
 extern void			UI_FillRect( float x, float y, float width, float height, const float *color );
 extern void			UI_DrawRect( float x, float y, float width, float height, const float *color );
 extern void			UI_UpdateScreen( void );

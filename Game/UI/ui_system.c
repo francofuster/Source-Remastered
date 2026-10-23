@@ -80,8 +80,8 @@ typedef struct {
 
 	menuslider_s	sfxvolume;
 	menuslider_s	musicvolume;
-	menulist_s		quality;	
-	
+	menulist_s		quality;
+
 	menubitmap_s	apply;
 	menutext_s	back;
 } systemsettings_t;
@@ -231,21 +231,21 @@ SystemSettings_GetAspectRatios
 static void SystemSettings_GetAspectRatios( void )
 {
 	int i, r;
-	
+
 	// build ratio list from resolutions
 	for( r = 0; resolutions[r]; r++ )
 	{
 		int w, h;
 		char *x;
 		char str[ sizeof(ratioBuf[0]) ];
-		
+
 		// calculate resolution's aspect ratio
 		x = strchr( resolutions[r], 'x' ) + 1;
 		Q_strncpyz( str, resolutions[r], x-resolutions[r] );
 		w = atoi( str );
 		h = atoi( x );
 		Com_sprintf( str, sizeof(str), "%.2f:1", (float)w / (float)h );
-		
+
 		// add ratio to list if it is new
 		// establish res/ratio relationship
 		for( i = 0; ratioBuf[i][0]; i++ )
@@ -260,7 +260,7 @@ static void SystemSettings_GetAspectRatios( void )
 		}
 		resToRatio[r] = i;
 	}
-	
+
 	// prepare itemlist pointer array
 	// rename common ratios ("1.33:1" -> "4:3")
 	for( r = 0; ratioBuf[r][0]; r++ )
@@ -664,10 +664,10 @@ static void SystemSettings_Event( void* ptr, int event ) {
 		UI_PopMenu();
 		UI_ControlsMenu();
 		break;
-		
+
 	case ID_SYSTEM:
 		break;
-		
+
 	case ID_GENERAL:
 		UI_PopMenu();
 		UI_PreferencesMenu();
@@ -698,12 +698,30 @@ static void SystemSettings_TQEvent( void *ptr, int event ) {
 SystemSettings_MenuDraw
 ================
 */
+static void SystemSettings_DrawApply( void *self ) {
+	menubitmap_s *b;
+
+	b = (menubitmap_s *)self;
+	UI_DCta( b->generic.x, b->generic.y, b->width, b->height, "APPLY", UI_DFocus( &s_systemsettings.menu, self ) );
+}
+
 void SystemSettings_MenuDraw (void)
 {
+	static const char *hints[] = { "ARROWS", "Change", "ENTER", "Select", "ESC", "Back" };
+
 //APSFIX - rework this
 	SystemSettings_UpdateMenuItems();
 
+	uis.menuamount = -1;
+	uis.hideEarth = qtrue;
+	uis.showFrame = qfalse;
+
+	UI_DHeader( "MAIN MENU  >", "OPTIONS" );
+	UI_DGlass( 48, 186, 760, 466 );
+	UI_DOptionsDrawSections();
 	Menu_Draw( &s_systemsettings.menu );
+	UI_DOptionsDrawHelp( 832, 186, 400, 466 );
+	UI_DHints( hints, 3 );
 }
 
 /*
@@ -966,7 +984,7 @@ void SystemSettings_MenuInit( void )
 
 	SystemSettings_GetResolutions();
 	SystemSettings_GetAspectRatios();
-	
+
 	SystemSettings_Cache();
 
 	s_systemsettings.menu.wrapAround = qtrue;
@@ -982,7 +1000,7 @@ void SystemSettings_MenuInit( void )
 	s_systemsettings.controls.string				= "CONTROLS";
 	s_systemsettings.controls.style					= style;
 	s_systemsettings.controls.color					= color_white;
-	y+=offset;	
+	y+=offset;
 	s_systemsettings.system.generic.type		= MTYPE_PTEXT;
 	s_systemsettings.system.generic.flags		= QMF_LEFT_JUSTIFY;
 	s_systemsettings.system.generic.id			= ID_SYSTEM;
@@ -992,7 +1010,7 @@ void SystemSettings_MenuInit( void )
 	s_systemsettings.system.string				= "SYSTEM";
 	s_systemsettings.system.style				= style;
 	s_systemsettings.system.color				= color_white;
-	y+=offset;	
+	y+=offset;
 	s_systemsettings.general.generic.type		= MTYPE_PTEXT;
 	s_systemsettings.general.generic.flags		= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
 	s_systemsettings.general.generic.id			= ID_GENERAL;
@@ -1012,7 +1030,7 @@ void SystemSettings_MenuInit( void )
 	s_systemsettings.back.string			= "BACK";
 	s_systemsettings.back.style				= style;
 	s_systemsettings.back.color				= color_white;
-	y+=offset;	
+	y+=offset;
 
 	s_systemsettings.framel.generic.type  	= MTYPE_BITMAP;
 	s_systemsettings.framel.generic.name  	= SYSTEMSETTINGS_FRAMEL;
@@ -1040,8 +1058,8 @@ void SystemSettings_MenuInit( void )
 	s_systemsettings.mode.itemnames        = resolutions;
 	s_systemsettings.mode.generic.callback = SystemSettings_Event;
 	s_systemsettings.mode.generic.id       = ID_MODE;
-	y += BIGCHAR_HEIGHT+2;	
-	
+	y += BIGCHAR_HEIGHT+2;
+
 	s_systemsettings.ratio.generic.type     = MTYPE_SPINCONTROL;
 	s_systemsettings.ratio.generic.name     = "Aspect Ratio:";
 	s_systemsettings.ratio.generic.flags    = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
@@ -1147,7 +1165,7 @@ void SystemSettings_MenuInit( void )
 	s_systemsettings.quality.generic.id			= ID_QUALITY;
 	s_systemsettings.quality.generic.x			= SYSTEM_X_POS;
 	s_systemsettings.quality.generic.y			= y;
-	s_systemsettings.quality.itemnames			= quality_items;	
+	s_systemsettings.quality.itemnames			= quality_items;
 	y += BIGCHAR_HEIGHT+2;
 
 	s_systemsettings.apply.generic.type     = MTYPE_BITMAP;
@@ -1162,7 +1180,7 @@ void SystemSettings_MenuInit( void )
 
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.framel );
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.framer );
-	
+
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.controls );
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.system );
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.general );
@@ -1176,11 +1194,11 @@ void SystemSettings_MenuInit( void )
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.filter );
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.multisample );
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.anisotropy );
-	
+
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.sfxvolume );
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.musicvolume );
 	Menu_AddItem( &s_systemsettings.menu, ( void * ) &s_systemsettings.quality );
-	
+
 	s_systemsettings.sfxvolume.curvalue = trap_Cvar_VariableValue( "s_volume" ) * 10;
 	s_systemsettings.musicvolume.curvalue = trap_Cvar_VariableValue( "s_musicvolume" ) * 10;
 	s_systemsettings.quality.curvalue = !trap_Cvar_VariableValue( "s_compression" );
@@ -1190,6 +1208,32 @@ void SystemSettings_MenuInit( void )
 
 	SystemSettings_SetMenuItems();
 	SystemSettings_GetInitialVideo();
+
+	// menu redesign: tabs, rows and the help panel on the design canvas
+	UI_DTabItem( &s_systemsettings.controls, 0, "CONTROLS", qfalse );
+	UI_DTabItem( &s_systemsettings.system, 1, "VIDEO & AUDIO", qtrue );
+	UI_DTabItem( &s_systemsettings.general, 2, "GAME", qfalse );
+	s_systemsettings.back.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+
+	UI_DOptionsBegin( &s_systemsettings.menu, 72, 212, 712, 27 );
+	UI_DOptionsSection( "DISPLAY" );
+	UI_DOptionsRow( &s_systemsettings.mode, "Resolution", "Size of the game picture in pixels. The list only shows the modes your display reports.", qtrue );
+	UI_DOptionsRow( &s_systemsettings.ratio, "Aspect ratio", "Shape of the screen. Changing it picks the resolutions that match.", qtrue );
+	UI_DOptionsRow( &s_systemsettings.colordepth, "Color depth", "Bits per pixel of the screen. Default lets the driver choose.", qtrue );
+	UI_DOptionsRow( &s_systemsettings.fs, "Fullscreen", "Play in a borderless full screen window or in a normal window.", qtrue );
+	UI_DOptionsSection( "TEXTURES" );
+	UI_DOptionsRow( &s_systemsettings.tq, "Texture detail", "How sharp textures are. Lower values save video memory on old cards.", qtrue );
+	UI_DOptionsRow( &s_systemsettings.texturebits, "Texture quality", "Color depth of textures. 32 bit avoids banding in skies and auras.", qtrue );
+	UI_DOptionsRow( &s_systemsettings.filter, "Texture filter", "How textures are smoothed at a distance. Trilinear blends between mip levels for the cleanest result; bilinear is lighter on old hardware.", qtrue );
+	UI_DOptionsRow( &s_systemsettings.multisample, "Multisample", "Antialiasing of edges. Higher values look smoother and cost more.", qtrue );
+	UI_DOptionsRow( &s_systemsettings.anisotropy, "Texture anisotropy", "Keeps ground textures sharp when seen at a steep angle.", qtrue );
+	UI_DOptionsSection( "AUDIO" );
+	UI_DOptionsRow( &s_systemsettings.sfxvolume, "Effects volume", "Loudness of hits, beams, explosions and voices.", qfalse );
+	UI_DOptionsRow( &s_systemsettings.musicvolume, "Music volume", "Loudness of the music in menus and matches.", qfalse );
+	UI_DOptionsRow( &s_systemsettings.quality, "Sound quality", "Sample rate of the sound. Changing it restarts the sound system.", qfalse );
+
+	UI_DItem( &s_systemsettings.apply, 1012, 590, 196, 46 );
+	s_systemsettings.apply.generic.ownerdraw = SystemSettings_DrawApply;
 
 	if ( uis.glconfig.driverType == GLDRV_ICD &&
 		 uis.glconfig.hardwareType == GLHW_3DFX_2D3D )
@@ -1220,11 +1264,11 @@ UI_SystemSettingsMenu
 =================
 */
 void UI_SystemSettingsMenu( void ) {
-	uis.menuamount = 4;
-	uis.hideEarth = qtrue;
-	uis.showFrame = qtrue;
 	SystemSettings_MenuInit();
 	UI_PushMenu( &s_systemsettings.menu );
-	Menu_SetCursorToItem(&s_systemsettings.menu,&s_systemsettings.system);	
+	uis.menuamount = -1;
+	uis.hideEarth = qtrue;
+	uis.showFrame = qfalse;
+	Menu_SetCursorToItem(&s_systemsettings.menu,&s_systemsettings.mode);
 }
 

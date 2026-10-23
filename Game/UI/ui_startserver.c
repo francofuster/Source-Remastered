@@ -603,6 +603,14 @@ void UI_TestMenu( const char *which ) {
 		UI_SystemSettingsMenu();
 		return;
 	}
+	if ( !Q_stricmp( which, "controls" ) ) {
+		UI_ControlsMenu();
+		return;
+	}
+	if ( !Q_stricmp( which, "game" ) ) {
+		UI_PreferencesMenu();
+		return;
+	}
 	if ( !Q_stricmp( which, "maps" ) ) {
 		UI_StartServerMenu( qtrue );
 		return;
