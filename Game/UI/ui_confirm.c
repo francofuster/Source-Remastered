@@ -183,7 +183,13 @@ static void ConfirmMenu_Draw( void ) {
 
 	ConfirmMenu_DrawDialog( 220 );
 	UI_DProp( 640, 286, s_confirm.question, 32, UI_CENTER|UI_DROPSHADOW, zeq_white );
-	UI_DHints( hints, 3 );
+	// over a match the HUD is in the bottom left corner: center them there
+	if ( s_confirm.menu.fullscreen ) {
+		UI_DHints( hints, 3 );
+	}
+	else {
+		UI_DHintsCentered( hints, 3 );
+	}
 
 	Menu_Draw( &s_confirm.menu );
 

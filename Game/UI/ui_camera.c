@@ -19,10 +19,6 @@ SETUP MENU
 #define ID_ANGLE		12
 #define ID_BACK			13
 #define ID_SLIDE		14
-#define ID_LOCKED_RANGE	15
-#define ID_LOCKED_HEIGHT	16
-#define ID_LOCKED_SLIDE	17
-#define ID_LOCKED_ANGLE	18
 
 typedef struct
 {
@@ -39,16 +35,11 @@ typedef struct {
 	menutext_s		range;
 	menutext_s		height;
 	menutext_s		angle;
-	menutext_s		lockedBanner;
 
 	menuslider_s	rangeSlider;
 	menuslider_s	heightSlider;
 	menuslider_s	slideSlider;
 	menuslider_s	angleSlider;
-	menuslider_s	lockedRangeSlider;
-	menuslider_s	lockedHeightSlider;
-	menuslider_s	lockedSlideSlider;
-	menuslider_s	lockedAngleSlider;
 
 	qboolean		changesMade;
 	qboolean		previewLocked;
@@ -69,10 +60,6 @@ static cameraconfigcvar_t g_cameraconfigcvars[] =
 	{"cg_thirdPersonHeight",0,	0},
 	{"cg_thirdPersonSlide",0,	0},
 	{"cg_thirdPersonAngle",	0,	0},
-	{"cg_lockedRange",		0,	0},
-	{"cg_lockedHeight",	0,	0},
-	{"cg_lockedSlide",	0,	0},
-	{"cg_lockedAngle",		0,	0},
 	{NULL,					0,	0}
 };
 
@@ -161,10 +148,6 @@ static void Camera_GetConfig( void )
 	s_camera.heightSlider.curvalue       = UI_ClampCvar( -80, 80, Camera_GetCvarValue( "cg_thirdPersonHeight" ) );
 	s_camera.slideSlider.curvalue        = UI_ClampCvar( -150, 150, Camera_GetCvarValue( "cg_thirdPersonSlide" ) );
 	s_camera.angleSlider.curvalue        = UI_ClampCvar( 0, 359, Camera_GetCvarValue( "cg_thirdPersonAngle" ) );
-	s_camera.lockedRangeSlider.curvalue  = UI_ClampCvar( 15, 180, Camera_GetCvarValue( "cg_lockedRange" ) );
-	s_camera.lockedHeightSlider.curvalue = UI_ClampCvar( -80, 80, Camera_GetCvarValue( "cg_lockedHeight" ) );
-	s_camera.lockedSlideSlider.curvalue  = UI_ClampCvar( -150, 150, Camera_GetCvarValue( "cg_lockedSlide" ) );
-	s_camera.lockedAngleSlider.curvalue  = UI_ClampCvar( 0, 359, Camera_GetCvarValue( "cg_lockedAngle" ) );
 }
 
 static void Camera_StoreOriginalPreviewState( void )
@@ -185,26 +168,12 @@ static void Camera_ApplyNormalPreview( void )
 	trap_Cvar_SetValue( "cg_thirdPersonAngle", s_camera.angleSlider.curvalue );
 }
 
-static void Camera_ApplyLockedPreview( void )
-{
-	s_camera.previewLocked = qtrue;
-	trap_Cvar_SetValue( "cg_lockedRange", s_camera.lockedRangeSlider.curvalue );
-	trap_Cvar_SetValue( "cg_lockedHeight", s_camera.lockedHeightSlider.curvalue );
-	trap_Cvar_SetValue( "cg_lockedSlide", s_camera.lockedSlideSlider.curvalue );
-	trap_Cvar_SetValue( "cg_lockedAngle", s_camera.lockedAngleSlider.curvalue );
-	trap_Cvar_SetValue( "cg_cameraMenuPreviewLocked", 1 );
-}
-
 static void Camera_SaveConfig( void )
 {
 	trap_Cvar_SetValue( "cg_thirdPersonRange", s_camera.rangeSlider.curvalue );
 	trap_Cvar_SetValue( "cg_thirdPersonHeight", s_camera.heightSlider.curvalue );
 	trap_Cvar_SetValue( "cg_thirdPersonSlide", s_camera.slideSlider.curvalue );
 	trap_Cvar_SetValue( "cg_thirdPersonAngle", s_camera.angleSlider.curvalue );
-	trap_Cvar_SetValue( "cg_lockedRange", s_camera.lockedRangeSlider.curvalue );
-	trap_Cvar_SetValue( "cg_lockedHeight", s_camera.lockedHeightSlider.curvalue );
-	trap_Cvar_SetValue( "cg_lockedSlide", s_camera.lockedSlideSlider.curvalue );
-	trap_Cvar_SetValue( "cg_lockedAngle", s_camera.lockedAngleSlider.curvalue );
 }
 
 static void Camera_RestoreOriginalPreviewState( void )
@@ -249,16 +218,6 @@ static void Camera_MenuEvent( void* ptr, int event ) {
 				Camera_ApplyNormalPreview();
 			}
 			break;
-		case ID_LOCKED_RANGE:
-		case ID_LOCKED_HEIGHT:
-		case ID_LOCKED_SLIDE:
-		case ID_LOCKED_ANGLE:
-			if (event == QM_ACTIVATED)
-			{
-				s_camera.changesMade = qtrue;
-				Camera_ApplyLockedPreview();
-			}
-			break;
 		}
 	}
 }
@@ -289,11 +248,11 @@ the right so the camera can be judged live
 static void Camera_MenuDraw( void ) {
 	static const char *hints[] = { "LR", "Adjust", "ESC", "Back" };
 
-	UI_DGlass( 40, 96, 600, 500 );
+	UI_DGlass( 40, 96, 600, 300 );
 	UI_DProp( 64, 120, "CAMERA", 30, UI_LEFT|UI_DROPSHADOW, zeq_white );
 	UI_DOptionsDrawSections();
 	Menu_Draw( &s_camera.menu );
-	UI_DTextWrapped( 64, 548, 552, "The match behind shows the camera while you change it.", 17, zeq_text3 );
+	UI_DTextWrapped( 64, 348, 552, "The match behind shows the camera while you change it.", 17, zeq_text3 );
 	UI_DHints( hints, 2 );
 }
 
@@ -321,14 +280,6 @@ static void Camera_MenuInit( void )
 	s_camera.banner.string			= "CAMERA";
 	s_camera.banner.color			= color_white;
 	s_camera.banner.style			= UI_CENTER|UI_DROPSHADOW;
-
-	s_camera.lockedBanner.generic.type	= MTYPE_TEXT;
-	s_camera.lockedBanner.generic.flags	= QMF_SMALLFONT;
-	s_camera.lockedBanner.generic.x		= 70;
-	s_camera.lockedBanner.generic.y		= 125;
-	s_camera.lockedBanner.string			= "Locked camera";
-	s_camera.lockedBanner.color			= color_white;
-	s_camera.lockedBanner.style			= UI_SMALLFONT|UI_DROPSHADOW;
 
 	s_camera.rangeSlider.generic.type		= MTYPE_SLIDER;
 	s_camera.rangeSlider.generic.name		= "Range:";
@@ -371,46 +322,6 @@ static void Camera_MenuInit( void )
     s_camera.angleSlider.maxvalue			= 359;
 
 
-	s_camera.lockedRangeSlider.generic.type		= MTYPE_SLIDER;
-	s_camera.lockedRangeSlider.generic.name		= "Locked range:";
-	s_camera.lockedRangeSlider.generic.flags		= QMF_PULSEIFFOCUS|QMF_SMALLFONT;
-	s_camera.lockedRangeSlider.generic.callback	= Camera_MenuEvent;
-	s_camera.lockedRangeSlider.generic.id		= ID_LOCKED_RANGE;
-	s_camera.lockedRangeSlider.generic.x			= 70;
-	s_camera.lockedRangeSlider.generic.y			= 145;
-	s_camera.lockedRangeSlider.minvalue			= 15;
-	s_camera.lockedRangeSlider.maxvalue			= 180;
-
-	s_camera.lockedHeightSlider.generic.type		= MTYPE_SLIDER;
-	s_camera.lockedHeightSlider.generic.name		= "Locked height:";
-	s_camera.lockedHeightSlider.generic.flags		= QMF_PULSEIFFOCUS|QMF_SMALLFONT;
-	s_camera.lockedHeightSlider.generic.callback	= Camera_MenuEvent;
-	s_camera.lockedHeightSlider.generic.id		= ID_LOCKED_HEIGHT;
-	s_camera.lockedHeightSlider.generic.x			= 70;
-	s_camera.lockedHeightSlider.generic.y			= 165;
-	s_camera.lockedHeightSlider.minvalue			= -80;
-	s_camera.lockedHeightSlider.maxvalue			= 80;
-
-	s_camera.lockedSlideSlider.generic.type		= MTYPE_SLIDER;
-	s_camera.lockedSlideSlider.generic.name		= "Locked slide:";
-	s_camera.lockedSlideSlider.generic.flags		= QMF_PULSEIFFOCUS|QMF_SMALLFONT;
-	s_camera.lockedSlideSlider.generic.callback	= Camera_MenuEvent;
-	s_camera.lockedSlideSlider.generic.id		= ID_LOCKED_SLIDE;
-	s_camera.lockedSlideSlider.generic.x			= 70;
-	s_camera.lockedSlideSlider.generic.y			= 185;
-	s_camera.lockedSlideSlider.minvalue			= -150;
-	s_camera.lockedSlideSlider.maxvalue			= 150;
-
-	s_camera.lockedAngleSlider.generic.type		= MTYPE_SLIDER;
-	s_camera.lockedAngleSlider.generic.name		= "Locked angle:";
-	s_camera.lockedAngleSlider.generic.flags		= QMF_PULSEIFFOCUS|QMF_SMALLFONT;
-	s_camera.lockedAngleSlider.generic.callback	= Camera_MenuEvent;
-	s_camera.lockedAngleSlider.generic.id		= ID_LOCKED_ANGLE;
-	s_camera.lockedAngleSlider.generic.x			= 70;
-	s_camera.lockedAngleSlider.generic.y			= 205;
-	s_camera.lockedAngleSlider.minvalue			= 0;
-	s_camera.lockedAngleSlider.maxvalue			= 359;
-
 	s_camera.back.generic.type			= MTYPE_BITMAP;
 	s_camera.back.generic.name			= ART_BACK0;
 	s_camera.back.generic.flags			= QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -423,34 +334,23 @@ static void Camera_MenuInit( void )
 	s_camera.back.focuspic				= ART_BACK1;
 
 	Menu_AddItem( &s_camera.menu, &s_camera.banner );
-	Menu_AddItem( &s_camera.menu, &s_camera.lockedBanner );
 
 	Menu_AddItem( &s_camera.menu, &s_camera.rangeSlider );
 	Menu_AddItem( &s_camera.menu, &s_camera.heightSlider );
 	Menu_AddItem( &s_camera.menu, &s_camera.slideSlider );
 	Menu_AddItem( &s_camera.menu, &s_camera.angleSlider );
-	Menu_AddItem( &s_camera.menu, &s_camera.lockedRangeSlider );
-	Menu_AddItem( &s_camera.menu, &s_camera.lockedHeightSlider );
-	Menu_AddItem( &s_camera.menu, &s_camera.lockedSlideSlider );
-	Menu_AddItem( &s_camera.menu, &s_camera.lockedAngleSlider );
 
 	Menu_AddItem( &s_camera.menu, &s_camera.back );
 
 	// menu redesign: rows on the design canvas
 	s_camera.banner.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
-	s_camera.lockedBanner.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 	s_camera.back.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 	UI_DOptionsBegin( &s_camera.menu, 64, 172, 552, 32 );
-	UI_DOptionsSection( "FREE CAMERA" );
+	UI_DOptionsSection( "CAMERA" );
 	UI_DOptionsRow( &s_camera.rangeSlider, "Range", "Distance from your fighter.", qfalse );
 	UI_DOptionsRow( &s_camera.heightSlider, "Height", "Height above your fighter.", qfalse );
 	UI_DOptionsRow( &s_camera.slideSlider, "Slide", "Side offset, over the shoulder.", qfalse );
 	UI_DOptionsRow( &s_camera.angleSlider, "Angle", "Tilt of the camera.", qfalse );
-	UI_DOptionsSection( "LOCKED CAMERA" );
-	UI_DOptionsRow( &s_camera.lockedRangeSlider, "Locked range", "Distance while locked on.", qfalse );
-	UI_DOptionsRow( &s_camera.lockedHeightSlider, "Locked height", "Height while locked on.", qfalse );
-	UI_DOptionsRow( &s_camera.lockedSlideSlider, "Locked slide", "Side offset while locked on.", qfalse );
-	UI_DOptionsRow( &s_camera.lockedAngleSlider, "Locked angle", "Tilt while locked on.", qfalse );
 
 	// initialize the configurable cvars
 	Camera_InitCvars();
