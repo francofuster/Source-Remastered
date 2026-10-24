@@ -1099,11 +1099,6 @@ qboolean UI_ConsoleCommand( int realTime ) {
 		UI_Cache_f();
 		return qtrue;
 	}
-	// TEMP testing aid for the menu redesign, remove before release
-	if ( Q_stricmp( cmd, "ui_testmenu" ) == 0 ) {
-		UI_TestMenu( UI_Argv( 1 ) );
-		return qtrue;
-	}
 #if MAPLENSFLARES	// JUHOX: commands for map lens flares
 	if (Q_stricmp(cmd, "lfedit") == 0) {
 		UI_LFEdit_f();

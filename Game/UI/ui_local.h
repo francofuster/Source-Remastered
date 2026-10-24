@@ -525,7 +525,6 @@ extern void ArenaServers_Cache( void );
 // ui_startserver.c
 //
 extern void UI_StartServerMenu( qboolean multiplayer );
-extern void UI_TestMenu( const char *which );
 extern void StartServer_Cache( void );
 extern void ServerOptions_Cache( void );
 extern void UI_BotSelectMenu( char *bot );

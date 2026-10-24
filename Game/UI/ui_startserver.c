@@ -589,48 +589,6 @@ void UI_StartServerMenu( qboolean multiplayer ) {
 
 static void UI_ServerOptionsMenu( qboolean multiplayer );
 
-// TEMP testing aid for the menu redesign, remove before release
-void UI_TestMenu( const char *which ) {
-	if ( !Q_stricmp( which, "play" ) ) {
-		UI_ArenaServersMenu();
-		return;
-	}
-	if ( !Q_stricmp( which, "fighter" ) ) {
-		UI_PlayerModelMenu();
-		return;
-	}
-	if ( !Q_stricmp( which, "options" ) ) {
-		UI_SystemSettingsMenu();
-		return;
-	}
-	if ( !Q_stricmp( which, "controls" ) ) {
-		UI_ControlsMenu();
-		return;
-	}
-	if ( !Q_stricmp( which, "quit" ) ) {
-		UI_ConfirmMenu( "Quit?", 0, 0 );
-		return;
-	}
-	if ( !Q_stricmp( which, "camera" ) ) {
-		UI_CameraMenu();
-		return;
-	}
-	if ( !Q_stricmp( which, "game" ) ) {
-		UI_PreferencesMenu();
-		return;
-	}
-	if ( !Q_stricmp( which, "maps" ) ) {
-		UI_StartServerMenu( qtrue );
-		return;
-	}
-	UI_StartServerMenu( qtrue );
-	if ( !Q_stricmp( which, "roster" ) || !Q_stricmp( which, "edit" ) ) {
-		UI_BotRosterMenu();
-	}
-	if ( !Q_stricmp( which, "edit" ) ) {
-		UI_BotEditMenu( -1 );
-	}
-}
 
 
 
