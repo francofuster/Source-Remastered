@@ -62,10 +62,33 @@ static void G_ApplyBotStyle( int clientNum, const char *style ) {
 	trap_SetConfigstring( CS_PLAYERS + clientNum, info );
 }
 
+/*
+==================
+G_ApplyBotName
+
+name= of addbot and of the queued roster: the menu lets the player rename
+a bot, the userinfo carries it like any player name
+==================
+*/
+static void G_ApplyBotName( int clientNum, const char *name ) {
+	char info[MAX_INFO_STRING];
+
+	if ( clientNum < 0 || !name || !name[0] ) {
+		return;
+	}
+	trap_GetUserinfo( clientNum, info, sizeof( info ) );
+	Info_SetValueForKey( info, "name", name );
+	trap_SetUserinfo( clientNum, info );
+	// it just joined: no "renamed to" line for a name it never showed
+	Q_strncpyz( level.clients[clientNum].pers.netname, name, sizeof( level.clients[clientNum].pers.netname ) );
+	ClientUserinfoChanged( clientNum );
+}
+
 static void Cmd_AddBot_f( gentity_t *ent ) {
 	char character[MAX_TOKEN_CHARS];
 	char arg[MAX_TOKEN_CHARS];
 	char style[MAX_QPATH];
+	char name[MAX_NETNAME];
 	char error[128];
 	int skill;
 	int clientNum;
@@ -73,13 +96,14 @@ static void Cmd_AddBot_f( gentity_t *ent ) {
 	qboolean enableDebug;
 
 	if ( trap_Argc() < 2 ) {
-		trap_SendServerCommand( ent-g_entities, "print \"Usage: /addbot <character> [skill 1-3] [style=<archetype>] [-debug]\\n\"" );
+		trap_SendServerCommand( ent-g_entities, "print \"Usage: /addbot <character> [skill 1-3] [style=<archetype>] [name=<name>] [-debug]\\n\"" );
 		return;
 	}
 
 	trap_Argv( 1, character, sizeof( character ) );
 	skill = 0;
 	style[0] = 0;
+	name[0] = 0;
 	enableDebug = qfalse;
 
 	for ( i = 2; i < trap_Argc(); i++ ) {
@@ -88,6 +112,8 @@ static void Cmd_AddBot_f( gentity_t *ent ) {
 			enableDebug = qtrue;
 		} else if ( !Q_stricmpn( arg, "style=", 6 ) ) {
 			Q_strncpyz( style, arg + 6, sizeof( style ) );
+		} else if ( !Q_stricmpn( arg, "name=", 5 ) ) {
+			Q_strncpyz( name, arg + 5, sizeof( name ) );
 		} else {
 			skill = atoi( arg );
 		}
@@ -101,6 +127,7 @@ static void Cmd_AddBot_f( gentity_t *ent ) {
 		trap_SendServerCommand( ent-g_entities, va( "print \"%s\\n\"", error ) );
 		return;
 	}
+	G_ApplyBotName( clientNum, name );
 	G_ApplyBotStyle( clientNum, style );
 
 	if ( enableDebug ) {
@@ -164,7 +191,7 @@ static void Cmd_RemoveBot_f( gentity_t *ent ) {
 G_SpawnQueuedBots
 
 The create match screen leaves the roster in g_queuedBots (count) and
-g_queuedBot0..N ("<bot id> <skill> <style file>"). They are added once
+g_queuedBot0..N ("<bot id> <skill> <style file or -> <name>"). They are added once
 the level has been running for a moment, then the queue is cleared.
 ==================
 */
@@ -172,6 +199,7 @@ void G_SpawnQueuedBots( void ) {
 	char	entry[MAX_STRING_CHARS];
 	char	character[MAX_QPATH];
 	char	style[MAX_QPATH];
+	char	name[MAX_NETNAME];
 	char	error[128];
 	char	*p;
 	char	*token;
@@ -199,12 +227,17 @@ void G_SpawnQueuedBots( void ) {
 		Q_strncpyz( character, token, sizeof( character ) );
 		skill = atoi( COM_Parse( &p ) );
 		Q_strncpyz( style, COM_Parse( &p ), sizeof( style ) );
+		if ( !strcmp( style, "-" ) ) {
+			style[0] = 0;
+		}
+		Q_strncpyz( name, COM_Parse( &p ), sizeof( name ) );
 
 		clientNum = BotLite_AddBot( character, skill, error, sizeof( error ) );
 		if ( clientNum < 0 ) {
 			G_Printf( "Queued bot %s: %s\n", character, error );
 			continue;
 		}
+		G_ApplyBotName( clientNum, name );
 		G_ApplyBotStyle( clientNum, style );
 		G_Printf( "Queued bot %s added (skill %i, style %s)\n", character, skill, style[0] ? style : "default" );
 	}
@@ -424,7 +457,7 @@ void Cmd_LevelShot_f( gentity_t *ent ) {
 
 	// doesn't work in single player
 	if ( g_gametype.integer != 0 ) {
-		trap_SendServerCommand( ent-g_entities, 
+		trap_SendServerCommand( ent-g_entities,
 			"print \"Must be in g_gametype 0 for levelshot\n\"" );
 		return;
 	}
@@ -554,12 +587,12 @@ void SetTeam( gentity_t *ent, char *s ) {
 
 			// We allow a spread of two
 			if ( team == TEAM_RED && counts[TEAM_RED] - counts[TEAM_BLUE] > 1 ) {
-				trap_SendServerCommand( clientNum, 
+				trap_SendServerCommand( clientNum,
 					"cp \"Red team has too many players.\n\"" );
 				return; // ignore the request
 			}
 			if ( team == TEAM_BLUE && counts[TEAM_BLUE] - counts[TEAM_RED] > 1 ) {
-				trap_SendServerCommand( clientNum, 
+				trap_SendServerCommand( clientNum,
 					"cp \"Blue team has too many players.\n\"" );
 				return; // ignore the request
 			}
@@ -576,7 +609,7 @@ void SetTeam( gentity_t *ent, char *s ) {
 	if ( (g_gametype.integer == GT_TOURNAMENT)
 		&& level.numNonSpectatorClients >= 2 ) {
 		team = TEAM_SPECTATOR;
-	} else if ( g_maxGameClients.integer > 0 && 
+	} else if ( g_maxGameClients.integer > 0 &&
 		level.numNonSpectatorClients >= g_maxGameClients.integer ) {
 		team = TEAM_SPECTATOR;
 	}
@@ -635,8 +668,8 @@ to free floating spectator mode
 =================
 */
 void StopFollowing( gentity_t *ent ) {
-	ent->client->ps.persistant[ PERS_TEAM ] = TEAM_SPECTATOR;	
-	ent->client->sess.sessionTeam = TEAM_SPECTATOR;	
+	ent->client->ps.persistant[ PERS_TEAM ] = TEAM_SPECTATOR;
+	ent->client->sess.sessionTeam = TEAM_SPECTATOR;
 	ent->client->sess.spectatorState = SPECTATOR_FREE;
 	ent->client->ps.pm_flags &= ~PMF_FOLLOW;
 	ent->r.svFlags &= ~SVF_BOT;
@@ -820,7 +853,7 @@ static void G_SayTo( gentity_t *ent, gentity_t *other, int mode, int color, cons
 		return;
 	}
 
-	trap_SendServerCommand( other-g_entities, va("%s \"%s%c%c%s\"", 
+	trap_SendServerCommand( other-g_entities, va("%s \"%s%c%c%s\"",
 		mode == SAY_TEAM ? "tchat" : "chat",
 		name, Q_COLOR_ESCAPE, color, message));
 }
@@ -850,10 +883,10 @@ void G_Say( gentity_t *ent, gentity_t *target, int mode, const char *chatText ) 
 	case SAY_TEAM:
 		G_LogPrintf( "sayteam: %s: %s\n", ent->client->pers.netname, chatText );
 		if (Team_GetLocationMsg(ent, location, sizeof(location)))
-			Com_sprintf (name, sizeof(name), EC"(%s%c%c"EC") (%s)"EC": ", 
+			Com_sprintf (name, sizeof(name), EC"(%s%c%c"EC") (%s)"EC": ",
 				ent->client->pers.netname, Q_COLOR_ESCAPE, COLOR_WHITE, location);
 		else
-			Com_sprintf (name, sizeof(name), EC"(%s%c%c"EC")"EC": ", 
+			Com_sprintf (name, sizeof(name), EC"(%s%c%c"EC")"EC": ",
 				ent->client->pers.netname, Q_COLOR_ESCAPE, COLOR_WHITE );
 		color = COLOR_BLUE;
 		break;
@@ -1257,9 +1290,9 @@ void Cmd_CallVote_f( gentity_t *ent ) {
 	ent->client->ps.eFlags |= EF_VOTED;
 
 	trap_SetConfigstring( CS_VOTE_TIME, va("%i", level.voteTime ) );
-	trap_SetConfigstring( CS_VOTE_STRING, level.voteDisplayString );	
+	trap_SetConfigstring( CS_VOTE_STRING, level.voteDisplayString );
 	trap_SetConfigstring( CS_VOTE_YES, va("%i", level.voteYes ) );
-	trap_SetConfigstring( CS_VOTE_NO, va("%i", level.voteNo ) );	
+	trap_SetConfigstring( CS_VOTE_NO, va("%i", level.voteNo ) );
 }
 
 /*
@@ -1294,7 +1327,7 @@ void Cmd_Vote_f( gentity_t *ent ) {
 		trap_SetConfigstring( CS_VOTE_YES, va("%i", level.voteYes ) );
 	} else {
 		level.voteNo++;
-		trap_SetConfigstring( CS_VOTE_NO, va("%i", level.voteNo ) );	
+		trap_SetConfigstring( CS_VOTE_NO, va("%i", level.voteNo ) );
 	}
 
 	// a majority will be determined in CheckVote, which will also account
@@ -1469,7 +1502,7 @@ void Cmd_TeamVote_f( gentity_t *ent ) {
 		trap_SetConfigstring( CS_TEAMVOTE_YES + cs_offset, va("%i", level.teamVoteYes[cs_offset] ) );
 	} else {
 		level.teamVoteNo[cs_offset]++;
-		trap_SetConfigstring( CS_TEAMVOTE_NO + cs_offset, va("%i", level.teamVoteNo[cs_offset] ) );	
+		trap_SetConfigstring( CS_TEAMVOTE_NO + cs_offset, va("%i", level.teamVoteNo[cs_offset] ) );
 	}
 
 	// a majority will be determined in TeamCheckVote, which will also account

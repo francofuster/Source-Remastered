@@ -311,7 +311,7 @@ static void Preferences_DrawApply( void *self ) {
 
 void Preferences_MenuDraw (void)
 {
-	static const char *hints[] = { "ARROWS", "Change", "ENTER", "Select", "ESC", "Back" };
+	static const char *hints[] = { "LR", "Change", "ENTER", "Select", "ESC", "Back" };
 
 	s_preferences.apply.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 

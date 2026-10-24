@@ -569,6 +569,12 @@ static qhandle_t	d_round;
 static qhandle_t	d_roundEdge;
 static qhandle_t	d_roundMask;
 static qhandle_t	d_roundGlow;
+static qhandle_t	d_roundEdgeThick;
+static qhandle_t	d_icons[8];
+
+static const char *d_iconFiles[8] = {
+	"iconEdit", "iconClose", "iconPlus", "iconChevRight", "iconChevDown", "iconArrowRight", "iconArrowUp", "iconWarn"
+};
 
 static void UI_DRegister( void ) {
 	if ( d_logo ) {
@@ -580,6 +586,14 @@ static void UI_DRegister( void ) {
 	d_roundEdge		= trap_R_RegisterShaderNoMip( "interface/menu/roundEdge.png" );
 	d_roundMask		= trap_R_RegisterShaderNoMip( "interface/menu/roundMask.png" );
 	d_roundGlow		= trap_R_RegisterShaderNoMip( "interface/menu/roundGlow.png" );
+	d_roundEdgeThick	= trap_R_RegisterShaderNoMip( "interface/menu/roundEdgeThick.png" );
+	{
+		int i;
+
+		for ( i = 0; i < 8; i++ ) {
+			d_icons[i] = trap_R_RegisterShaderNoMip( va( "interface/menu/%s.png", d_iconFiles[i] ) );
+		}
+	}
 	d_ctaGlow		= trap_R_RegisterShaderNoMip( "menuCtaGlow" );
 	d_tab			= trap_R_RegisterShaderNoMip( "interface/menu/mainButton3.png" );
 	d_tabGlow		= trap_R_RegisterShaderNoMip( "menuKiGlow3" );
@@ -812,20 +826,40 @@ void UI_DSectionTitle( float x, float y, const char *text ) {
 }
 
 // a key cap and its action; returns the width used
+// keys "UD" and "LR" are drawn as the arrow pairs of the artboards
+static float UI_DKeyCapW( const char *key ) {
+	float w;
+
+	if ( !strcmp( key, "UD" ) || !strcmp( key, "LR" ) ) {
+		return 42;
+	}
+	w = UI_DPropWidth( key, 11 ) + 16;
+	return ( w < 30 ) ? 30 : w;
+}
+
 float UI_DKeyHint( float x, float y, const char *key, const char *label ) {
 	float	capW;
 	vec4_t	capFill;
 	vec4_t	capEdge;
+	vec4_t	ink;
 
-	capFill[0] = 0.07f; capFill[1] = 0.09f; capFill[2] = 0.26f; capFill[3] = 0.85f;
+	capFill[0] = 0.07f; capFill[1] = 0.094f; capFill[2] = 0.26f; capFill[3] = 0.85f;
 	capEdge[0] = 0.29f; capEdge[1] = 0.39f; capEdge[2] = 0.74f; capEdge[3] = 1.0f;
-	capW = UI_DTextWidth( key, 15 ) + 16;
-	if ( capW < 30 ) {
-		capW = 30;
+	ink[0] = 0.84f; ink[1] = 0.87f; ink[2] = 0.98f; ink[3] = 1.0f;
+	capW = UI_DKeyCapW( key );
+	UI_DRoundFill( x, y, capW, 26, 4, capFill );
+	UI_DRoundEdge( x, y, capW, 26, 4, capEdge );
+	if ( !strcmp( key, "UD" ) ) {
+		UI_DIcon( x + 8, y + 7, 12, UI_ICON_ARROWUP, ink );
+		UI_DIcon( x + 22, y + 7, 12, UI_ICON_ARROWDOWN, ink );
 	}
-	UI_DFill( x, y, capW, 26, capFill );
-	UI_DFrame( x, y, capW, 26, capEdge );
-	UI_DText( x + capW * 0.5f, y + 5, key, 15, UI_CENTER, zeq_white );
+	else if ( !strcmp( key, "LR" ) ) {
+		UI_DIcon( x + 8, y + 7, 12, UI_ICON_ARROWLEFT, ink );
+		UI_DIcon( x + 22, y + 7, 12, UI_ICON_ARROWRIGHT, ink );
+	}
+	else {
+		UI_DProp( x + capW * 0.5f, y + 8, key, 11, UI_CENTER, ink );
+	}
 	UI_DText( x + capW + 8, y + 3, label, 19, UI_LEFT|UI_DROPSHADOW, zeq_text2 );
 	return capW + 8 + UI_DTextWidth( label, 19 ) + 26;
 }
@@ -872,7 +906,67 @@ void UI_DRoundFill( float x, float y, float w, float h, float r, const float *co
 // the stroke is 1.5 px at r 12, it scales with r
 void UI_DRoundEdge( float x, float y, float w, float h, float r, const float *color ) {
 	UI_DRegister();
-	UI_DRound9( x, y, w, h, r, ROUND_C, d_roundEdge, color );
+	UI_DRound9( x, y, w, h, r, ROUND_C, r < 8.0f ? d_roundEdgeThick : d_roundEdge, color );
+}
+
+/*
+=================
+UI_DIcon
+
+line icons of the artboards; left and down are the right and up art flipped
+=================
+*/
+void UI_DIcon( float x, float y, float size, int icon, const float *color ) {
+	UI_DRegister();
+	trap_R_SetColor( color );
+	switch ( icon ) {
+	case UI_ICON_EDIT:			UI_DPic( x, y, size, size, d_icons[0] ); break;
+	case UI_ICON_CLOSE:			UI_DPic( x, y, size, size, d_icons[1] ); break;
+	case UI_ICON_PLUS:			UI_DPic( x, y, size, size, d_icons[2] ); break;
+	case UI_ICON_CHEVRIGHT:		UI_DPic( x, y, size, size, d_icons[3] ); break;
+	case UI_ICON_CHEVLEFT:		UI_DPicST( x, y, size, size, 1, 0, 0, 1, d_icons[3] ); break;
+	case UI_ICON_CHEVDOWN:		UI_DPic( x, y, size, size, d_icons[4] ); break;
+	case UI_ICON_ARROWRIGHT:	UI_DPic( x, y, size, size, d_icons[5] ); break;
+	case UI_ICON_ARROWLEFT:		UI_DPicST( x, y, size, size, 1, 0, 0, 1, d_icons[5] ); break;
+	case UI_ICON_ARROWUP:		UI_DPic( x, y, size, size, d_icons[6] ); break;
+	case UI_ICON_ARROWDOWN:		UI_DPicST( x, y, size, size, 0, 1, 1, 0, d_icons[6] ); break;
+	default:					UI_DPic( x, y, size, size, d_icons[7] ); break;
+	}
+	trap_R_SetColor( NULL );
+}
+
+// the .field of the artboards: 4 px corners, navy fill, blue border
+void UI_DField( float x, float y, float w, float h, float focus ) {
+	vec4_t fill, edge;
+
+	fill[0] = 0.024f; fill[1] = 0.03f; fill[2] = 0.12f; fill[3] = 0.8f;
+	UI_DRoundFill( x, y, w, h, 4, fill );
+	edge[0] = 0.24f + 0.23f * focus; edge[1] = 0.33f + 0.37f * focus; edge[2] = 0.66f + 0.34f * focus; edge[3] = 1.0f;
+	UI_DRoundEdge( x, y, w, h, 4, edge );
+}
+
+// the .ib square icon button (edit, remove, kick)
+void UI_DIconButton( float x, float y, float size, int icon, const float *iconColor, float hot ) {
+	vec4_t fill, edge;
+
+	fill[0] = 0.024f; fill[1] = 0.03f; fill[2] = 0.12f; fill[3] = 0.7f;
+	UI_DRoundFill( x, y, size, size, 4, fill );
+	edge[0] = 0.24f + 0.23f * hot; edge[1] = 0.33f + 0.37f * hot; edge[2] = 0.66f + 0.34f * hot; edge[3] = 1.0f;
+	UI_DRoundEdge( x, y, size, size, 4, edge );
+	UI_DIcon( x + size * 0.28f, y + size * 0.28f, size * 0.44f, icon, iconColor );
+}
+
+// gold note with the warning triangle
+void UI_DWarnBox( float x, float y, float w, const char *text ) {
+	vec4_t fill, edge, ink;
+
+	fill[0] = zeq_gold[0]; fill[1] = zeq_gold[1]; fill[2] = zeq_gold[2]; fill[3] = 0.08f;
+	UI_DRoundFill( x, y, w, 42, 4, fill );
+	edge[0] = zeq_gold[0]; edge[1] = zeq_gold[1]; edge[2] = zeq_gold[2]; edge[3] = 0.55f;
+	UI_DRoundEdge( x, y, w, 42, 4, edge );
+	UI_DIcon( x + 12, y + 12, 18, UI_ICON_WARN, zeq_gold );
+	ink[0] = 0.96f; ink[1] = 0.81f; ink[2] = 0.52f; ink[3] = 1.0f;
+	UI_DText( x + 40, y + 11, text, 18, UI_LEFT, ink );
 }
 
 // box-shadow like glow spreading about spread px out of the rect
@@ -984,10 +1078,7 @@ void UI_DHintsCentered( const char **pairs, int count ) {
 
 	total = 0.0f;
 	for ( i = 0; i < count; i++ ) {
-		capW = UI_DTextWidth( pairs[i * 2], 15 ) + 16;
-		if ( capW < 30 ) {
-			capW = 30;
-		}
+		capW = UI_DKeyCapW( pairs[i * 2] );
 		total += capW + 8 + UI_DTextWidth( pairs[i * 2 + 1], 19 ) + 26;
 	}
 	x = 640.0f - ( total - 26.0f ) * 0.5f;
@@ -1084,14 +1175,17 @@ void UI_DSelector( float x, float y, float w, const char *value, float focus ) {
 	vec4_t box;
 	vec4_t edge;
 
-	box[0] = 0.02f; box[1] = 0.03f; box[2] = 0.12f; box[3] = 0.7f;
+	vec4_t ink;
+
+	box[0] = 0.024f; box[1] = 0.03f; box[2] = 0.12f; box[3] = 0.7f;
 	edge[0] = 0.24f; edge[1] = 0.33f; edge[2] = 0.66f; edge[3] = 1.0f;
-	UI_DFill( x, y, 22, 22, box );
-	UI_DFrame( x, y, 22, 22, edge );
-	UI_DText( x + 11, y + 2, "<", 17, UI_CENTER, focus > 0.0f ? zeq_white : zeq_text2 );
-	UI_DFill( x + w - 22, y, 22, 22, box );
-	UI_DFrame( x + w - 22, y, 22, 22, edge );
-	UI_DText( x + w - 11, y + 2, ">", 17, UI_CENTER, focus > 0.0f ? zeq_white : zeq_text2 );
+	ink[0] = 0.84f; ink[1] = 0.87f; ink[2] = 0.98f; ink[3] = focus > 0.0f ? 1.0f : 0.8f;
+	UI_DRoundFill( x, y, 22, 22, 3, box );
+	UI_DRoundEdge( x, y, 22, 22, 3, edge );
+	UI_DIcon( x + 6, y + 6, 10, UI_ICON_CHEVLEFT, ink );
+	UI_DRoundFill( x + w - 22, y, 22, 22, 3, box );
+	UI_DRoundEdge( x + w - 22, y, 22, 22, 3, edge );
+	UI_DIcon( x + w - 16, y + 6, 10, UI_ICON_CHEVRIGHT, ink );
 	UI_DText( x + w * 0.5f, y + 1, value, 19, UI_CENTER, zeq_white );
 }
 
@@ -1113,14 +1207,15 @@ void UI_DSlider( float x, float y, float w, float frac, float focus ) {
 	if ( frac > 1 ) {
 		frac = 1;
 	}
-	track[0] = 0.02f; track[1] = 0.03f; track[2] = 0.12f; track[3] = 0.9f;
+	track[0] = 0.024f; track[1] = 0.03f; track[2] = 0.12f; track[3] = 0.9f;
 	edge[0] = 0.24f; edge[1] = 0.33f; edge[2] = 0.66f; edge[3] = 1.0f;
 	fill[0] = 0.18f; fill[1] = 0.37f; fill[2] = 0.82f; fill[3] = 1.0f;
 	shine[0] = 0.47f; shine[1] = 0.70f; shine[2] = 1.0f; shine[3] = 1.0f;
-	UI_DFill( x, y + 7, w, 8, track );
-	UI_DFrame( x, y + 7, w, 8, edge );
-	UI_DFill( x + 1, y + 8, ( w - 2 ) * frac, 6, fill );
-	UI_DFill( x + 1, y + 8, ( w - 2 ) * frac, 2, shine );
+	UI_DRoundFill( x, y + 7, w, 8, 4, track );
+	if ( w * frac > 1.0f ) {
+		UI_DRoundRowGlow( x, y + 7, w * frac < 8.0f ? 8.0f : w * frac, 8, 4, fill, shine );
+	}
+	UI_DRoundEdge( x, y + 7, w, 8, 4, edge );
 	trap_R_SetColor( NULL );
 	UI_DPic( x + w * frac - 7, y - 2 - focus * 1.5f, 14, 26 + focus * 3.0f, d_sliderKnob );
 }
@@ -1147,22 +1242,29 @@ void UI_DPips( float x, float y, int filled, int total, float anim ) {
 	}
 }
 
-void UI_DStatBar( float x, float y, float w, const char *label, float value, float anim ) {
-	vec4_t	track, fill, shine;
-	float	tx, tw;
+// the .bar of the artboards: label column, rounded track, value
+void UI_DStatBarW( float x, float y, float w, float labelW, const char *label, float value, float anim ) {
+	vec4_t	track, edge, fill, shine;
+	float	tx, tw, fw;
 
-	track[0] = 0.02f; track[1] = 0.03f; track[2] = 0.12f; track[3] = 0.9f;
+	track[0] = 0.024f; track[1] = 0.03f; track[2] = 0.12f; track[3] = 0.9f;
+	edge[0] = 0.18f; edge[1] = 0.27f; edge[2] = 0.56f; edge[3] = 1.0f;
 	fill[0] = 0.18f; fill[1] = 0.37f; fill[2] = 0.82f; fill[3] = 1.0f;
 	shine[0] = 0.47f; shine[1] = 0.70f; shine[2] = 1.0f; shine[3] = 1.0f;
-	tx = x + 100;
-	tw = w - 100 - 40;
-	UI_DText( x, y - 4, label, 16, UI_LEFT, zeq_text2 );
-	UI_DFill( tx, y, tw, 7, track );
-	if ( value * anim > 0.0f ) {
-		UI_DFill( tx, y, tw * value * anim, 7, fill );
-		UI_DFill( tx, y, tw * value * anim, 2, shine );
+	tx = x + labelW + 8;
+	tw = w - labelW - 8 - 8 - 28;
+	UI_DText( x, y - 5, label, 16, UI_LEFT, zeq_text2 );
+	UI_DRoundFill( tx, y, tw, 7, 3.5f, track );
+	fw = tw * value * anim;
+	if ( fw > 0.5f ) {
+		UI_DRoundRowGlow( tx, y, fw < 7.0f ? 7.0f : fw, 7, 3.5f, fill, shine );
 	}
-	UI_DText( x + w, y - 4, va( "%i", (int)( value * 100.0f + 0.5f ) ), 16, UI_RIGHT, zeq_white );
+	UI_DRoundEdge( tx, y, tw, 7, 3.5f, edge );
+	UI_DText( x + w, y - 5, va( "%i", (int)( value * 100.0f + 0.5f ) ), 16, UI_RIGHT, zeq_white );
+}
+
+void UI_DStatBar( float x, float y, float w, const char *label, float value, float anim ) {
+	UI_DStatBarW( x, y, w, 100, label, value, anim );
 }
 
 /*
@@ -1222,10 +1324,10 @@ void UI_DFocusRow( float x, float y, float w, float h, float focus ) {
 	if ( focus <= 0.0f ) {
 		return;
 	}
-	fill[0] = zeq_ki[0]; fill[1] = zeq_ki[1]; fill[2] = zeq_ki[2]; fill[3] = 0.30f * focus;
-	UI_DFill( x, y, w * ( 0.55f + 0.45f * focus ), h, fill );
-	edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.45f * focus;
-	UI_DFrame( x, y, w, h, edge );
+	// .row.on: ki gradient fading to the right, 4 px corners, no border
+	fill[0] = 0.33f; fill[1] = 0.59f; fill[2] = 1.0f; fill[3] = 0.32f * focus;
+	edge[0] = 0.33f; edge[1] = 0.59f; edge[2] = 1.0f; edge[3] = 0.0f;
+	UI_DRoundRowGlow( x, y, w, h, 4, fill, edge );
 }
 
 // a focus value that eases in after the cursor lands on item
@@ -1489,8 +1591,6 @@ void UI_DOptionsDrawSections( void ) {
 void UI_DOptionsDrawHelp( float x, float y, float w, float h ) {
 	dOptRow_t	*row;
 	int			lines;
-	vec4_t		warn;
-	vec4_t		warnFill;
 	float		pop;
 
 	UI_DGlass( x, y, w, h );
@@ -1504,11 +1604,7 @@ void UI_DOptionsDrawHelp( float x, float y, float w, float h ) {
 	UI_DProp( x + 26 + 10.0f * ( 1.0f - pop ), y + 48, row->label, 24, UI_LEFT|UI_DROPSHADOW, zeq_white );
 	lines = UI_DTextWrapped( x + 26, y + 92, w - 52, row->help ? row->help : "", 19, zeq_text2 );
 	if ( row->restart ) {
-		warn[0] = zeq_gold[0]; warn[1] = zeq_gold[1]; warn[2] = zeq_gold[2]; warn[3] = 0.55f;
-		warnFill[0] = zeq_gold[0]; warnFill[1] = zeq_gold[1]; warnFill[2] = zeq_gold[2]; warnFill[3] = 0.08f;
-		UI_DFill( x + 26, y + 110 + lines * 25, w - 52, 40, warnFill );
-		UI_DFrame( x + 26, y + 110 + lines * 25, w - 52, 40, warn );
-		UI_DText( x + 40, y + 120 + lines * 25, "Applies after a video restart", 18, UI_LEFT, zeq_gold );
+		UI_DWarnBox( x + 26, y + 110 + lines * 25, w - 52, "Applies after a video restart" );
 	}
 }
 

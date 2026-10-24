@@ -707,7 +707,7 @@ static void SystemSettings_DrawApply( void *self ) {
 
 void SystemSettings_MenuDraw (void)
 {
-	static const char *hints[] = { "ARROWS", "Change", "ENTER", "Select", "ESC", "Back" };
+	static const char *hints[] = { "LR", "Change", "ENTER", "Select", "ESC", "Back" };
 
 //APSFIX - rework this
 	SystemSettings_UpdateMenuItems();

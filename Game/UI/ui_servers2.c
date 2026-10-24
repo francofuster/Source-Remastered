@@ -1265,11 +1265,16 @@ static void ArenaServers_DrawTab( void *self ) {
 }
 
 static void ArenaServers_DrawSort( void *self ) {
-	menubitmap_s *b;
+	menubitmap_s	*b;
+	float			focus;
 
 	b = (menubitmap_s *)self;
-	UI_DText( b->generic.x - 12, b->generic.y + 3, "SORT BY", 16, UI_RIGHT, zeq_text3 );
-	UI_DSelector( b->generic.x, b->generic.y + 2, b->width, playSortLabels[g_sortkey], UI_DFocus( &g_arenaservers.menu, self ) );
+	focus = UI_DFocus( &g_arenaservers.menu, self );
+	UI_DText( b->generic.x - 12, b->generic.y + 5, "SORT BY", 16, UI_RIGHT, zeq_text3 );
+	// a dropdown box as the artboard; arrows and clicks cycle the order
+	UI_DField( b->generic.x, b->generic.y, b->width, 34, focus );
+	UI_DText( b->generic.x + 12, b->generic.y + 7, playSortLabels[g_sortkey], 18, UI_LEFT, zeq_white );
+	UI_DIcon( b->generic.x + b->width - 22, b->generic.y + 12, 10, UI_ICON_CHEVDOWN, zeq_text2 );
 }
 
 static void ArenaServers_DrawButton( void *self ) {
@@ -1298,18 +1303,10 @@ static void ArenaServers_DrawCreate( void *self ) {
 static void ArenaServers_DrawAddress( void *self ) {
 	menufield_s	*f;
 	qboolean	focus;
-	vec4_t		box;
-	vec4_t		edge;
 
 	f = (menufield_s *)self;
 	focus = ( Menu_ItemAtCursor( &g_arenaservers.menu ) == self );
-	box[0] = 0.02f; box[1] = 0.03f; box[2] = 0.12f; box[3] = 0.8f;
-	edge[0] = 0.24f; edge[1] = 0.33f; edge[2] = 0.66f; edge[3] = 1.0f;
-	if ( focus ) {
-		edge[0] = 0.47f; edge[1] = 0.70f; edge[2] = 1.0f;
-	}
-	UI_DFill( 904, 512, 304, 42, box );
-	UI_DFrame( 904, 512, 304, 42, edge );
+	UI_DField( 904, 512, 304, 42, focus ? 1.0f : 0.0f );
 	if ( f->field.buffer[0] ) {
 		UI_DText( 918, 523, f->field.buffer, 20, UI_LEFT, zeq_white );
 	}
@@ -1402,6 +1399,8 @@ static void ArenaServers_MenuDraw( void )
 	const char	*arena;
 	char		mapTitle[64];
 	vec4_t		line;
+	vec4_t		fade;
+	int			i;
 
 	if (g_arenaservers.refreshservers)
 		ArenaServers_DoRefresh();
@@ -1424,10 +1423,16 @@ static void ArenaServers_MenuDraw( void )
 	if ( arena ) {
 		trap_R_SetColor( NULL );
 		UI_DPic( 904, 178, 304, 158, trap_R_RegisterShaderNoMip( va( "maps/%s.jpg", Info_ValueForKey( arena, "map" ) ) ) );
-		UI_DFrame( 904, 178, 304, 158, zeq_ki );
 		Q_strncpyz( mapTitle, Info_ValueForKey( arena, "map" ), sizeof( mapTitle ) );
 		Q_strupr( mapTitle );
-		UI_DFill( 905, 296, 302, 39, zeq_shade );
+		// fade to navy under the title, 6 px corners and a soft blue border
+		for ( i = 0; i < 12; i++ ) {
+			fade[0] = 0.02f; fade[1] = 0.024f; fade[2] = 0.10f; fade[3] = 0.075f * i;
+			UI_DFill( 904, 278 + i * 5, 304, 5, fade );
+		}
+		UI_DRoundCorners( 904, 178, 304, 158, 6, zeq_portraitBack );
+		fade[0] = 0.47f; fade[1] = 0.63f; fade[2] = 1.0f; fade[3] = 0.45f;
+		UI_DRoundEdge( 904, 178, 304, 158, 6, fade );
 		UI_DProp( 916, 302, mapTitle, 15, UI_LEFT, zeq_white );
 		UI_DText( 916, 318, "Local match with bots", 15, UI_LEFT, zeq_text2 );
 	}

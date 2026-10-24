@@ -1579,7 +1579,7 @@ ServerOptions_MenuDraw
 =================
 */
 static void ServerOptions_MenuDraw( void ) {
-	static const char *hints[] = { "ARROWS", "Map", "B", "Bots", "ENTER", "Select", "ESC", "Back" };
+	static const char *hints[] = { "LR", "Map", "B", "Bots", "ENTER", "Select", "ESC", "Back" };
 
 	// the side strip is shared, set it again after coming back from the roster
 	uis.menuamount = -1;

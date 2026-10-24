@@ -240,7 +240,7 @@ InGame_MenuDraw
 =================
 */
 static void InGame_MenuDraw( void ) {
-	static const char *hints[] = { "ARROWS", "Navigate", "ENTER", "Select", "ESC", "Resume" };
+	static const char *hints[] = { "UD", "Navigate", "ENTER", "Select", "ESC", "Resume" };
 	float		bias;
 	vec4_t		shade;
 	vec4_t		edge;

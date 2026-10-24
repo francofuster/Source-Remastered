@@ -328,6 +328,27 @@ extern void			UI_DPips( float x, float y, int filled, int total, float anim );
 extern void			UI_DStatBar( float x, float y, float w, const char *label, float value, float anim );
 extern void			UI_DPortrait( float x, float y, float size, qhandle_t shader, qboolean selected, float focus );
 extern vec4_t		zeq_portraitBack;
+
+// line icons of the design (white, tinted when drawn)
+typedef enum {
+	UI_ICON_EDIT,
+	UI_ICON_CLOSE,
+	UI_ICON_PLUS,
+	UI_ICON_CHEVRIGHT,
+	UI_ICON_CHEVLEFT,
+	UI_ICON_CHEVDOWN,
+	UI_ICON_ARROWRIGHT,
+	UI_ICON_ARROWLEFT,
+	UI_ICON_ARROWUP,
+	UI_ICON_ARROWDOWN,
+	UI_ICON_WARN
+} uiIcon_t;
+
+extern void			UI_DIcon( float x, float y, float size, int icon, const float *color );
+extern void			UI_DField( float x, float y, float w, float h, float focus );
+extern void			UI_DIconButton( float x, float y, float size, int icon, const float *iconColor, float hot );
+extern void			UI_DStatBarW( float x, float y, float w, float labelW, const char *label, float value, float anim );
+extern void			UI_DWarnBox( float x, float y, float w, const char *text );
 extern void			UI_DRoundFill( float x, float y, float w, float h, float r, const float *color );
 extern void			UI_DRoundEdge( float x, float y, float w, float h, float r, const float *color );
 extern void			UI_DRoundGlow( float x, float y, float w, float h, float spread, const float *color );
@@ -535,6 +556,7 @@ typedef struct {
 	int		def;			// index in the bot definitions
 	int		skill;			// 1 to 3
 	int		style;			// index in the styles
+	char	name[32];		// empty = the name in bots.txt
 } uiRosterSlot_t;
 
 extern void			UI_Bots_Load( void );

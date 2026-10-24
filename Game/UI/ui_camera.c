@@ -287,7 +287,7 @@ the right so the camera can be judged live
 =================
 */
 static void Camera_MenuDraw( void ) {
-	static const char *hints[] = { "ARROWS", "Adjust", "ESC", "Back" };
+	static const char *hints[] = { "LR", "Adjust", "ESC", "Back" };
 
 	UI_DGlass( 40, 96, 600, 500 );
 	UI_DProp( 64, 120, "CAMERA", 30, UI_LEFT|UI_DROPSHADOW, zeq_white );

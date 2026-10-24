@@ -461,19 +461,11 @@ static void PlayerModel_DrawPage( void *self ) {
 static void PlayerModel_DrawName( void *self ) {
 	menufield_s	*f;
 	qboolean	focus;
-	vec4_t		box;
-	vec4_t		edge;
 	char		clean[64];
 
 	f = (menufield_s *)self;
 	focus = ( Menu_ItemAtCursor( &s_playermodel.menu ) == self );
-	box[0] = 0.02f; box[1] = 0.03f; box[2] = 0.12f; box[3] = 0.8f;
-	edge[0] = 0.24f; edge[1] = 0.33f; edge[2] = 0.66f; edge[3] = 1.0f;
-	if ( focus ) {
-		edge[0] = 0.47f; edge[1] = 0.70f; edge[2] = 1.0f;
-	}
-	UI_DFill( 256, 536, 268, 42, box );
-	UI_DFrame( 256, 536, 268, 42, edge );
+	UI_DField( 256, 536, 268, 42, focus ? 1.0f : 0.0f );
 	Q_strncpyz( clean, f->field.buffer, sizeof( clean ) );
 	if ( focus ) {
 		Q_CleanStr( clean );
@@ -505,7 +497,7 @@ static void PlayerModel_DrawConfirm( void *self ) {
 }
 
 static void PlayerModel_MenuDraw( void ) {
-	static const char *hints[] = { "ARROWS", "Fighter", "ENTER", "Select", "ESC", "Back" };
+	static const char *hints[] = { "LR", "Fighter", "ENTER", "Select", "ESC", "Back" };
 	fighterDef_t	*def;
 	char			title[MAX_QPATH];
 	float			pop;

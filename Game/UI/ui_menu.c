@@ -100,9 +100,9 @@ static void MainMenu_DrawPlayer( void *self ) {
 		UI_PlayerInfo_SetInfo( &s_main.playerinfo, ANIM_FLY_IDLE, ANIM_FLY_IDLE, viewangles, vec3_origin, WP_NONE, qfalse );
 	}
 
-	// floating over its shadow, bobbing gently
+	// floating over its shadow
 	b = (menubitmap_s*) self;
-	UI_DrawPlayer( b->generic.x, b->generic.y + 3.0f * sin( uis.realtime / 650.0f ), b->width, b->height, &s_main.playerinfo, uis.realtime / PLAYER_MODEL_SPEED );
+	UI_DrawPlayer( b->generic.x, b->generic.y, b->width, b->height, &s_main.playerinfo, uis.realtime / PLAYER_MODEL_SPEED );
 }
 
 /*
@@ -244,7 +244,7 @@ TTimo: this function is common to the main menu and errorMessage menu
 */
 
 static void Main_MenuDraw( void ) {
-	static const char *hints[] = { "ARROWS", "Navigate", "ENTER", "Select" };
+	static const char *hints[] = { "UD", "Navigate", "ENTER", "Select" };
 
 	uis.menuamount = -1;
 	uis.hideEarth = qfalse;
