@@ -251,7 +251,6 @@ static void Main_MenuDraw( void ) {
 	uis.showFrame = qfalse;
 
 	UI_DLogo( 40 - UI_DExtra(), 30, 270 );
-	UI_DProp( 1244 + UI_DExtra(), 32, "REMASTER  v1.3", 13, UI_RIGHT, zeq_text3 );
 	trap_R_SetColor( NULL );
 	UI_DPic( 930 + UI_DExtra(), 584, 280, 90, uis.blobShadow );
 
