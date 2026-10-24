@@ -492,8 +492,9 @@ static void IN_DeactivateMouse( void )
 		return;
 
 	// Always show the cursor when the mouse is disabled,
-	// but not when fullscreen
-	if( !r_fullscreen->integer )
+	// but not when fullscreen, unless the game lost focus: the borderless
+	// fullscreen window stays visible behind other windows
+	if( !r_fullscreen->integer || !( SDL_GetAppState( ) & SDL_APPINPUTFOCUS ) )
 		SDL_ShowCursor( 1 );
 
 	if( !mouseAvailable )

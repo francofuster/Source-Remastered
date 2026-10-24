@@ -217,6 +217,11 @@ void PM_CheckKnockback(void){
 	if(pm->ps->timers[tmKnockback] > 0){
 		PM_ContinueLegsAnim(ANIM_KNOCKBACK);
 		pm->ps->timers[tmKnockback] -= pml.msec;
+		// A launch that never got a direction (a catch of the zanzoken chase wipes
+		// it while the power hit of the classic melee is already on its way) left
+		// the player standing still for the whole knockback with the foe hitting
+		// it again and again: fly away from the opponent by default.
+		if(!pm->ps->knockBackDirection){pm->ps->knockBackDirection = 5;}
 		PM_StopDirections();
 		VectorScale(pml.forward,-1,direction);
 		if(pm->ps->timers[tmKnockback] > 0){
@@ -272,15 +277,6 @@ void PM_CheckKnockback(void){
 			speed /= 2;
 		}
 		VectorScale(pm->ps->velocity,speed,pm->ps->velocity);
-		// The flight goes through bodies: a launched player stopped against the
-		// opponent (standing in its path) stayed in the knockback and was hit
-		// again and again. Walls still stop it (PM_CheckDirection).
-		{
-			int oldMask = pm->tracemask;
-			pm->tracemask &= ~CONTENTS_BODY;
-			PM_StepSlideMove(qfalse);
-			pm->tracemask = oldMask;
-		}
 		VectorNormalize2(pm->ps->velocity,post_vel);
 		if(PM_CheckDirection(direction,qfalse)){PM_Crash(vertical);}
 	}
@@ -646,7 +642,10 @@ qboolean PM_LockedZanzoken(void){
 			PM_ZanzokenDebug(va("chase window closed: foe knockback %i crashed %i", foe->timers[tmKnockback], (foe->bitFlags & isCrashed) ? 1 : 0));
 			pm->ps->timers[tmZanzokenChase] = 0;
 		}
-		else if((fwdPress || altPress) && dist <= ZAN_CHASE_RANGE){
+		// a frozen foe (or our own melee already open) is inside the classic melee
+		// start: W on a flying foe launches it again in 300 ms, and a catch here
+		// would wipe that launch and free our own freeze
+		else if((fwdPress || altPress) && dist <= ZAN_CHASE_RANGE && !foe->timers[tmFreeze] && !(pm->ps->bitFlags & usingMelee)){
 			VectorSubtract(pm->ps->origin, foe->origin, line);
 			if(VectorNormalize(line) < 0.1f){VectorSet(line, 1, 0, 0);}
 			VectorScale(line, 40, line);
@@ -3678,7 +3677,7 @@ void PmoveSingle(pmove_t *pmove){
 Pmove
 ================*/
 void Pmove(pmove_t *pmove){
-	int	finalTime;
+	int	finalTime, oldMask;
 	finalTime = pmove->cmd.serverTime;
 	if(finalTime < pmove->ps->commandTime){return;}
 	if(finalTime > pmove->ps->commandTime + 1000){
@@ -3697,7 +3696,16 @@ void Pmove(pmove_t *pmove){
 			msec = 66;
 		}
 		pmove->cmd.serverTime = pmove->ps->commandTime + msec;
+		// The flight of a launched player goes through bodies. The movement that
+		// really carries it runs later in PmoveSingle (PM_CheckKnockback only sets
+		// the velocity: its frametime is still zero there), and it used to stop
+		// against the opponent standing next to it, so the launched one stayed in
+		// place inside the knockback while the foe kept hitting it. Walls still stop
+		// it (PM_CheckDirection).
+		oldMask = pmove->tracemask;
+		if(pmove->ps->timers[tmKnockback] > 0){pmove->tracemask &= ~CONTENTS_BODY;}
 		PmoveSingle(pmove);
+		pmove->tracemask = oldMask;
 	}
 }
 

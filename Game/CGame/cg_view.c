@@ -572,6 +572,12 @@ static void CG_OffsetThirdPersonView2( void )
 	// Set camera viewing direction.
 	VectorCopy( cg.refdefViewAngles, cameraFocusAngles );
 
+	// clean camera for a transformation while locked on (see CG_OffsetThirdPersonView)
+	if ( cg.snap->ps.timers[tmTransform] > 1 && cg.predictedPlayerState.lockedTarget > 0 ) {
+		cameraFocusAngles[PITCH] = 0;
+		cameraFocusAngles[ROLL] = 0;
+	}
+
 	// Add in the third Person Angle.
 	cameraFocusAngles[YAW] += cg_thirdPersonAngle.value;
 
@@ -711,6 +717,7 @@ static void CG_OffsetThirdPersonView( void ) {
 	float		orbit,pan,zoom;
 	int 		clientNum;
 	float		newAngle,newRange,newHeight;
+	qboolean	cleanTransform;
 	entityState_t *ent;
 	clientInfo_t *ci;
 	tierConfig_cg *tier;
@@ -728,6 +735,15 @@ static void CG_OffsetThirdPersonView( void ) {
 			VectorCopy( ps->origin,cg.guide_target);
 			cg.guide_view = qfalse;
 		}	
+	}
+	// A transformation while locked on gets the clean camera: the lock-on view
+	// points at the opponent (its pitch tilts the whole orbit of the cinematic)
+	// and the locked shoulder slide pushes it sideways, so both are dropped
+	// until the animation ends (the lock cam eases back in afterwards).
+	cleanTransform = ( ps->timers[tmTransform] > 1 && ps->lockedTarget > 0 ) ? qtrue : qfalse;
+	if ( cleanTransform ) {
+		cg.refdefViewAngles[PITCH] = 0;
+		cg.refdefViewAngles[ROLL] = 0;
 	}
 	// backup for when flying
 	VectorCopy( cg.refdefViewAngles, overrideAngles );
@@ -762,7 +778,7 @@ static void CG_OffsetThirdPersonView( void ) {
 			cg_thirdPersonSlide.value = cg_cameraPreviewBackup[3];
 		}
 
-		if(ps->lockedTarget > 0 || previewLocked){
+		if((ps->lockedTarget > 0 && !cleanTransform) || previewLocked){
 			if(ps->lockedTarget > 0 && !cg.lockonStart){cg.lockonStart = qtrue;}
 			cg_thirdPersonAngle.value = cg_lockedAngle.value;
 			cg_thirdPersonHeight.value = cg_lockedHeight.value;
@@ -795,6 +811,7 @@ static void CG_OffsetThirdPersonView( void ) {
 		cg_thirdPersonAngle.value = orbit > 0 ? newAngle : tier->transformCameraDefault[0];
 		cg_thirdPersonHeight.value = pan > 0 ? newHeight : tier->transformCameraDefault[1];
 		cg_thirdPersonRange.value = zoom > 0 ? newRange : tier->transformCameraDefault[2];
+		if(cleanTransform && ci->cameraBackup[2]){cg_thirdPersonSlide.value = ci->cameraBackup[3];}
 	}
 	else if(ci->transformStart){
 		ci->transformStart = qfalse;
@@ -1114,6 +1131,58 @@ float CG_WidescreenFovX( float fovX ) {
 	return fovX;
 }
 
+/*
+====================
+CG_TransformFovX
+
+The transformation cameras (cg_thirdPerson* swept by the tier config) were laid
+out when the game ran on 4:3, where cg_fov gives a vertical FOV of
+2*atan(tan(fovX/2)*3/4). Wider screens end up with a shorter vertical view
+(58.7 degrees at 16:9 and 21:9 with cg_widescreenFov, against 73.7 at 4:3), so
+the same orbit and pan crop the character much sooner. During the cinematic the
+vertical FOV goes back to the 4:3 one and the horizontal one opens up for the
+real aspect ratio. The blend eases in and out so the FOV does not pop.
+====================
+*/
+static float CG_TransformFovX( float baseFovX, float fovX ) {
+	static float	blend = 0.0f;
+	static int		lastTime = 0;
+	float			aspect, target, dt, tan43, tanCinematic, tanMix;
+
+	dt = ( cg.time - lastTime ) / 1000.0f;
+	lastTime = cg.time;
+	if ( dt < 0.0f || dt > 0.1f ) {
+		dt = 0.0f;
+	}
+
+	if ( cg.refdef.width <= 0 || cg.refdef.height <= 0 ) {
+		return fovX;
+	}
+	aspect = (float)cg.refdef.width / (float)cg.refdef.height;
+	target = ( cg.predictedPlayerState.timers[tmTransform] > 1 && aspect > 4.0f / 3.0f ) ? 1.0f : 0.0f;
+
+	if ( blend < target ) {
+		blend += dt * 4.0f;
+		if ( blend > target ) blend = target;
+	} else if ( blend > target ) {
+		blend -= dt * 4.0f;
+		if ( blend < target ) blend = target;
+	}
+	if ( blend <= 0.0f ) {
+		return fovX;
+	}
+
+	tan43 = tan( baseFovX / 360.0f * M_PI ) * 0.75f;			// tan(vertical half FOV) at 4:3
+	tanCinematic = tan43 * aspect;								// the horizontal one for this screen
+	tanMix = tan( fovX / 360.0f * M_PI );
+	tanMix += blend * ( tanCinematic - tanMix );
+	fovX = atan2( tanMix, 1.0f ) * 360.0f / M_PI;
+	if ( fovX > 170.0f ) {
+		fovX = 170.0f;
+	}
+	return fovX;
+}
+
 static int CG_CalcFov( void ) {
 	float	x;
 	float	phase;
@@ -1166,7 +1235,7 @@ static int CG_CalcFov( void ) {
 		}
 	}
 
-	fov_x = CG_WidescreenFovX( fov_x );
+	fov_x = CG_TransformFovX( fov_x, CG_WidescreenFovX( fov_x ) );
 
 	x = cg.refdef.width / tan( fov_x / 360 * M_PI );
 	fov_y = atan2( cg.refdef.height, x );
@@ -1377,6 +1446,34 @@ static void AddEarthquakeTremble(earthquake_t* quake) {
 
 /*
 ===============
+CG_EndTransformCamera
+
+The cinematic of a transformation drives cg_thirdPerson* from the tier config
+and puts them back when it ends, but that happened only inside the legacy
+cameras: with the lock cam in charge when the animation ended the values and
+ci->transformStart stayed stale, so the next transformation under lock-on
+started with the old length and tier (an animation out of phase). Runs every
+frame whichever camera is in charge.
+===============
+*/
+static void CG_EndTransformCamera( void ) {
+	clientInfo_t	*ci;
+
+	ci = &cgs.clientinfo[cg.predictedPlayerState.clientNum];
+	if ( cg.predictedPlayerState.timers[tmTransform] > 1 || !ci->transformStart ) {
+		return;
+	}
+	ci->transformStart = qfalse;
+	if ( ci->cameraBackup[2] ) {
+		cg_thirdPersonAngle.value = ci->cameraBackup[0];
+		cg_thirdPersonHeight.value = ci->cameraBackup[1];
+		cg_thirdPersonRange.value = ci->cameraBackup[2];
+		cg_thirdPersonSlide.value = ci->cameraBackup[3];
+	}
+}
+
+/*
+===============
 CG_CalcViewValues
 
 Sets cg.refdef view values
@@ -1448,6 +1545,8 @@ static int CG_CalcViewValues( void ) {
 
 	if ( cg.renderingThirdPerson ) {
 		qboolean lockCamDrove = qfalse;
+
+		CG_EndTransformCamera();
 
 		// back away from character
 		if ( cg_lockCam.integer && cg.predictedPlayerState.lockedTarget > 0 ) {

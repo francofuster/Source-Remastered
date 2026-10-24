@@ -339,7 +339,23 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
 
 	if (fullscreen)
 	{
-		flags |= SDL_FULLSCREEN;
+		// Borderless fullscreen: instead of switching the display mode
+		// (exclusive fullscreen), open a frameless window that covers the
+		// desktop at its current resolution. SDL_VIDEO_CENTERED places it
+		// at the origin of the primary monitor.
+		const SDL_VideoInfo *desktop = SDL_GetVideoInfo( );
+
+		if( desktop && desktop->current_w > 0 && desktop->current_h > 0 )
+		{
+			glConfig.vidWidth = desktop->current_w;
+			glConfig.vidHeight = desktop->current_h;
+			glConfig.windowAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+		}
+
+		ri.Printf( PRINT_ALL, "...borderless fullscreen %d %d\n", glConfig.vidWidth, glConfig.vidHeight );
+
+		flags |= SDL_NOFRAME;
+		flags &= ~SDL_RESIZABLE;
 		glConfig.isFullscreen = qtrue;
 	}
 	else
@@ -349,6 +365,8 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
 
 		glConfig.isFullscreen = qfalse;
 	}
+
+	Sys_SetEnv( "SDL_VIDEO_CENTERED", ( fullscreen || r_centerWindow->integer ) ? "1" : "" );
 
 	colorbits = r_colorbits->value;
 	if ((!colorbits) || (colorbits >= 32))
@@ -882,8 +900,6 @@ void GLimp_Init( void )
 		ri.Cvar_Set( "com_abnormalExit", "0" );
 	}
 
-	Sys_SetEnv( "SDL_VIDEO_CENTERED", r_centerWindow->integer ? "1" : "" );
-
 	Sys_GLimpInit( );
 
 	// Create the window and set up the context
@@ -957,35 +973,25 @@ void GLimp_EndFrame( void )
 
 	if( r_fullscreen->modified )
 	{
-		qboolean    fullscreen;
-		qboolean    needToToggle = qtrue;
-		qboolean    sdlToggled = qfalse;
-		SDL_Surface *s = SDL_GetVideoSurface( );
+		qboolean    needToToggle;
 
-		if( s )
+		if( r_fullscreen->integer && Cvar_VariableIntegerValue( "in_nograb" ) )
 		{
-			// Find out the current state
-			fullscreen = !!( s->flags & SDL_FULLSCREEN );
-				
-			if( r_fullscreen->integer && Cvar_VariableIntegerValue( "in_nograb" ) )
-			{
-				ri.Printf( PRINT_ALL, "Fullscreen not allowed with in_nograb 1\n");
-				ri.Cvar_Set( "r_fullscreen", "0" );
-				r_fullscreen->modified = qfalse;
-			}
-
-			// Is the state we want different from the current state?
-			needToToggle = !!r_fullscreen->integer != fullscreen;
-
-			if( needToToggle )
-				sdlToggled = SDL_WM_ToggleFullScreen( s );
+			ri.Printf( PRINT_ALL, "Fullscreen not allowed with in_nograb 1\n");
+			ri.Cvar_Set( "r_fullscreen", "0" );
+			r_fullscreen->modified = qfalse;
 		}
+
+		// Is the state we want different from the current state?
+		// Fullscreen is a borderless window (no SDL_FULLSCREEN flag on the
+		// surface), so glConfig is what knows the current state, and
+		// SDL_WM_ToggleFullScreen must not be used: it would switch to
+		// exclusive fullscreen. Recreate the window instead.
+		needToToggle = !!r_fullscreen->integer != !!glConfig.isFullscreen;
 
 		if( needToToggle )
 		{
-			// SDL_WM_ToggleFullScreen didn't work, so do it the slow way
-			if( !sdlToggled )
-				Cbuf_AddText( "vid_restart" );
+			Cbuf_AddText( "vid_restart\n" );
 
 			IN_Restart( );
 		}

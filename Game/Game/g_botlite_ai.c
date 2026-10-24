@@ -279,6 +279,49 @@ static void BotLite_RunGoal( gentity_t *bot, int clientNum, botlite_goal_t goal,
 	}
 }
 
+/*
+ * Fase 9 -- el rival acaba de ser lanzado en knockback.
+ *
+ * Reportado en juego: el jugador lanzado quedaba trabado junto al bot y este lo
+ * seguia golpeando, sin tiempo de salir disparado. El bot reaccionaba en el mismo
+ * frame del lanzamiento (acercarse, empezar otro melee, zanzoken), con el rival
+ * todavia pegado a el. Ahora espera knockbackPursueDelayMs mirandolo antes de
+ * hacer cualquier cosa, tiempo de sobra para que el vuelo lo saque del rango de
+ * melee (a 1500 u/s son 75 unidades por cada 50 ms) y casi imperceptible.
+ *
+ * Un lanzamiento de melee deja tmKnockback en 5000 y despues solo baja, asi que
+ * una subida grande es un lanzamiento nuevo. Los empujones de ki dejan valores
+ * chicos y no cuentan (con ellos el bot cortaria su propio fuego a distancia).
+ */
+static qboolean BotLite_RunKnockbackPursueHold( gentity_t *bot, int clientNum, const botlite_snapshot_t *snapshot ) {
+	botlite_info_t *info;
+	const botlite_profile_t *profile;
+	int kb;
+
+	info = &g_botlite[clientNum];
+	if ( !snapshot->hasTarget || !snapshot->target ) {
+		info->melee.targetKnockbackSeen = 0;
+		info->melee.pursueHoldUntil = 0;
+		return qfalse;
+	}
+
+	profile = info->profile ? info->profile : BotLite_GetProfile( info->skill );
+	kb = snapshot->targetKnockbackTime;
+	if ( kb < 0 ) {
+		kb = 0;
+	}
+	if ( kb >= 3000 && kb > info->melee.targetKnockbackSeen + 100 && profile->knockbackPursueDelayMs > 0 ) {
+		info->melee.pursueHoldUntil = level.time + profile->knockbackPursueDelayMs;
+	}
+	info->melee.targetKnockbackSeen = kb;
+
+	if ( level.time >= info->melee.pursueHoldUntil ) {
+		return qfalse;
+	}
+	BotLite_FaceTarget( bot, snapshot->target );
+	return qtrue;
+}
+
 void BotLite_ThinkClient( int clientNum, int time ) {
 	gentity_t *bot;
 	botlite_info_t *info;
@@ -419,6 +462,12 @@ void BotLite_ThinkClient( int clientNum, int time ) {
 		 * ocupa el frame entero, y sus propias condiciones ya garantizan que solo
 		 * ocurra cuando el rival no puede castigarlo. */
 	if ( BotLite_RunKiCharge( bot, clientNum, &snapshot ) ) {
+		BotLite_ActionCommit( bot, clientNum, time );
+		return;
+	}
+
+	/* Fase 9: recien lanzado el rival, el bot espera un instante antes de ir por el. */
+	if ( BotLite_RunKnockbackPursueHold( bot, clientNum, &snapshot ) ) {
 		BotLite_ActionCommit( bot, clientNum, time );
 		return;
 	}

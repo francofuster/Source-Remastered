@@ -89,6 +89,7 @@ The legacy camera stays untouched behind cg_lockCam 0 (the default).
 
 // Blend between this camera and the regular third person camera.
 #define LOCKCAM_TRANSITION_MS	450
+#define LOCKCAM_TRANSFORM_RETURN_MS	800	// back to the lock cam after a transformation cinematic
 
 #define LOCKCAM_MASK_CAMERACLIP	(MASK_SOLID|CONTENTS_PLAYERCLIP)
 static vec3_t lockcam_mins = { -4, -4, -4 };
@@ -137,6 +138,8 @@ static qboolean	lockcam_lastWasLockCam = qfalse;
 static vec3_t	lockcam_lastOrgRel;				// last final camera, relative to the player origin
 static vec3_t	lockcam_lastAngles;
 static int		lockcam_transStart	= 0;
+static int		lockcam_transMs		= LOCKCAM_TRANSITION_MS;
+static qboolean	lockcam_lastTransforming = qfalse;
 static vec3_t	lockcam_transFromRel;
 static vec3_t	lockcam_transFromAngles;
 
@@ -750,6 +753,7 @@ void CG_LockCam_Transition( qboolean lockCamDrove ) {
 	vec3_t	base, from;
 	float	u, e;
 	int		i;
+	qboolean	transforming;
 
 	if ( !lockCamDrove ) {
 		lockcam_active = qfalse;
@@ -761,20 +765,54 @@ void CG_LockCam_Transition( qboolean lockCamDrove ) {
 	}
 
 	VectorCopy( cg.predictedPlayerState.origin, base );
+	transforming = ( cg.predictedPlayerState.timers[tmTransform] > 1 ) ? qtrue : qfalse;
 
-	if ( lockcam_haveLast && lockCamDrove != lockcam_lastWasLockCam ) {
+	if ( transforming ) {
+		// the cinematic of a transformation takes over at once and is never mixed
+		// with the lock cam; only the way back eases (see below)
+		lockcam_transStart = 0;
+	}
+	else if ( lockcam_haveLast && lockCamDrove != lockcam_lastWasLockCam ) {
 		lockcam_transStart = cg.time;
+		// leaving a transformation: the cinematic ends far from the lock framing,
+		// so it gets a longer ease than the usual lock-on switches
+		lockcam_transMs = lockcam_lastTransforming ? LOCKCAM_TRANSFORM_RETURN_MS : LOCKCAM_TRANSITION_MS;
 		VectorCopy( lockcam_lastOrgRel, lockcam_transFromRel );
 		VectorCopy( lockcam_lastAngles, lockcam_transFromAngles );
 	}
+	lockcam_lastTransforming = transforming;
 
-	if ( lockcam_transStart && cg.time >= lockcam_transStart && cg.time - lockcam_transStart < LOCKCAM_TRANSITION_MS ) {
-		u = (float)( cg.time - lockcam_transStart ) / (float)LOCKCAM_TRANSITION_MS;
+	if ( lockcam_transStart && cg.time >= lockcam_transStart && cg.time - lockcam_transStart < lockcam_transMs ) {
+		u = (float)( cg.time - lockcam_transStart ) / (float)lockcam_transMs;
 		e = u * u * ( 3.0f - 2.0f * u );	// smoothstep: eases in and out
 		VectorAdd( base, lockcam_transFromRel, from );
-		for ( i = 0; i < 3; i++ ) {
-			cg.refdef.vieworg[i] = from[i] + e * ( cg.refdef.vieworg[i] - from[i] );
-			cg.refdefViewAngles[i] = LerpAngle( lockcam_transFromAngles[i], cg.refdefViewAngles[i], e );
+		if ( lockcam_transMs == LOCKCAM_TRANSFORM_RETURN_MS ) {
+			// Back from a transformation the cinematic camera ends on the far side
+			// of the player (orbit up to 200 degrees), so a straight line between
+			// the two poses goes through the body and the view flashes past it.
+			// Blend around the player instead: the angle (shortest way), the
+			// distance and the height each on their own.
+			float	fromYaw, toYaw, fromRad, toRad, yaw, rad;
+			vec3_t	toRel;
+
+			VectorSubtract( cg.refdef.vieworg, base, toRel );
+			fromYaw = RAD2DEG( atan2( lockcam_transFromRel[1], lockcam_transFromRel[0] ) );
+			toYaw = RAD2DEG( atan2( toRel[1], toRel[0] ) );
+			fromRad = sqrt( lockcam_transFromRel[0] * lockcam_transFromRel[0] + lockcam_transFromRel[1] * lockcam_transFromRel[1] );
+			toRad = sqrt( toRel[0] * toRel[0] + toRel[1] * toRel[1] );
+			yaw = DEG2RAD( LerpAngle( fromYaw, toYaw, e ) );
+			rad = fromRad + e * ( toRad - fromRad );
+			cg.refdef.vieworg[0] = base[0] + rad * cos( yaw );
+			cg.refdef.vieworg[1] = base[1] + rad * sin( yaw );
+			cg.refdef.vieworg[2] = base[2] + lockcam_transFromRel[2] + e * ( toRel[2] - lockcam_transFromRel[2] );
+			for ( i = 0; i < 3; i++ ) {
+				cg.refdefViewAngles[i] = LerpAngle( lockcam_transFromAngles[i], cg.refdefViewAngles[i], e );
+			}
+		} else {
+			for ( i = 0; i < 3; i++ ) {
+				cg.refdef.vieworg[i] = from[i] + e * ( cg.refdef.vieworg[i] - from[i] );
+				cg.refdefViewAngles[i] = LerpAngle( lockcam_transFromAngles[i], cg.refdefViewAngles[i], e );
+			}
 		}
 	} else {
 		lockcam_transStart = 0;

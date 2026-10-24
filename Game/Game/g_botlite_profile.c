@@ -121,6 +121,7 @@ static const botlite_profile_t botlite_skill1_profile_default = {
 	150.0f,	/* hideSpotArriveDist */
 	1000,		/* hideSpotReevalMs */
 	400,		/* recoverDisengageConfirmMs */
+	50,		/* knockbackPursueDelayMs */
 	35,		/* zanzokenCounterPct (sin uso: uses_zanzoken_counter=0) */
 	150,		/* zanzokenCounterMinMs */
 	450,		/* zanzokenCounterMaxMs */
@@ -219,6 +220,7 @@ static const botlite_profile_t botlite_skill2_profile_default = {
 	150.0f,	/* hideSpotArriveDist */
 	1000,		/* hideSpotReevalMs */
 	400,		/* recoverDisengageConfirmMs */
+	50,		/* knockbackPursueDelayMs */
 	35,		/* zanzokenCounterPct (sin uso: uses_zanzoken_counter=0) */
 	150,		/* zanzokenCounterMinMs */
 	450,		/* zanzokenCounterMaxMs */
@@ -317,6 +319,7 @@ static const botlite_profile_t botlite_skill3_profile_default = {
 	150.0f,	/* hideSpotArriveDist */
 	1000,		/* hideSpotReevalMs */
 	400,		/* recoverDisengageConfirmMs */
+	50,		/* knockbackPursueDelayMs */
 	35,		/* zanzokenCounterPct */
 	150,		/* zanzokenCounterMinMs */
 	450,		/* zanzokenCounterMaxMs */
@@ -787,6 +790,8 @@ static void BotLite_ApplySkillKeyValue( int skill, const char *key, const char *
 		profile->hideSpotReevalMs = i;
 	} else if ( !Q_stricmp( key, "recover_disengage_confirm_ms" ) ) {
 		profile->recoverDisengageConfirmMs = i;
+	} else if ( !Q_stricmp( key, "knockback_pursue_delay_ms" ) ) {
+		profile->knockbackPursueDelayMs = i;
 	} else if ( !Q_stricmp( key, "uses_zanzoken_counter" ) ) {
 		policy->allowsZanzokenCounter = BotLite_ParseBool( value );
 	} else if ( !Q_stricmp( key, "zanzoken_counter_pct" ) ) {

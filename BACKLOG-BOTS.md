@@ -1907,3 +1907,320 @@ sí sé es que `canBoost` viene de `tierDefault.cfg` con `True`, así que la cap
 todos los tiers. La hipótesis más probable es que skill 3, al pelear mucho más melee y cargar
 mucho más, viva casi siempre en `USING_MELEE` / `CHARGING` / `WEAPON_BUSY`. La próxima corrida lo
 dirá con nombre propio.
+
+---
+
+# FASE 9 — Máquinas de estado configurables (skills personalizados) 🗒️ PLANEADO
+
+> Estado: **solo backlog, nada implementado.** Hay un prototipo visual del editor (ver abajo) que
+> sirve como especificación de la interfaz y del formato de archivo.
+
+## Idea
+
+Hoy los skills 1-3 son **código C** (`g_botlite_skill*.c` + las claves de `botsys/skills/*.cfg`).
+Para crear un skill nuevo hay que tocar C. La meta es que un diseñador pueda **armar el
+comportamiento de un bot como un grafo de nodos** (estilo Blueprints de Unreal / visual scripting
+de Unity), dentro de una pantalla del juego, y guardarlo como perfil.
+
+Decisiones ya tomadas (conversación del 2026-10-11 / 12):
+
+- **Una máquina de estados por personaje.** Cada perfil queda ligado a un personaje
+  (`players/<carpeta>`), de modo que los poderes y las transformaciones que ofrece el editor son
+  los que ese personaje realmente tiene (`default.phys` y `tier*/tier.cfg`).
+- **Formato de archivo: `.cfg`** (`clave=valor`, como el resto de `botsys`). **No JSON** — el
+  motor no tiene lector de JSON y no queremos agregar uno.
+- **Los skills 1, 2 y 3 pasan a ser perfiles por defecto** y a la vez **plantillas** del editor,
+  para no empezar de cero.
+- **Lo que no se hace (por ahora):** estado «Buscar Dragon Balls» (y la opción de Dragon Balls
+  de «Cambiar de agenda»), acción «Freno aéreo», y los nodos de burla (`Taunt`, tanto el estado
+  como la muestra de voz). Se pueden retomar más adelante.
+
+## Prototipo del editor
+
+Artifact (privado): <https://claude.ai/artifact/WMnuiRvRSrpXqQtG85LpGd>
+
+Reutiliza la gráfica del juego (`interface/art`: botones CREATE/LOAD/SAVE/DELETE/RESET/PLAY,
+flechas, interruptores, sliders, la Dragon Ball de `cut_frame.png`) y la estética del menú.
+Tiene lienzo de nodos con pines y cables, paleta, perfiles guardables, panel de perfil, un
+simulador del grafo (pestaña *Test*), revisión del grafo y exportación/importación `.cfg`.
+
+El prototipo **ya trae solo los nodos que existen en el motor** (ver catálogo abajo). Los nodos
+de este backlog que todavía no existen se quitaron del artifact y vuelven cuando se implementen.
+
+> El código fuente del prototipo vive solo en el artifact; **no está en este repo**. Si se
+> quiere conservar, exportarlo a `Tools/` antes de borrar el artifact.
+
+## Formato `.cfg` propuesto
+
+Un archivo por perfil, en `botsys/fsm/<nombre>.cfg`; `bots/bots.txt` gana una clave nueva
+`fsm=<archivo>` (si falta, el bot usa su skill de siempre).
+
+```
+# cabecera
+profile_id=...
+profile_name=Goku – Balanced
+character=goku                      # carpeta de players/
+base_skill=skill3.cfg
+base_archetype=balanced.cfg
+aggression=0.60                     # los 6 sesgos del arquetipo
+rush_tendency=0.55
+block_tendency=0.45
+special_tendency=0.40
+ranged_bias=0.35
+combo_commitment=0.55
+reflex_ms=300                       # ver T9.5
+reflex_deviation_pct=25
+focus_lapse_pct=8
+focus_lapse_ms=900
+think_tick_ms=50
+imperfect_information=1
+power_weight=kamehameha;0.50        # uno por poder del personaje (ver T9.9)
+
+# grafo
+node=3;kind=state.search;x=580;y=40;minMs=0
+node=7;kind=cond.dist;x=1120;y=40;op=%3C;v=1500
+link=3:out>5:in;order=1
+```
+
+- Valores con `;`, `=`, `%` o saltos de línea van **codificados con porcentaje** (`%3B`, `%3D`,
+  `%25`, `%0A`).
+- `node=<id>;kind=...;x=;y=;<parámetros>`; `link=<desde>:<pin>><hacia>:in;order=<n>`.
+- Pines de salida: `out` (eventos, estados, acciones) y `t` / `f` (condiciones, «Sí» / «No»).
+- **Orden de evaluación:** las conexiones que salen del mismo pin se prueban en orden (`order`);
+  gana la primera que llega a un estado.
+- El loader **ignora los `kind=` desconocidos** y avisa en el log, para que un perfil de una
+  versión futura no rompa una versión vieja.
+
+## Catálogo de nodos
+
+### Ya existen en el motor (están en el prototipo)
+
+| Nodo | Tipo | Se apoya en (verificar al implementar) |
+|---|---|---|
+| On spawn | evento | arranque del bot |
+| Takes a hit streak | evento | reacción al daño (racha, 600 ms sin golpes la cierra) |
+| Foe is knocked back | evento | `targetKnockbackTime` del snapshot (T0.1) |
+| My health drops below… | evento | `recover_health_enter_pct` (T2.7) |
+| Every interval | evento | reloj del think loop |
+| Idle · Search for foe · Approach · Zanzoken approach · Ranged pressure · Melee combo · Block · Special attack · Wait for foe recovery · Retreat and recover | estados | `BOTLITE_COMBAT_STATE_*`, `BOTLITE_GOAL_*`, `BOTLITE_MODE_RECOVER` |
+| Distance to foe · My resource · Foe resource · Foe state · Hits taken in a row · Random chance · Time in state · Current form | condiciones | snapshot, `BotLite_StaminaBudget`, `BotLite_HealthPercent`, `targetMeleeState`, `botTier` |
+| Zanzoken (counter, dodge) | acción | `BotLite_RunZanzokenCounter` (`g_botlite_zanzoken.c`), zanzoken defensivo |
+| Transform | acción | `g_botlite_transform.c` |
+| Charge ki up to… | acción | `BotLite_RunKiCharge` (T2.4) |
+
+### Faltan en el motor (se quitaron del prototipo; se reponen al implementarlos)
+
+| Nodo | Tipo | Tarea |
+|---|---|---|
+| Foe charges a big attack | evento | T9.6 |
+| Foe transforms | evento | T9.6 |
+| Loses sight of foe | evento | T9.6 |
+| I can see the foe | condición | T9.7 |
+| Power is ready | condición | T9.7 |
+| Say in chat | acción | T9.8 |
+| Lose focus | acción | T9.8 |
+| Wait | acción | T9.8 |
+| Zanzoken: de lado / volver al punto de partida / ángulo al azar | acción (modos) | T9.8 |
+| Use power | estado | T9.9 |
+| Fire power | acción | T9.9 |
+| Temporary truce | acción | T9.10 |
+| Protect an ally | estado | T9.10 |
+| Switch agenda (pelear / proteger a un aliado) | acción | T9.10 |
+
+---
+
+### T9.1 — Formato `.cfg` y loader de perfiles
+**Archivos:** nuevo `Game/Game/g_botlite_fsm.c`, `g_botlite.h`, `g_botlite_profile.c`
+(`bots.txt`: clave `fsm=`), `Makefile`, `game.bat`, `game.q3asm` (**los tres listados de
+archivos**).
+
+Parser del formato de arriba. Valida: personaje existente, ids únicos, enlaces a nodos
+existentes, parámetros dentro de rango. Un perfil inválido **no debe romper al bot**: se loguea
+el error y el bot cae a su skill.
+
+**Criterio de aceptación:** un `.cfg` exportado por el editor carga sin errores; uno roto
+produce un mensaje con el número de línea y el bot sigue funcionando con su skill.
+**Riesgo:** bajo.
+
+---
+
+### T9.2 — Ejecutor del grafo
+**Depende de:** T9.1
+**Archivos:** `g_botlite_fsm.c`, `g_botlite_ai.c`, `g_botlite_melee.c`
+
+Recorre el grafo en cada decisión: evento → condiciones → acciones → estado. Reglas:
+
+- una **tirada «Random chance» por decisión**, no por fotograma (si no, un 35 % termina siendo
+  100 % a la larga);
+- `minMs` por estado (permanencia mínima) para evitar oscilaciones;
+- la salida de un estado se evalúa en orden de `order`;
+- una acción sin estado de destino se ejecuta y el bot sigue donde estaba, con enfriamiento para
+  no repetirla cada tick.
+
+El estado del grafo **no reemplaza** las capas reactivas existentes (bloqueo reactivo, breakers,
+zanzoken defensivo): decide en qué *modo* está el bot; las capas siguen actuando por debajo.
+Hay que decidir explícitamente qué capa gana cuando chocan.
+
+**Criterio de aceptación:** el grafo de ejemplo del editor produce transiciones equivalentes a
+las que muestra el simulador del prototipo.
+**Riesgo:** medio-alto — toca el ciclo principal de decisión.
+
+---
+
+### T9.3 — Skills 1-3 como perfiles por defecto y plantillas
+**Depende de:** T9.2
+**Archivos:** `Build-Remastered/ZEQ2/botsys/fsm/skill1.cfg`, `skill2.cfg`, `skill3.cfg`
+
+Expresar cada skill como un grafo, usando la tabla «Reparto de capacidades por skill» del inicio
+de este documento como especificación. Esos tres archivos son (a) los perfiles que usan los bots
+por defecto y (b) las **plantillas del editor** (reemplazan a «Balanced / Aggressive / Evasive»
+del prototipo, que eran provisorias).
+
+Riesgo conocido: parte del comportamiento actual es **procedural** (combo con etapas, ciclo de
+recuperación en tres fases, lectura de patrón del rival) y no se expresa limpiamente como nodos.
+Opciones: (1) nodos «de capa» que activan una capacidad existente tal cual; (2) dejar esas
+capacidades como base fija y que el grafo solo decida *cuándo*. A definir al empezar.
+
+**Criterio de aceptación:** un bot corriendo `skill2.cfg` por el ejecutor se comporta de forma
+comparable al skill 2 actual en las mismas partidas de prueba (ver `PRUEBAS.md`).
+**Riesgo:** alto — es donde el diseño de nodos se enfrenta con el código real.
+
+---
+
+### T9.4 — Editor dentro del juego
+**Depende de:** T9.1 (para guardar y cargar); el prototipo define la interfaz.
+**Archivos:** `Game/UI/*`, `Build-Remastered/ZEQ2/interface/…`
+
+Pantalla propia del menú del juego, con los gráficos de `interface/art`: lienzo con paneo y zoom,
+nodos con pines, cables, paleta con búsqueda, panel de parámetros, selector de personaje y de
+perfil (CREATE / LOAD / SAVE / DELETE / RESET), y guardado a `botsys/fsm/`.
+
+Restricciones a verificar: el menú corre en el **QVM de UI** (límites de memoria y de syscalls de
+dibujo) y el motor trae el sistema de menús `menudef` de Q3, no un framework de gráficos de
+nodos: probablemente haya que dibujar con primitivas propias. Si resulta demasiado costoso, el
+fallback es mantener el editor fuera del juego y solo cargar los `.cfg`.
+
+**Riesgo:** alto — es la tarea más grande de la fase.
+
+---
+
+### T9.5 — Reflejos y foco
+**Depende de:** T9.2
+**Archivos:** `g_botlite_ai.c`, `g_botlite_profile.c`
+
+Parámetros de perfil que hoy no existen (solo `think_tick_ms` existe): `reflex_ms`,
+`reflex_deviation_pct`, `focus_lapse_pct`, `focus_lapse_ms` e `imperfect_information`.
+Todo cambio de decisión se aplica con un retardo `reflex_ms` ± desviación; con probabilidad
+`focus_lapse_pct` se añade `focus_lapse_ms` extra. `imperfect_information` hace que el bot solo
+reaccione a lo que ve y siente (no a datos que un jugador no tendría), en línea con la asimetría
+ya documentada para el radar.
+
+Lo pidió Zeth (mensajes 28-31 del Discord): bots «tan capaces como un humano, sin trampa», con
+un reflejo configurable y desviación aleatoria.
+
+**Criterio de aceptación:** subir `reflex_ms` hace al bot visiblemente más lento en reaccionar;
+la desviación y las distracciones se ven en el log.
+**Riesgo:** medio.
+
+---
+
+### T9.6 — Eventos nuevos: rival carga ataque grande, rival se transforma, pierde de vista
+**Depende de:** T9.2
+**Archivos:** `g_botlite.h`, `g_botlite_target.c`
+
+- **Foe charges a big attack:** el snapshot ya sabe si el rival carga (`targetCharging`,
+  `targetMeleeState`); falta el evento por **flanco** y un umbral de «grande». El radar ya marca
+  `RADAR_WARN` al cargar un ataque ≥50 % (`g_radar.c`), pero **los bots no reciben radar**: usar
+  el estado del arma del rival directamente.
+- **Foe transforms:** flanco de `targetTier` o del flag de transformación del rival.
+- **Loses sight of foe:** hoy no existe un «sentido» para seguir al rival sin verlo. Zeth lo
+  señaló como lo que haría falta para romper un lock-on por vista.
+
+**Criterio de aceptación:** cada evento dispara una sola vez por ocurrencia (no por fotograma).
+**Riesgo:** medio.
+
+---
+
+### T9.7 — Condiciones nuevas: veo al rival, poder listo
+**Depende de:** T9.2, T9.9 (para «Power is ready»)
+**Archivos:** `g_botlite.h`, `g_botlite_target.c`
+
+- **I can see the foe:** línea de visión directa (hay una clave `target_acquire_requires_los` en
+  `defaults.cfg`, así que parte del cálculo ya existe).
+- **Power is ready:** el poder está fuera de enfriamiento y el bot tiene el ki y la forma que
+  exige (datos de `g_userWeapon_t`: `costs_*`).
+
+**Riesgo:** bajo.
+
+---
+
+### T9.8 — Acciones nuevas: chat, perder foco, esperar, modos de zanzoken
+**Depende de:** T9.2, T9.5
+**Archivos:** `g_botlite_action.c`, `g_botlite_zanzoken.c`, `bg_pmove.c` (modos de llegada)
+
+- **Say in chat:** enviar un mensaje de texto como un jugador (Zeth preguntó si los bots podían).
+- **Lose focus / Wait:** retrasan la siguiente reacción (ver T9.5).
+- **Zanzoken: de lado, volver al punto de partida, ángulo al azar.** Hoy
+  `PM_ZanzokenBehind` (`bg_pmove.c:434`) aparece siempre detrás del rival. Zeth: en la serie la
+  llegada podía ser desde distintos ángulos o incluso **donde empezaste**. Este cambio toca
+  `bg_pmove.c`, que **se compila también en el cgame**, y afecta al contraataque del jugador, no
+  solo al bot: decidir si el modo se elige por cvar de servidor.
+
+**Riesgo:** medio.
+
+---
+
+### T9.9 — Poderes del personaje en el grafo
+**Depende de:** T9.2
+**Archivos:** `g_botlite_ranged.c` (`BotLite_PickSkill2Weapon`), `g_userweapons*`
+
+- **Use power** (estado) y **Fire power** (acción): usar un poder concreto de los slots del
+  personaje (`Weapon N = "a" | "b"` en `players/<c>/default.phys`).
+- **`power_weight`:** preferencia 0-1 por poder, que sesga la elección que hoy hace
+  `BotLite_PickSkill2Weapon` al azar (mismo gancho que usa T3.5).
+- **Tipos de poder** (blast, barrage, ball, beam, disk, ultimate, utility): es una clasificación
+  **del editor**, hecha a partir del poder base de cada definición. El juego no la define.
+  Validarla antes de que el motor dependa de ella.
+
+El `default.phys` de cada personaje ya se carga como armas de usuario: no hay que parsear
+archivos nuevos, solo exponer los slots al grafo.
+
+**Riesgo:** medio.
+
+---
+
+### T9.10 — Alianzas, treguas y agendas
+**Depende de:** T9.2
+**Archivos:** `g_botlite_target.c` (`BotLite_TargetIsValid`), `g_botlite.h`
+
+- **Temporary truce:** dejar de atacar a alguien durante un tiempo («te dejo para el final»;
+  Zeth citó a Frieza aliado con Goku).
+- **Protect an ally:** estado que coloca al bot entre un aliado y el atacante.
+- **Switch agenda:** cambiar entre *pelear* y *proteger a un aliado*. **Sin** la agenda de Dragon
+  Balls.
+
+Bloqueante: hoy `BotLite_TargetIsValid` solo descarta desconectados, espectadores y muertos, y
+**no existe el concepto de equipo ni de hostilidad temporal**. Antes de los nodos hay que
+decidir cómo se representa una tregua (¿por cvar, por jugador, por tiempo?) y cómo la ve el
+lock-on por parejas (`G_LockonAllowed`).
+
+**Riesgo:** alto — introduce un concepto de juego nuevo.
+
+---
+
+## Orden recomendado
+
+1. T9.1 (formato y loader) y T9.2 (ejecutor): sin esto no hay nada que probar.
+2. T9.3 (skills 1-3 como perfiles): valida el diseño de nodos contra comportamiento real.
+3. T9.5 (reflejos) y T9.7-T9.9: cada nodo nuevo se agrega y se prueba por separado.
+4. T9.4 (editor en el juego): cuando el formato ya esté estable.
+5. T9.10 (alianzas) al final: depende de una decisión de diseño aún abierta.
+
+## Preguntas abiertas
+
+- ¿Qué capa gana cuando el grafo y una capa reactiva (bloqueo, breaker, zanzoken defensivo)
+  quieren cosas distintas? (T9.2)
+- ¿Los skills 1-3 se expresan como grafos completos o como «capacidades base + grafo que decide
+  cuándo»? (T9.3)
+- ¿El editor in-game es viable en el QVM de UI, o se queda como herramienta externa? (T9.4)
+- ¿El modo de llegada del zanzoken lo elige el perfil, un cvar de servidor, o ambos? (T9.8)

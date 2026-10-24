@@ -159,6 +159,8 @@ void BotLite_ResetCoreRuntimeState( int clientNum, qboolean respawnStyle, qboole
 	info->melee.zanzokenMoveForward = 0;
 	info->melee.zanzokenMoveRight = 0;
 	info->melee.zanzokenMoveUp = 0;
+	info->melee.targetKnockbackSeen = 0;
+	info->melee.pursueHoldUntil = 0;
 	info->runtime.crashDiagNextLogTime = 0;
 	info->runtime.targetSpeedBreakerBias = 0.0f;
 	info->runtime.patternTargetNum = -1;

@@ -224,6 +224,10 @@ typedef struct {
 	 * confiar en la transicion. Sin esto un solo tick ruidoso de distancia/LOS
 	 * cortaba la huida a mitad de camino. */
 	int recoverDisengageConfirmMs;
+	/* Fase 9: tras lanzar al rival en knockback el bot espera este tiempo antes
+	 * de perseguirlo o empezar otro melee. Sin esto reaparece pegado al rival en
+	 * el mismo frame y no lo deja salir disparado. */
+	int knockbackPursueDelayMs;
 
 	/* Contraataque con zanzoken: probabilidad por racha de golpes recibidos,
 	 * tiempo de reaccion antes de apretar Z y espera entre contraataques. */
@@ -329,6 +333,10 @@ typedef struct {
 	int counterPressTime;
 	int counterPressUntil;
 	int counterNextTime;
+	/* Fase 9: ultimo knockback visto en el rival y hasta cuando el bot espera
+	 * antes de perseguirlo despues de un lanzamiento nuevo. */
+	int targetKnockbackSeen;
+	int pursueHoldUntil;
 } botlite_melee_state_t;
 
 typedef struct {
