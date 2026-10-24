@@ -253,7 +253,7 @@ static void Camera_MenuDraw( void ) {
 	UI_DOptionsDrawSections();
 	Menu_Draw( &s_camera.menu );
 	UI_DTextWrapped( 64, 348, 552, "The match behind shows the camera while you change it.", 17, zeq_text3 );
-	UI_DHints( hints, 2 );
+	UI_DHintsCentered( hints, 2 );	// the HUD of the match is in the bottom left corner
 }
 
 /*
