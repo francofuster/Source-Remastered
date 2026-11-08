@@ -503,7 +503,7 @@ qboolean CG_weapGfx_ParseAnimationRange( cg_weapGfxParser_t *parser, cg_weapGfxC
 				// Make sure this range is not inverted!
 				// NOTE: This is the only range that must NOT be inverted.
 				if ( token->intval < cg_weapGfxBuffer.chargeStartPct ) {
-					CG_weapGfx_ErrorHandle( ERROR_INVERTED_RANGE, scanner, token->stringval, va("%s", cg_weapGfxBuffer.chargeStartPct) );
+					CG_weapGfx_ErrorHandle( ERROR_INVERTED_RANGE, scanner, token->stringval, va("%i", cg_weapGfxBuffer.chargeStartPct) );
 					return qfalse;
 				} else {
 					if ( token->intval > 100 ) {

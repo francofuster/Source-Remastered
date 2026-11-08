@@ -102,7 +102,7 @@ SpecifyServer_MenuInit
 */
 void SpecifyServer_MenuInit( void )
 {
-	int y;
+	int y = 0;
 	// zero set all our globals
 	memset( &s_specifyserver, 0 ,sizeof(specifyserver_t) );
 

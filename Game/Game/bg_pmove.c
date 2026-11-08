@@ -1292,6 +1292,7 @@ PM_Friction
 ==================*/
 void PM_Friction(void){
 	float speed,newspeed,control,drop;
+	drop = 0;
 	speed = VectorLength(pm->ps->velocity);
 	if(speed < 5){
 		PM_StopDash();

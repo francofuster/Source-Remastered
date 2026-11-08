@@ -171,7 +171,7 @@ localEntity_t *CG_WaterBubble( const vec3_t p, const vec3_t vel,
 				   int leFlags,
 				   qhandle_t hShader ) {
 	static int	seed = 0x92;
-	localEntity_t	*le;
+	localEntity_t	*le = NULL;
 	refEntity_t		*re;
 	int contents;
 

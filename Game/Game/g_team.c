@@ -275,7 +275,7 @@ carrier defense.
 */
 void Team_CheckHurtCarrier(gentity_t *targ, gentity_t *attacker)
 {
-	int flag_pw;
+	int flag_pw = 0;
 
 	if (!targ->client || !attacker->client)
 		return;

@@ -393,7 +393,7 @@ void CG_TrailFunc_StraightBeam( centity_t *ent ) {
 	orientation_t	orient;
 	int			beamPowerLevelCurrent;
 	int			beamPowerLevelTotal;
-	float		radiusScale;
+	float		radiusScale = 1.0f;
 
 	// Initialize some things for quick reference
 	es = &ent->currentState;
@@ -444,7 +444,7 @@ void CG_TrailFunc_BendyBeam( centity_t *ent ) {
 	//vec3_t			tangent;
 	int			beamPowerLevelCurrent;
 	int			beamPowerLevelTotal;
-	float		radiusScale;
+	float		radiusScale = 1.0f;
 
 	// Set up shortcut references
 	es = &ent->currentState;
@@ -674,8 +674,8 @@ static void CG_Missile( centity_t *cent ) {
 	qboolean			missileIsStruggling;
 	qboolean			splash;
 	vec3_t				origin, lastPos;
-	int					contents;
-	int					lastContents;
+	int					contents = 0;
+	int					lastContents = 0;
 	vec3_t				start, end;
 	trace_t				trace;
 	ps = &cg.predictedPlayerState;

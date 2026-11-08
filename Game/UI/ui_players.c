@@ -805,7 +805,7 @@ UI_MachinegunSpinAngle
 */
 float	UI_MachinegunSpinAngle( playerInfo_t *pi ) {
 	int		delta;
-	float	angle;
+	float	angle = 0;
 	float	speed;
 	int		torsoAnim;
 /*

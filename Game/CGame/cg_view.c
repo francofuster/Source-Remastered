@@ -926,6 +926,7 @@ static void CG_OffsetFirstPersonView( void ) {
 	int				i;
 	orientation_t	*tagOrient;
 	orientation_t	lerped;
+	orientation_t	tagOrientStorage;
 	playerEntity_t	*pe;
 	vec3_t			tempAxis[3];
 	clientNum = cg.predictedPlayerState.clientNum;
@@ -938,6 +939,9 @@ static void CG_OffsetFirstPersonView( void ) {
 	//       reading it from cg_entities, which tends to clear out its
 	//       fields every now and then. WTF?!
 	//pe = &playerInfoDuplicate[clientNum];
+	pe = &cg_entities[clientNum].pe;
+	tagOrient = &tagOrientStorage;
+	AxisClear( tagOrient->axis );
 	
 	// Prepare the destination orientation_t
 	//AxisClear( tagOrient->axis );
@@ -952,6 +956,7 @@ static void CG_OffsetFirstPersonView( void ) {
 		MatrixMultiply( tagOrient->axis, lerped.axis, tempAxis );
 		MatrixMultiply( tempAxis, pe->headRef.axis, tagOrient->axis );
 
+		origin = cg.refdef.vieworg;
 		VectorCopy( tagOrient->origin, origin);
 		//origin = cg.refdef.vieworg;
 		angles = cg.refdefViewAngles;

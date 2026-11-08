@@ -67,27 +67,14 @@ void CG_CheckMusic(void){
 		trap_Cvar_Set("s_musicvolume",va("%f",percent * cg_music.value));
 	}
 }
+// Durations are written as m:ss, or as plain seconds
 int CG_GetMilliseconds(char *time){
-	int index,compareIndex;
-	int amount;
-	char current[8];
-	int i;
-	index = 0;
-	compareIndex = 0;
-	amount = 0;
-	while(1){
-		if(index > Q_PrintStrlen(time)){break;}
-		current[compareIndex] = time[index];
-		if(strcmp(&current[index],":") == 0){
-			amount += atoi(current) * 60 * 1000;
-			compareIndex = -1;
-			memset(current,0,8);
-		}
-		++index;
-		++compareIndex;
+	char *colon;
+	colon = strchr(time,':');
+	if(colon){
+		return (atoi(time) * 60 + atoi(colon + 1)) * 1000;
 	}
-	amount += atoi(current) * 1000;
-	return amount;
+	return atoi(time) * 1000;
 }
 void CG_ParsePlaylist(void){
 	fileHandle_t playlist;
@@ -105,6 +92,7 @@ void CG_ParsePlaylist(void){
 	cgs.music.random = qfalse;
 	if(trap_FS_FOpenFile("music/playlist.cfg",0,FS_READ)>0){
 		fileLength = trap_FS_FOpenFile("music/playlist.cfg",&playlist,FS_READ);
+		if(fileLength >= (int)sizeof(fileContents)){fileLength = sizeof(fileContents) - 1;}
 		trap_FS_Read(fileContents,fileLength,playlist);
 		fileContents[fileLength] = 0;
 		trap_FS_FCloseFile(playlist);
@@ -127,18 +115,25 @@ void CG_ParsePlaylist(void){
 				if(!token[0]){break;}
 				cgs.music.fadeAmount = CG_GetMilliseconds(token);
 			}
-			else if(strcmp(&last,"{") == 0){
-				cgs.music.lastTrack[typeIndex] = -1;
+			else if(last == '{'){
+				if(typeIndex >= MUSICTYPES - 1){break;}
 				++typeIndex;
+				cgs.music.lastTrack[typeIndex] = -1;
+				trackIndex = 0;
 				//CG_Printf("Music Type [%i]\n",typeIndex);
 			}
-			else if(strcmp(&first,"}") == 0){
-				cgs.music.typeSize[typeIndex] = trackIndex;
+			else if(first == '}'){
+				if(typeIndex >= 0){cgs.music.typeSize[typeIndex] = trackIndex;}
 				trackIndex = 0;
 			}
 			else{
-				static char temp[16][32][256];
-				strncpy(temp[typeIndex][trackIndex],token,256-1);
+				static char temp[MUSICTYPES][32][256];
+				// A track outside a type block, or past 32 per type, is skipped with its duration
+				if(typeIndex < 0 || trackIndex >= 32){
+					COM_Parse(&parse);
+					continue;
+				}
+				Q_strncpyz(temp[typeIndex][trackIndex],token,sizeof(temp[0][0]));
 				cgs.music.playlist[typeIndex][trackIndex] = temp[typeIndex][trackIndex];
 				cgs.music.trackLength[typeIndex][trackIndex] = CG_GetMilliseconds(COM_Parse(&parse));
 				//cgs.music.hasPlayed[typeIndex][trackIndex] = qfalse;
@@ -163,7 +158,7 @@ void CG_NextTrack(void){
 	int duration;
 	if(cgs.music.fading){return;}
 	typeSize = cgs.music.typeSize[cgs.music.currentType];
-	nextIndex = (nextIndex < typeSize) ? cgs.music.currentIndex + 1 : 0;
+	nextIndex = (cgs.music.currentIndex + 1 < typeSize) ? cgs.music.currentIndex + 1 : 0;
 	if(cgs.music.random){
 		nextIndex = fabs(crandom()) * typeSize;
 	}
