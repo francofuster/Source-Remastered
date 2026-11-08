@@ -86,6 +86,7 @@ La parte de PC sigue con SDL 1.2. Todo lo de SDL 2 está dentro de `#if SDL_MAJO
 - `Engine/sys/con_passive.c`: la consola escribe en logcat, línea a línea y sin códigos de color.
 - `Engine/client/cl_touch.c` (con `USE_TOUCH`): los controles táctiles. `sdl_input.c` le pasa los dedos, `CL_CreateCmd` le pide el `usercmd_t` y `SCR_DrawScreenField` lo dibuja.
 - `Engine/renderer/tr_backend.c`, `RB_SetViewport`: gl4es recuerda el último viewport y se salta una llamada igual, pero el viewport real de GLES puede ser otro. Tras la vista 3D de un menú, la pantalla siguiente salía encogida en ese hueco. Ahora se envía antes un valor desechable para forzar la llamada real.
+- `Engine/renderer/tr_shade.c`, `RB_OutlinesPass`: GLES no tiene `glPolygonMode`, y gl4es convierte los triángulos en líneas que el culling no descarta, así que se veía la malla entera del personaje. Con gl4es, el contorno es una cáscara invertida: las caras traseras se desplazan hacia fuera por su normal, en el color del contorno, y solo asoma un borde en la silueta. El desplazamiento crece con la distancia, para que el borde mida en píxeles lo mismo que las líneas de PC.
 - `SetupActivity` le pasa al motor la carpeta de datos (`fs_basepath` y `fs_homepath`). Justo tras arrancar el móvil, Android aún puede no ofrecer el almacenamiento compartido; entonces los datos van a la memoria interna, y el motor los busca ahí.
 - `Shared/vm.c`: en Android los módulos siempre son nativos, aunque `default.cfg` pida `vm_* 2`.
 - `Shared/q_platform.h`: `ARCH_STRING "arm64"`.
@@ -110,7 +111,6 @@ La compilación de Android falla ante cualquier truncamiento de puntero, funció
 ## Problemas conocidos
 
 - **Bloom (F4):** con gl4es deja la pantalla en blanco. Está apagado en `Build-Android/ZEQ2/default.cfg` (`r_bloom 0`), que es la única diferencia con el de Remastered.
-- **Contornos (F4):** salen como malla de alambre. gl4es emula `glPolygonMode(GL_LINE)` dibujando todas las aristas. La solución es la cáscara invertida.
 - **Sombra (F4):** la del jugador es una silueta negra opaca proyectada en el suelo.
 - **HUD (F4):** la barra de técnicas queda bajo el stick; la propuesta la sube arriba.
 - **Rendimiento:** no se ha medido en un móvil. Las 125 fps del emulador usan la GPU del PC.

@@ -929,6 +929,42 @@ static void RB_OutlinesPass( void ) {
 	if ( !r_outlines->integer )
 		return;
 
+#ifdef USE_GL4ES
+	// GLES has no polygon mode: gl4es turns the triangles into lines, and
+	// culling does not apply to lines, so every edge showed (a wireframe).
+	// Draw an inverted hull instead: the back faces pushed out along the
+	// normals in the outline color. The model covers all of it but a rim
+	// around the silhouette. The push grows with the distance, so the rim
+	// keeps the same width in pixels as the lines on PC.
+	{
+		static vec4_t hull[SHADER_MAX_VERTEXES] ALIGN(16);
+		float pixel = 2.0f * tan( DEG2RAD( backEnd.viewParms.fovY ) * 0.5f ) / (float)glConfig.vidHeight;
+		float push = pixel * ( outlines + 1 ) * 0.6f;
+		int cull = glState.faceCulling;
+		int i;
+
+		for ( i = 0; i < tess.numVertexes; i++ ) {
+			vec3_t toVertex;
+			float dist;
+
+			VectorSubtract( tess.xyz[i], backEnd.or.viewOrigin, toVertex );
+			dist = VectorLength( toVertex );
+			VectorMA( tess.xyz[i], dist * push, tess.normal[i], hull[i] );
+		}
+
+		GL_Bind( tr.whiteImage );
+		qglColor4f( 0, 0, 0, outlinesAlpha );
+		GL_State( GLS_DEPTHMASK_TRUE | GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
+		GL_Cull( CT_BACK_SIDED );
+		qglDisableClientState( GL_COLOR_ARRAY );
+		qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		qglVertexPointer( 3, GL_FLOAT, 16, hull );
+		R_DrawElements( tess.numIndexes, tess.indexes );
+		GL_Cull( cull );
+		return;
+	}
+#endif
+
 	GL_Bind( tr.whiteImage );
 	qglColor4f( 0, 0, 0, outlinesAlpha );
 		
