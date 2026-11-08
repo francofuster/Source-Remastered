@@ -484,7 +484,7 @@ int R_GetPoseForFrame( skel_t *skel, qhandle_t mod, int framenum ) {
 		if(framenum >= model->animations->numFrames) framenum = 0;
 	}
 
-	frameSize = (int)( &((md4aFrame_t *)0)->bones[model->animations->numBones] );
+	frameSize = (int)(intptr_t)( &((md4aFrame_t *)0)->bones[model->animations->numBones] );
 	frame = (md4aFrame_t *)((byte *)model->animations + model->animations->ofsFrames + framenum * frameSize);
 
 	boneNames = (md4aBoneName_t *)((byte *)model->animations + model->animations->ofsBones);

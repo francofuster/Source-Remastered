@@ -167,8 +167,12 @@ qboolean SNDDMA_Init(void)
 
 	Com_Printf( "OK\n" );
 
+#if SDL_MAJOR_VERSION >= 2
+	Q_strncpyz(drivername, SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "(UNKNOWN)", sizeof (drivername));
+#else
 	if (SDL_AudioDriverName(drivername, sizeof (drivername)) == NULL)
 		strcpy(drivername, "(UNKNOWN)");
+#endif
 	Com_Printf("SDL audio driver is \"%s\".\n", drivername);
 
 	memset(&desired, '\0', sizeof (desired));

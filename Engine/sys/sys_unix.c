@@ -37,6 +37,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <libgen.h>
 #include <fcntl.h>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#include <SDL.h>
+#include <SDL_system.h>
+#endif
+
 qboolean stdinIsATTY;
 
 // Used to determine where to store user-specific files
@@ -50,6 +56,22 @@ Sys_DefaultHomePath
 char *Sys_DefaultHomePath(void)
 {
 	char *p;
+
+#ifdef __ANDROID__
+	// The folder of the app in shared storage: adb can push the data there
+	// and neither that nor reading it needs a permission.
+	if( !*homePath )
+	{
+		const char *path = SDL_AndroidGetExternalStoragePath( );
+
+		if( !path )
+			path = SDL_AndroidGetInternalStoragePath( );
+		if( path )
+			Q_strncpyz( homePath, path, sizeof( homePath ) );
+	}
+
+	return homePath;
+#endif
 
 	if( !*homePath )
 	{
@@ -76,6 +98,13 @@ Sys_TempPath
 */
 const char *Sys_TempPath( void )
 {
+#ifdef __ANDROID__
+	const char *path = SDL_AndroidGetInternalStoragePath( );
+
+	if( path )
+		return path;
+#endif
+
 	const char *TMPDIR = getenv( "TMPDIR" );
 
 	if( TMPDIR == NULL || TMPDIR[ 0 ] == '\0' )
@@ -536,7 +565,28 @@ void Sys_ErrorDialog( const char *error )
 	close( f );
 }
 
-#ifndef MACOS_X
+#ifdef __ANDROID__
+/*
+==============
+Sys_Dialog
+
+Android has no zenity: show errors, log the rest
+==============
+*/
+dialogResult_t Sys_Dialog( dialogType_t type, const char *message, const char *title )
+{
+	__android_log_print( type == DT_ERROR ? ANDROID_LOG_ERROR : ANDROID_LOG_INFO, "ZEQ2", "%s: %s", title, message );
+
+	if( type == DT_ERROR )
+		SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, title, message, NULL );
+
+	switch( type )
+	{
+		case DT_YES_NO:    return DR_YES;
+		default:           return DR_OK;
+	}
+}
+#elif !defined(MACOS_X)
 /*
 ==============
 Sys_ZenityCommand
@@ -732,9 +782,12 @@ void Sys_PlatformInit( void )
 
 	signal( SIGHUP, Sys_SigHandler );
 	signal( SIGQUIT, Sys_SigHandler );
+#ifndef __ANDROID__
+	// On Android these stay with debuggerd, which writes the backtrace to logcat
 	signal( SIGTRAP, Sys_SigHandler );
 	signal( SIGIOT, Sys_SigHandler );
 	signal( SIGBUS, Sys_SigHandler );
+#endif
 
 	stdinIsATTY = isatty( STDIN_FILENO ) &&
 		!( term && ( !strcmp( term, "raw" ) || !strcmp( term, "dumb" ) ) );

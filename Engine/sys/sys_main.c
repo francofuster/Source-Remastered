@@ -30,6 +30,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#ifdef __ANDROID__
+#include <unistd.h>
+#endif
 
 #ifndef DEDICATED
 #ifdef USE_LOCAL_HEADERS
@@ -202,7 +205,14 @@ static void Sys_Exit( int exitCode )
 		remove( Sys_PIDFileName( ) );
 	}
 
+#ifdef __ANDROID__
+	// exit() would run the static destructors of the Java runtime while its
+	// own threads still use them, and Android reports a crash. The engine
+	// has already written and closed its files at this point.
+	_exit( exitCode );
+#else
 	exit( exitCode );
+#endif
 }
 
 /*
@@ -227,9 +237,13 @@ cpuFeatures_t Sys_GetProcessorFeatures( void )
 #ifndef DEDICATED
 	if( SDL_HasRDTSC( ) )    features |= CF_RDTSC;
 	if( SDL_HasMMX( ) )      features |= CF_MMX;
+#if SDL_MAJOR_VERSION < 2
 	if( SDL_HasMMXExt( ) )   features |= CF_MMX_EXT;
+#endif
 	if( SDL_Has3DNow( ) )    features |= CF_3DNOW;
+#if SDL_MAJOR_VERSION < 2
 	if( SDL_Has3DNowExt( ) ) features |= CF_3DNOW_EXT;
+#endif
 	if( SDL_HasSSE( ) )      features |= CF_SSE;
 	if( SDL_HasSSE2( ) )     features |= CF_SSE2;
 	if( SDL_HasAltiVec( ) )  features |= CF_ALTIVEC;
@@ -452,6 +466,17 @@ void *Sys_LoadDll( const char *name, char *fqpath ,
 
 	assert( name );
 
+#ifdef __ANDROID__
+	// Android only runs code from the APK: the modules live next to the
+	// engine, in nativeLibraryDir, and the linker finds them by soname.
+	Q_snprintf( fname, sizeof( fname ), "lib%s" DLL_EXT, name );
+	Com_Printf( "Sys_LoadDll(%s)... \n", fname );
+	libHandle = Sys_LoadLibrary( fname );
+	if( libHandle )
+		Q_strncpyz( fqpath, fname, MAX_QPATH );
+	else
+		Com_Printf( "Sys_LoadDll(%s) failed:\n\"%s\"\n", fname, Sys_LibraryError( ) );
+#else
 	Q_snprintf (fname, sizeof(fname), "%s" ARCH_STRING DLL_EXT, name);
 
 	// TODO: use fs_searchpaths from files.c
@@ -467,6 +492,7 @@ void *Sys_LoadDll( const char *name, char *fqpath ,
 
 	if(!libHandle && basepath)
 		libHandle = Sys_TryLibraryLoad(basepath, gamedir, fname, fqpath);
+#endif
 
 	if(!libHandle) {
 		Com_Printf ( "Sys_LoadDll(%s) failed to load library\n", name );
@@ -514,7 +540,9 @@ void Sys_ParseArgs( int argc, char **argv )
 }
 
 #ifndef DEFAULT_BASEDIR
-#	ifdef MACOS_X
+#	ifdef __ANDROID__
+#		define DEFAULT_BASEDIR Sys_DefaultHomePath()
+#	elif defined(MACOS_X)
 #		define DEFAULT_BASEDIR Sys_StripAppBundle(Sys_BinaryPath())
 #	else
 #		define DEFAULT_BASEDIR Sys_BinaryPath()
@@ -569,7 +597,14 @@ int main( int argc, char **argv )
 #	endif
 
 	// Run time
+#if SDL_MAJOR_VERSION >= 2
+	SDL_version linkedVersion;
+	const SDL_version *ver = &linkedVersion;
+
+	SDL_GetVersion( &linkedVersion );
+#else
 	const SDL_version *ver = SDL_Linked_Version( );
+#endif
 
 #define MINSDL_VERSION \
 	XSTRING(MINSDL_MAJOR) "." \
@@ -588,6 +623,12 @@ int main( int argc, char **argv )
 #endif
 
 	Sys_PlatformInit( );
+
+#ifdef __ANDROID__
+	// The back button reaches the game as SDLK_AC_BACK, that is ESCAPE,
+	// instead of closing the activity under the engine.
+	SDL_SetHint( SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1" );
+#endif
 
 	// Set the initial time base
 	Sys_Milliseconds( );
@@ -616,9 +657,12 @@ int main( int argc, char **argv )
 
 	CON_Init( );
 
+#ifndef __ANDROID__
+	// On Android these stay with debuggerd, which writes the backtrace to logcat
 	signal( SIGILL, Sys_SigHandler );
 	signal( SIGFPE, Sys_SigHandler );
 	signal( SIGSEGV, Sys_SigHandler );
+#endif
 	signal( SIGTERM, Sys_SigHandler );
 	signal( SIGINT, Sys_SigHandler );
 

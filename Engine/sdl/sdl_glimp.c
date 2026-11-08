@@ -44,6 +44,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../sys/sys_local.h"
 #include "sdl_icon.h"
 
+#ifdef USE_GL4ES
+#include "gl4esinit.h"
+#endif
+
 /* Just hack it for now. */
 #ifdef MACOS_X
 #include <OpenGL/OpenGL.h>
@@ -68,8 +72,13 @@ typedef enum
 	RSERR_UNKNOWN
 } rserr_t;
 
+#if SDL_MAJOR_VERSION >= 2
+SDL_Window *SDL_window = NULL;
+static SDL_GLContext SDL_glContext = NULL;
+#else
 static SDL_Surface *screen = NULL;
 static const SDL_VideoInfo *videoInfo = NULL;
+#endif
 
 cvar_t *r_allowSoftwareGL; // Don't abort out if a hardware visual can't be obtained
 cvar_t *r_allowResize; // make window resizable
@@ -176,6 +185,33 @@ GLvoid (APIENTRYP qglGetVertexAttribfvARB) (GLuint index, GLenum pname, GLfloat 
 GLvoid (APIENTRYP qglGetVertexAttribivARB) (GLuint index, GLenum pname, GLint *params);
 GLvoid (APIENTRYP qglGetVertexAttribPointervARB) (GLuint index, GLenum pname, GLvoid **pointer);
 
+#ifdef USE_GL4ES
+/*
+===============
+GLimp_GLESProc
+
+How gl4es reaches the real GLES driver
+===============
+*/
+static void *APIENTRY_GL4ES GLimp_GLESProc( const char *name )
+{
+	return SDL_GL_GetProcAddress( name );
+}
+
+/*
+===============
+GLimp_MainFBSize
+===============
+*/
+static void APIENTRY_GL4ES GLimp_MainFBSize( int *width, int *height )
+{
+	SDL_GL_GetDrawableSize( SDL_window, width, height );
+}
+
+// From here on the extensions come from gl4es, not from the GLES driver
+#define SDL_GL_GetProcAddress gl4es_GetProcAddress
+#endif
+
 /*
 ===============
 GLimp_Shutdown
@@ -185,8 +221,22 @@ void GLimp_Shutdown( void )
 {
 	IN_Shutdown();
 
+#if SDL_MAJOR_VERSION >= 2
+	if( SDL_glContext )
+	{
+		SDL_GL_DeleteContext( SDL_glContext );
+		SDL_glContext = NULL;
+	}
+	if( SDL_window )
+	{
+		SDL_DestroyWindow( SDL_window );
+		SDL_window = NULL;
+	}
+	SDL_QuitSubSystem( SDL_INIT_VIDEO );
+#else
 	SDL_QuitSubSystem( SDL_INIT_VIDEO );
 	screen = NULL;
+#endif
 
 	Com_Memset( &glConfig, 0, sizeof( glConfig ) );
 	Com_Memset( &glState, 0, sizeof( glState ) );
@@ -201,6 +251,130 @@ void GLimp_LogComment( char *comment )
 {
 }
 
+#if SDL_MAJOR_VERSION >= 2
+/*
+===============
+GLimp_SetMode
+
+SDL 2 version. On Android the window always fills the screen and the mode
+comes from the surface; r_mode only applies to the other platforms.
+===============
+*/
+static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
+{
+	static const struct { int color, depth, stencil; } attempts[] = {
+		{ 8, 24, 8 }, { 8, 16, 8 }, { 5, 24, 8 }, { 5, 16, 8 }, { 5, 16, 0 }
+	};
+	SDL_DisplayMode desktop;
+	Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
+	const char *glstring;
+	int i;
+
+	ri.Printf( PRINT_ALL, "Initializing OpenGL display\n");
+
+	if( SDL_GetDesktopDisplayMode( 0, &desktop ) == 0 && desktop.h > 0 )
+	{
+		displayAspect = (float)desktop.w / (float)desktop.h;
+		ri.Printf( PRINT_ALL, "Estimated display aspect: %.3f\n", displayAspect );
+	}
+	else
+	{
+		desktop.w = 0;
+		desktop.h = 0;
+	}
+
+#ifdef __ANDROID__
+	fullscreen = qtrue;
+	noborder = qfalse;
+	glConfig.vidWidth = desktop.w;
+	glConfig.vidHeight = desktop.h;
+	glConfig.windowAspect = displayAspect;
+#else
+	if ( !R_GetModeInfo( &glConfig.vidWidth, &glConfig.vidHeight, &glConfig.windowAspect, mode ) )
+	{
+		ri.Printf( PRINT_ALL, " invalid mode\n" );
+		return RSERR_INVALID_MODE;
+	}
+#endif
+
+	ri.Printf( PRINT_ALL, "...setting mode %d: %d %d\n", mode, glConfig.vidWidth, glConfig.vidHeight );
+
+	if( fullscreen )
+		flags |= SDL_WINDOW_FULLSCREEN;
+	else if( noborder )
+		flags |= SDL_WINDOW_BORDERLESS;
+	glConfig.isFullscreen = fullscreen;
+	glConfig.stereoEnabled = qfalse;
+
+	for( i = 0; i < (int)( sizeof( attempts ) / sizeof( attempts[ 0 ] ) ); i++ )
+	{
+		const int c = attempts[ i ].color;
+
+		SDL_GL_SetAttribute( SDL_GL_RED_SIZE, c );
+		SDL_GL_SetAttribute( SDL_GL_GREEN_SIZE, c == 5 ? 6 : c );
+		SDL_GL_SetAttribute( SDL_GL_BLUE_SIZE, c );
+		SDL_GL_SetAttribute( SDL_GL_DEPTH_SIZE, attempts[ i ].depth );
+		SDL_GL_SetAttribute( SDL_GL_STENCIL_SIZE, attempts[ i ].stencil );
+		SDL_GL_SetAttribute( SDL_GL_DOUBLEBUFFER, 1 );
+		SDL_GL_SetAttribute( SDL_GL_MULTISAMPLEBUFFERS, 0 );
+		SDL_GL_SetAttribute( SDL_GL_MULTISAMPLESAMPLES, 0 );
+
+#ifdef USE_GL4ES
+		SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES );
+		SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 2 );
+		SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
+#endif
+
+		SDL_window = SDL_CreateWindow( CLIENT_WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+			glConfig.vidWidth, glConfig.vidHeight, flags );
+		if( !SDL_window )
+		{
+			ri.Printf( PRINT_DEVELOPER, "SDL_CreateWindow failed: %s\n", SDL_GetError( ) );
+			continue;
+		}
+
+		SDL_glContext = SDL_GL_CreateContext( SDL_window );
+		if( !SDL_glContext )
+		{
+			ri.Printf( PRINT_DEVELOPER, "SDL_GL_CreateContext failed: %s\n", SDL_GetError( ) );
+			SDL_DestroyWindow( SDL_window );
+			SDL_window = NULL;
+			continue;
+		}
+
+		SDL_GL_GetAttribute( SDL_GL_DEPTH_SIZE, &glConfig.depthBits );
+		SDL_GL_GetAttribute( SDL_GL_STENCIL_SIZE, &glConfig.stencilBits );
+		glConfig.colorBits = ( c == 8 ) ? 24 : 16;
+		ri.Printf( PRINT_ALL, "Using %d color bits, %d depth, %d stencil display.\n",
+			glConfig.colorBits, glConfig.depthBits, glConfig.stencilBits );
+		break;
+	}
+
+	if( !SDL_window )
+	{
+		ri.Printf( PRINT_ALL, "Couldn't get a visual\n" );
+		return RSERR_INVALID_MODE;
+	}
+
+	SDL_GL_GetDrawableSize( SDL_window, &glConfig.vidWidth, &glConfig.vidHeight );
+	glConfig.windowAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+	SDL_GL_SetSwapInterval( r_swapInterval->integer );
+	SDL_ShowCursor( 0 );
+
+#ifdef USE_GL4ES
+	// gl4es finds the GLES functions through SDL and asks for the size of the
+	// main framebuffer. It must start with the context already current.
+	set_getprocaddress( GLimp_GLESProc );
+	set_getmainfbsize( GLimp_MainFBSize );
+	initialize_gl4es( );
+#endif
+
+	glstring = (char *) qglGetString (GL_RENDERER);
+	ri.Printf( PRINT_ALL, "GL_RENDERER: %s\n", glstring );
+
+	return RSERR_OK;
+}
+#else
 /*
 ===============
 GLimp_CompareModes
@@ -539,6 +713,7 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
 
 	return RSERR_OK;
 }
+#endif // SDL_MAJOR_VERSION
 
 /*
 ===============
@@ -560,7 +735,11 @@ static qboolean GLimp_StartDriverAndSetMode(int mode, qboolean fullscreen, qbool
 			return qfalse;
 		}
 
+#if SDL_MAJOR_VERSION >= 2
+		Q_strncpyz( driverName, SDL_GetCurrentVideoDriver( ), sizeof( driverName ) );
+#else
 		SDL_VideoDriverName( driverName, sizeof( driverName ) - 1 );
+#endif
 		ri.Printf( PRINT_ALL, "SDL using driver \"%s\"\n", driverName );
 		Cvar_Set( "r_sdlDriver", driverName );
 	}
@@ -930,6 +1109,10 @@ success:
 	// This values force the UI to disable driver selection
 	glConfig.driverType = GLDRV_ICD;
 	glConfig.hardwareType = GLHW_GENERIC;
+#if SDL_MAJOR_VERSION >= 2
+	// No hardware gamma on Android, the renderer brightens the textures instead
+	glConfig.deviceSupportsGamma = qfalse;
+#else
 	glConfig.deviceSupportsGamma = SDL_SetGamma( 1.0f, 1.0f, 1.0f ) >= 0;
 
 	// Mysteriously, if you use an NVidia graphics card and multiple monitors,
@@ -937,6 +1120,7 @@ success:
 	// again and you get the correct answer. This is a suspected driver bug, see
 	// http://bugzilla.icculus.org/show_bug.cgi?id=4316
 	glConfig.deviceSupportsGamma = SDL_SetGamma( 1.0f, 1.0f, 1.0f ) >= 0;
+#endif
 
 	// get our config strings
 	Q_strncpyz( glConfig.vendor_string, (char *) qglGetString (GL_VENDOR), sizeof( glConfig.vendor_string ) );
@@ -968,8 +1152,16 @@ void GLimp_EndFrame( void )
 	// don't flip if drawing to front buffer
 	if ( Q_stricmp( r_drawBuffer->string, "GL_FRONT" ) != 0 )
 	{
+#if SDL_MAJOR_VERSION >= 2
+		SDL_GL_SwapWindow( SDL_window );
+#else
 		SDL_GL_SwapBuffers();
+#endif
 	}
+
+#ifdef __ANDROID__
+	r_fullscreen->modified = qfalse;
+#endif
 
 	if( r_fullscreen->modified )
 	{

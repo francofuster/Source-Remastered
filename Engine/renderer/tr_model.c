@@ -962,7 +962,7 @@ static qboolean R_LoadMD4A( model_t *mod, void *buffer, const char *mod_name )
 	}
  
 	// swap all the frames
-	frameSize = (int)( &((md4aFrame_t *)0)->bones[ md4->numBones ] );
+	frameSize = (int)(intptr_t)( &((md4aFrame_t *)0)->bones[ md4->numBones ] );
     for ( i = 0 ; i < md4->numFrames ; i++, frame++)
 	{
 	    frame = (md4aFrame_t *) ( (byte *)md4 + sizeof(md4aHeader_t) + i * frameSize );

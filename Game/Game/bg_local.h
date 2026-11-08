@@ -51,6 +51,8 @@ typedef struct {
 	// -->
 } pml_t;
 
+int trap_RealTime( qtime_t *qtime );
+
 extern	pmove_t		*pm;
 extern	pml_t		pml;
 

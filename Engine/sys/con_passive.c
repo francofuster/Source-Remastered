@@ -26,6 +26,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <stdio.h>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 /*
 ==================
 CON_Shutdown
@@ -61,8 +65,35 @@ CON_Print
 */
 void CON_Print( const char *msg )
 {
+#ifdef __ANDROID__
+	// logcat wants whole lines and has no use for Q3 colour codes
+	static char line[ 1024 ];
+	static int length = 0;
+
+	while( *msg )
+	{
+		if( Q_IsColorString( msg ) )
+		{
+			msg += 2;
+			continue;
+		}
+
+		if( *msg != '\n' )
+			line[ length++ ] = *msg;
+
+		if( *msg == '\n' || length == sizeof( line ) - 1 )
+		{
+			line[ length ] = '\0';
+			__android_log_write( ANDROID_LOG_INFO, "ZEQ2", line );
+			length = 0;
+		}
+
+		msg++;
+	}
+#else
 	if( com_ansiColor && com_ansiColor->integer )
 		Sys_AnsiColorPrint( msg );
 	else
 		fputs( msg, stderr );
+#endif
 }

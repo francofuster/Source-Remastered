@@ -798,6 +798,8 @@ extern uiStatic_t	uis;
 // ui_syscalls.c
 //
 
+void			trap_S_StopBackgroundTrack( void );
+void			trap_S_StartBackgroundTrack( const char *intro, const char *loop );
 void			trap_Print( const char *string );
 void			trap_Error( const char *string );
 int				trap_Milliseconds( void );

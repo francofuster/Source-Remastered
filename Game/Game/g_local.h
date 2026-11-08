@@ -938,3 +938,11 @@ int		trap_GeneticParentsAndChildSelection(int numranks, float *ranks, int *paren
 
 void	trap_SnapVector( float *v );
 
+// g_tiers.c
+void	syncTier( gclient_t *client );
+void	checkTier( gclient_t *client );
+void	setupTiers( gclient_t *client );
+
+// g_userweapons.c
+void	G_CheckSkills( playerState_t *ps );
+

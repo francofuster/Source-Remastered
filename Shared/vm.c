@@ -553,6 +553,12 @@ vm_t *VM_Create( const char *module, intptr_t (*systemCalls)(intptr_t *),
 	Q_strncpyz( vm->name, module, sizeof( vm->name ) );
 	vm->systemCall = systemCalls;
 
+#ifdef __ANDROID__
+	// No QVM on Android: the modules are native libraries in the APK, and
+	// default.cfg, shared with PC, asks for vm_* 2.
+	interpret = VMI_NATIVE;
+#endif
+
 	if ( interpret == VMI_NATIVE ) {
 		// try to load as a system dll
 		Com_Printf( "Loading dll file %s.\n", vm->name );

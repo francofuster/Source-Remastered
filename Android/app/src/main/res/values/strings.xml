@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZEQ2 Remaster</string>
+    <string name="setup_unpacking">Preparing the game data. This only happens on the first run.</string>
+    <string name="setup_failed">The game data could not be prepared: %1$s\nCheck that there is at least 400 MB free and open the game again.</string>
+    <string name="setup_missing">This APK has no game data.</string>
+</resources>
