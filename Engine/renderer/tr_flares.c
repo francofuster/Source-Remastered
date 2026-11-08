@@ -209,6 +209,11 @@ void RB_AddDlightFlares( void ) {
 	int				i, j, k;
 	fog_t			*fog = NULL;
 
+#ifdef USE_GL4ES
+	// GLES cannot read the depth buffer back (glReadPixels with
+	// GL_DEPTH_COMPONENT), and the flares need it to test visibility
+	return;
+#endif
 	if ( !r_flares->integer ) {
 		return;
 	}
@@ -445,6 +450,11 @@ void RB_RenderFlares (void) {
 	flare_t		**prev;
 	qboolean	draw;
 
+#ifdef USE_GL4ES
+	// GLES cannot read the depth buffer back (glReadPixels with
+	// GL_DEPTH_COMPONENT), and the flares need it to test visibility
+	return;
+#endif
 	if ( !r_flares->integer ) {
 		return;
 	}

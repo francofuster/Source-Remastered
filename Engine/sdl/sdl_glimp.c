@@ -1070,6 +1070,12 @@ void GLimp_Init( void )
 	r_sdlDriver = ri.Cvar_Get( "r_sdlDriver", "", CVAR_ROM );
 	r_allowResize = ri.Cvar_Get( "r_allowResize", "0", CVAR_ARCHIVE );
 	r_centerWindow = ri.Cvar_Get( "r_centerWindow", "0", CVAR_ARCHIVE );
+#ifdef __ANDROID__
+	// Height the game renders at, scaled up to the screen by the system
+	// (0 = the screen resolution). ZEQ2Activity reads it from zeq2config.cfg
+	// before the engine starts, so a change applies on the next launch.
+	ri.Cvar_Get( "r_androidHeight", "720", CVAR_ARCHIVE | CVAR_LATCH );
+#endif
 
 	if( Cvar_VariableIntegerValue( "com_abnormalExit" ) )
 	{

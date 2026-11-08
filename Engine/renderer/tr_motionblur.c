@@ -8,6 +8,12 @@ void RB_MotionBlur( void ) {
 	float vs, vt;
 	int vwidth = 1, vheight = 1;
 
+#ifdef USE_GL4ES
+	// gl4es: it copies the back buffer into a texture, as the bloom does,
+	// and that copy comes out white there (and is slow on tiled mobile
+	// GPUs). Off until it is redone on a framebuffer object.
+	return;
+#endif
 	// No motion blur if it's disabled.
 	if ( r_motionBlur->integer == 0 )
 		return;

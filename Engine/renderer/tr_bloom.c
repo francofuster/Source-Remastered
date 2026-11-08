@@ -173,6 +173,12 @@ R_InitBloomTextures
 */
 void R_InitBloomTextures( void )
 {
+#ifdef USE_GL4ES
+	// gl4es: copying the back buffer into a texture comes out white,
+	// and it is slow on tiled mobile GPUs. Off until it is redone on a
+	// framebuffer object.
+	return;
+#endif
 	if( !r_bloom->integer )
 		return;
 	memset( &bloom, 0, sizeof( bloom ));
@@ -393,6 +399,12 @@ R_BloomScreen
 */
 void R_BloomScreen( void )
 {
+#ifdef USE_GL4ES
+	// gl4es: copying the back buffer into a texture comes out white,
+	// and it is slow on tiled mobile GPUs. Off until it is redone on a
+	// framebuffer object.
+	return;
+#endif
 	if( !r_bloom->integer )
 		return;
 	if ( backEnd.doneBloom )
