@@ -1907,6 +1907,7 @@ UIOBJ_ = \
   $(B)/Base/UI/ui_startserver.o \
   $(B)/Base/UI/ui_system.o \
   $(B)/Base/UI/ui_camera.o \
+  $(B)/Base/UI/ui_touch.o \
   \
   $(B)/Base/Shared/q_math.o \
   $(B)/Base/Shared/q_shared.o

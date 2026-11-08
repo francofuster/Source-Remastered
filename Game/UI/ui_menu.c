@@ -42,11 +42,21 @@ The 3D earth and the 3D player stay, everything else is the new art.
 #define	ID_MODEL				18
 #define MAX_NAMELENGTH			20
 
-#define MAIN_BUTTON_X			60
-#define MAIN_BUTTON_Y			214
-#define MAIN_BUTTON_W			330
-#define MAIN_BUTTON_H			66
-#define MAIN_BUTTON_STEP		80
+// PC on the 1280x720 canvas, phone on the 844x390 one (dp)
+typedef struct {
+	int		buttonX, buttonY, buttonW, buttonH, buttonStep;
+	int		logoX, logoY, logoW;
+	int		shadowX, shadowY, shadowW, shadowH;
+	int		playerX, playerY, playerW, playerH;
+	int		plateX, plateY, plateW, plateH;
+} mainLayout_t;
+
+static const mainLayout_t mainLayouts[2] = {
+	{ 60, 214, 330, 66, 80,		40, 30, 270,	930, 584, 280, 90,	825, -240, 480, 1215,	934, 640, 304, 44 },
+	{ 48, 92, 262, 58, 66,		26, 20, 128,	598, 262, 200, 60,	565, -150, 260, 658,	560, 312, 258, 52 }
+};
+
+#define ML	( mainLayouts[s_main.menu.mobile ? 1 : 0] )
 
 typedef struct {
 	menuframework_s	menu;
@@ -56,6 +66,7 @@ typedef struct {
 	menubitmap_s	setup;
 	menubitmap_s	exit;
 	menufield_s		name;
+	menubitmap_s	nameButton;		// phone: the plate opens FIGHTER
 	menubitmap_s	player;
 	playerInfo_t	playerinfo;
 	char			playerModel[MAX_QPATH];
@@ -76,6 +87,12 @@ static const char *mainCaptions[4] = {
 	"Join a server or host a match",
 	"Character, skin and name",
 	"Controls, video and audio",
+	"Leave ZEQ2 Lite"
+};
+static const char *mainCaptionsTouch[4] = {
+	"Join a server or host a match",
+	"Character, skin and name",
+	"Touch controls, video and audio",
 	"Leave ZEQ2 Lite"
 };
 
@@ -120,12 +137,13 @@ static void MainMenu_DrawButton( void *self ) {
 	float			shift;
 
 	b = (menubitmap_s *)self;
-	index = ( b->generic.y - MAIN_BUTTON_Y ) / MAIN_BUTTON_STEP;
+	index = ( b->generic.y - ML.buttonY ) / ML.buttonStep;
 	// x already carries the edge offset of wide screens
 	enter = UI_AnimFrac( uis.transitionTime, 80 + index * 60, 320 );
 	focus = UI_DFocus( &s_main.menu, self );
-	shift = -50.0f * ( 1.0f - enter ) + 10.0f * focus;
-	UI_DKiButton( b->generic.x + shift, b->generic.y, b->width, b->height, mainLabels[index], mainCaptions[index], focus, qfalse, qtrue );
+	shift = -50.0f * ( 1.0f - enter ) + ( s_main.menu.mobile ? 0.0f : 10.0f * focus );
+	UI_DKiButton( b->generic.x + shift, b->generic.y + ( UI_TouchPressed( self ) ? 2.0f : 0.0f ), b->width, b->height, mainLabels[index],
+		s_main.menu.mobile ? mainCaptionsTouch[index] : mainCaptions[index], focus, qfalse, !s_main.menu.mobile );
 }
 
 /*
@@ -168,6 +186,30 @@ static void MainMenu_DrawName( void *self ) {
 	if ( focus && ( ( uis.realtime / 400 ) & 1 ) ) {
 		UI_DFill( x + 3, y + 2, 2, 24, zeq_white );
 	}
+}
+
+/*
+=================
+MainMenu_DrawNameButton
+
+phone: the plate is a button to FIGHTER (a text field could not open the
+keyboard), the name on the right and the hint on the left
+=================
+*/
+static void MainMenu_DrawNameButton( void *self ) {
+	menubitmap_s	*b;
+	float			focus;
+	vec4_t			edge;
+
+	b = (menubitmap_s *)self;
+	focus = UI_DFocus( &s_main.menu, self );
+	UI_DNamePlate( b->generic.x - 10, b->generic.y, b->width + 14, b->height );
+	if ( focus > 0.0f ) {
+		edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.5f + 0.4f * focus;
+		UI_DFrame( b->generic.x, b->generic.y + 1, b->width, b->height - 2, edge );
+	}
+	UI_DText( b->generic.x + 16, b->generic.y + b->height * 0.5f - 7, "Change fighter >", 13, UI_LEFT, zeq_text3 );
+	UI_DText( b->generic.x + b->width - 14, b->generic.y + b->height * 0.5f - 11, s_main.name.field.buffer, 21, UI_RIGHT|UI_DROPSHADOW, zeq_white );
 }
 
 /*
@@ -229,6 +271,23 @@ void MainMenu_Save ( void ) {
 
 
 
+/*
+===============
+MainMenu_Key
+
+ESC (and Back on Android) asks to quit: popping the last menu only made
+the engine open the main menu again
+===============
+*/
+static sfxHandle_t MainMenu_Key( int key ) {
+	if ( key == K_ESCAPE || key == K_MOUSE2 ) {
+		MainMenu_Save();
+		UI_ConfirmMenu( "Quit?", 0, MainMenu_ExitAction );
+		return menu_out_sound;
+	}
+	return Menu_DefaultKey( &s_main.menu, key );
+}
+
 sfxHandle_t ErrorMessage_Key(int key)
 {
 	trap_Cvar_Set( "com_errorMessage", "" );
@@ -250,9 +309,9 @@ static void Main_MenuDraw( void ) {
 	uis.hideEarth = qfalse;
 	uis.showFrame = qfalse;
 
-	UI_DLogo( 40 - UI_DExtra(), 30, 270 );
+	UI_DLogo( ML.logoX - UI_DExtra(), ML.logoY, ML.logoW );
 	trap_R_SetColor( NULL );
-	UI_DPic( 930 + UI_DExtra(), 584, 280, 90, uis.blobShadow );
+	UI_DPic( ML.shadowX + UI_DExtra(), ML.shadowY, ML.shadowW, ML.shadowH, uis.blobShadow );
 
 	if ( uis.activemenu == &s_errorMessage.menu ) {
 		UI_DGlass( 400, 250, 480, 200 );
@@ -282,7 +341,7 @@ static void MainMenu_Button( menubitmap_s *b, int id, int index ) {
 	b->generic.id			= id;
 	b->generic.callback		= Main_MenuEvent;
 	b->generic.ownerdraw	= MainMenu_DrawButton;
-	UI_DItem( b, MAIN_BUTTON_X - UI_DExtra(), MAIN_BUTTON_Y + index * MAIN_BUTTON_STEP, MAIN_BUTTON_W, MAIN_BUTTON_H );
+	UI_DItem( b, ML.buttonX - UI_DExtra(), ML.buttonY + index * ML.buttonStep, ML.buttonW, ML.buttonH );
 }
 
 void UI_MainMenu( void ) {
@@ -324,9 +383,12 @@ void UI_MainMenu( void ) {
 	}
 
 	s_main.menu.draw = Main_MenuDraw;
+	s_main.menu.key = MainMenu_Key;
 	s_main.menu.fullscreen = qtrue;
 	s_main.menu.wrapAround = qtrue;
 	s_main.menu.showlogo = qtrue;
+	s_main.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( s_main.menu.mobile );
 
 	MainMenu_Button( &s_main.multiplayer, ID_MULTIPLAYER, 0 );
 	MainMenu_Button( &s_main.fighter, ID_FIGHTER, 1 );
@@ -339,7 +401,7 @@ void UI_MainMenu( void ) {
 	s_main.name.generic.ownerdraw			= MainMenu_DrawName;
 	s_main.name.field.widthInChars			= 14;
 	s_main.name.field.maxchars				= 14;
-	vx = 934 + UI_DExtra(); vy = 640; vw = 304; vh = 44;
+	vx = ML.plateX + UI_DExtra(); vy = ML.plateY; vw = ML.plateW; vh = ML.plateH;
 	UI_DToV( &vx, &vy, &vw, &vh );
 	s_main.name.generic.x					= vx;
 	s_main.name.generic.y					= vy;
@@ -354,7 +416,7 @@ void UI_MainMenu( void ) {
 	s_main.player.generic.id				= ID_MODEL;
 	s_main.player.generic.callback			= Main_MenuEvent;
 	// the fighter stands over its name plate on every aspect ratio
-	vx = 825 + UI_DExtra(); vy = -240; vw = 480; vh = 1215;	// floating above the blob shadow at 1070, 629
+	vx = ML.playerX + UI_DExtra(); vy = ML.playerY; vw = ML.playerW; vh = ML.playerH;	// floating above the blob shadow
 	UI_DToV( &vx, &vy, &vw, &vh );
 	s_main.player.generic.x					= vx;
 	s_main.player.generic.y					= vy;
@@ -365,7 +427,18 @@ void UI_MainMenu( void ) {
 	Menu_AddItem( &s_main.menu,	&s_main.fighter );
 	Menu_AddItem( &s_main.menu,	&s_main.setup );
 	Menu_AddItem( &s_main.menu,	&s_main.exit );
-	Menu_AddItem( &s_main.menu, &s_main.name );
+	if ( s_main.menu.mobile ) {
+		s_main.nameButton.generic.type		= MTYPE_BITMAP;
+		s_main.nameButton.generic.flags		= QMF_NODEFAULTINIT;
+		s_main.nameButton.generic.id		= ID_MODEL;
+		s_main.nameButton.generic.callback	= Main_MenuEvent;
+		s_main.nameButton.generic.ownerdraw	= MainMenu_DrawNameButton;
+		UI_DItem( &s_main.nameButton, ML.plateX + UI_DExtra(), ML.plateY, ML.plateW, ML.plateH );
+		Menu_AddItem( &s_main.menu, &s_main.nameButton );
+	}
+	else {
+		Menu_AddItem( &s_main.menu, &s_main.name );
+	}
 	Q_strncpyz(s_main.name.field.buffer,UI_Cvar_VariableString("name"),sizeof(s_main.name.field.buffer) );
 	Menu_AddItem( &s_main.menu, &s_main.player );
 	trap_Key_SetCatcher( KEYCATCH_UI );

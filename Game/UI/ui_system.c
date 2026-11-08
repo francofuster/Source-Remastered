@@ -716,6 +716,14 @@ void SystemSettings_MenuDraw (void)
 	uis.hideEarth = qtrue;
 	uis.showFrame = qfalse;
 
+	if ( s_systemsettings.menu.mobile ) {
+		UI_DMobileHeader( "MAIN MENU  >", "OPTIONS" );
+		UI_DOptionsDrawPhone( ( s_systemsettings.apply.generic.flags & QMF_HIDDEN ) ? NULL : "Changes apply after a video restart." );
+		UI_DOptionsDrawSections();
+		Menu_Draw( &s_systemsettings.menu );
+		return;
+	}
+
 	UI_DHeader( "MAIN MENU  >", "OPTIONS" );
 	UI_DGlass( 48, 186, 760, 466 );
 	UI_DOptionsDrawSections();
@@ -1210,17 +1218,28 @@ void SystemSettings_MenuInit( void )
 	SystemSettings_GetInitialVideo();
 
 	// menu redesign: tabs, rows and the help panel on the design canvas
+	s_systemsettings.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( s_systemsettings.menu.mobile );
 	UI_DTabItem( &s_systemsettings.controls, 0, "CONTROLS", qfalse );
 	UI_DTabItem( &s_systemsettings.system, 1, "VIDEO & AUDIO", qtrue );
 	UI_DTabItem( &s_systemsettings.general, 2, "GAME", qfalse );
 	s_systemsettings.back.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 
 	UI_DOptionsBegin( &s_systemsettings.menu, 72, 212, 712, 27 );
-	UI_DOptionsSection( "DISPLAY" );
-	UI_DOptionsRow( &s_systemsettings.mode, "Resolution", "Size of the game picture in pixels. The list only shows the modes your display reports.", qtrue );
-	UI_DOptionsRow( &s_systemsettings.ratio, "Aspect ratio", "Shape of the screen. Changing it picks the resolutions that match.", qtrue );
-	UI_DOptionsRow( &s_systemsettings.colordepth, "Color depth", "Bits per pixel of the screen. Default lets the driver choose.", qtrue );
-	UI_DOptionsRow( &s_systemsettings.fs, "Fullscreen", "Play in a borderless full screen window or in a normal window.", qtrue );
+	if ( s_systemsettings.menu.mobile ) {
+		// a phone screen has one mode: no resolution, aspect, depth or window
+		UI_DOptionsHide( &s_systemsettings.mode );
+		UI_DOptionsHide( &s_systemsettings.ratio );
+		UI_DOptionsHide( &s_systemsettings.colordepth );
+		UI_DOptionsHide( &s_systemsettings.fs );
+	}
+	else {
+		UI_DOptionsSection( "DISPLAY" );
+		UI_DOptionsRow( &s_systemsettings.mode, "Resolution", "Size of the game picture in pixels. The list only shows the modes your display reports.", qtrue );
+		UI_DOptionsRow( &s_systemsettings.ratio, "Aspect ratio", "Shape of the screen. Changing it picks the resolutions that match.", qtrue );
+		UI_DOptionsRow( &s_systemsettings.colordepth, "Color depth", "Bits per pixel of the screen. Default lets the driver choose.", qtrue );
+		UI_DOptionsRow( &s_systemsettings.fs, "Fullscreen", "Play in a borderless full screen window or in a normal window.", qtrue );
+	}
 	UI_DOptionsSection( "TEXTURES" );
 	UI_DOptionsRow( &s_systemsettings.tq, "Texture detail", "How sharp textures are. Lower values save video memory on old cards.", qtrue );
 	UI_DOptionsRow( &s_systemsettings.texturebits, "Texture quality", "Color depth of textures. 32 bit avoids banding in skies and auras.", qtrue );
@@ -1232,7 +1251,13 @@ void SystemSettings_MenuInit( void )
 	UI_DOptionsRow( &s_systemsettings.musicvolume, "Music volume", "Loudness of the music in menus and matches.", qfalse );
 	UI_DOptionsRow( &s_systemsettings.quality, "Sound quality", "Sample rate of the sound. Changing it restarts the sound system.", qfalse );
 
-	UI_DItem( &s_systemsettings.apply, 1012, 590, 196, 46 );
+	if ( s_systemsettings.menu.mobile ) {
+		UI_DItem( &s_systemsettings.apply, 664, 312, 154, 52 );
+		UI_DBackItem( &s_systemsettings.menu );
+	}
+	else {
+		UI_DItem( &s_systemsettings.apply, 1012, 590, 196, 46 );
+	}
 	s_systemsettings.apply.generic.ownerdraw = SystemSettings_DrawApply;
 
 	if ( uis.glconfig.driverType == GLDRV_ICD &&

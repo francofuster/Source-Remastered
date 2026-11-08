@@ -511,14 +511,27 @@ ROSTER MENU (menu redesign, design canvas)
 #define ID_ROSTER_EDITROW	70		// + slot
 
 // as the Bots artboard: the human, the bots and the add row share the list
-#define ROSTER_ROW_X		72
-#define ROSTER_ROW_W		732
-#define ROSTER_LIST_Y		216
-#define ROSTER_LIST_H		370
-#define ROSTER_ROW_MAX		62		// 56 px row and its gap
-#define ROSTER_COL_LEVEL	412
-#define ROSTER_COL_STYLE	574
-#define ROSTER_COL_ACTIONS	716
+// PC on the 1280x720 canvas; the phone list scrolls instead of shrinking
+typedef struct {
+	int		rowX, rowW, listY, listH, rowMax;
+	int		colLevel, colStyle, colActions;
+	int		nameSize, subSize, cellSize, buttonMax;
+} rosterLayout_t;
+
+static const rosterLayout_t rosterLayouts[2] = {
+	{ 72, 732, 216, 370, 62,	412, 574, 716,	19, 15, 18, 32 },
+	{ 34, 776, 114, 186, 62,	388, 516, 696,	16, 12, 15, 48 }
+};
+
+#define RL					( rosterLayouts[s_roster.menu.mobile ? 1 : 0] )
+#define ROSTER_ROW_X		RL.rowX
+#define ROSTER_ROW_W		RL.rowW
+#define ROSTER_LIST_Y		RL.listY
+#define ROSTER_LIST_H		RL.listH
+#define ROSTER_ROW_MAX		RL.rowMax
+#define ROSTER_COL_LEVEL	RL.colLevel
+#define ROSTER_COL_STYLE	RL.colStyle
+#define ROSTER_COL_ACTIONS	RL.colActions
 
 typedef struct {
 	menuframework_s	menu;
@@ -533,6 +546,7 @@ typedef struct {
 	menubitmap_s	done;
 	int				shownSlot;		// bot shown in the info panel
 	int				shownTime;		// when it changed, restarts the bars
+	int				scroll;			// phone: first list row shown (0 is the human)
 	playerInfo_t	playerinfo;
 	char			shownModel[MAX_QPATH];
 } rosterMenu_t;
@@ -545,6 +559,9 @@ static float UI_BotRoster_RowH( void ) {
 	float	h;
 	int		rows;
 
+	if ( s_roster.menu.mobile ) {
+		return ROSTER_ROW_MAX;
+	}
 	rows = rosterCount + 1 + ( rosterCount < UI_MAX_ROSTER ? 1 : 0 );
 	h = (float)ROSTER_LIST_H / rows;
 	return ( h > ROSTER_ROW_MAX ) ? ROSTER_ROW_MAX : h;
@@ -570,8 +587,8 @@ static void UI_BotRoster_DrawLine( float y, float h, qhandle_t portrait, const c
 	UI_DPortrait( ROSTER_ROW_X + 12, y + ( h - size ) * 0.5f, size, portrait, qfalse, 0.0f );
 	x = ROSTER_ROW_X + 24 + size;
 	if ( h >= 42 ) {
-		UI_DText( x, y + h * 0.5f - 20, name, 19, UI_LEFT|UI_DROPSHADOW, zeq_white );
-		UI_DText( x, y + h * 0.5f + 1, sub, 15, UI_LEFT, zeq_text3 );
+		UI_DText( x, y + h * 0.5f - RL.nameSize - 1, name, RL.nameSize, UI_LEFT|UI_DROPSHADOW, zeq_white );
+		UI_DText( x, y + h * 0.5f + 1, sub, RL.subSize, UI_LEFT, zeq_text3 );
 	}
 	else {
 		UI_DText( x, y + h * 0.5f - 9, name, 17, UI_LEFT|UI_DROPSHADOW, zeq_white );
@@ -579,12 +596,12 @@ static void UI_BotRoster_DrawLine( float y, float h, qhandle_t portrait, const c
 	}
 	if ( skill > 0 ) {
 		UI_DPips( ROSTER_COL_LEVEL, y + h * 0.5f - 4, skill, 3, UI_AnimFrac( uis.transitionTime, 120 + animIndex * 40, 400 ) );
-		UI_DText( ROSTER_COL_LEVEL + 54, y + h * 0.5f - 10, UI_Bots_SkillName( skill ), 18, UI_LEFT, zeq_white );
-		UI_DText( ROSTER_COL_STYLE, y + h * 0.5f - 10, style, 18, UI_LEFT, zeq_white );
+		UI_DText( ROSTER_COL_LEVEL + 3 * RL.cellSize, y + h * 0.5f - RL.cellSize * 0.55f, UI_Bots_SkillName( skill ), RL.cellSize, UI_LEFT, zeq_white );
+		UI_DText( ROSTER_COL_STYLE, y + h * 0.5f - RL.cellSize * 0.55f, style, RL.cellSize, UI_LEFT, zeq_white );
 	}
 	else {
-		UI_DText( ROSTER_COL_LEVEL, y + h * 0.5f - 10, "-", 18, UI_LEFT, zeq_text3 );
-		UI_DText( ROSTER_COL_STYLE, y + h * 0.5f - 10, "-", 18, UI_LEFT, zeq_text3 );
+		UI_DText( ROSTER_COL_LEVEL, y + h * 0.5f - RL.cellSize * 0.55f, "-", RL.cellSize, UI_LEFT, zeq_text3 );
+		UI_DText( ROSTER_COL_STYLE, y + h * 0.5f - RL.cellSize * 0.55f, "-", RL.cellSize, UI_LEFT, zeq_text3 );
 	}
 }
 
@@ -626,6 +643,15 @@ static void UI_BotRoster_Remove( int slot ) {
 		roster[i] = roster[i + 1];
 	}
 	rosterCount--;
+	UI_Bots_SaveRoster();
+	UI_BotRoster_Refresh();
+}
+
+static void UI_BotRoster_ClearAction( qboolean result ) {
+	if ( !result ) {
+		return;
+	}
+	rosterCount = 0;
 	UI_Bots_SaveRoster();
 	UI_BotRoster_Refresh();
 }
@@ -676,9 +702,8 @@ static void UI_BotRoster_Event( void *ptr, int event ) {
 		}
 		break;
 	case ID_ROSTER_CLEAR:
-		rosterCount = 0;
-		UI_Bots_SaveRoster();
-		UI_BotRoster_Refresh();
+		// it emptied the list at once: ask first
+		UI_ConfirmMenu( "REMOVE ALL BOTS?", 0, UI_BotRoster_ClearAction );
 		break;
 	case ID_ROSTER_EDIT:
 		if ( s_roster.shownSlot >= 0 && s_roster.shownSlot < rosterCount ) {
@@ -708,7 +733,8 @@ static void UI_BotRoster_DrawRow( void *self ) {
 	style = UI_Bots_Style( roster[slot].style );
 	y = b->generic.y;
 	focus = UI_DFocus( &s_roster.menu, self );
-	if ( slot == s_roster.shownSlot && focus <= 0.0f ) {
+	// the bot of the info panel stays lit (the phone has no info panel)
+	if ( slot == s_roster.shownSlot && focus <= 0.0f && !s_roster.menu.mobile ) {
 		focus = 0.6f;
 	}
 	UI_BotRoster_DrawLine( y, b->height, UI_Bots_Portrait( def->player ), UI_Bots_SlotName( &roster[slot] ),
@@ -721,7 +747,7 @@ static void UI_BotRoster_DrawRemove( void *self ) {
 	qboolean		hot;
 
 	b = (menubitmap_s *)self;
-	hot = ( Menu_ItemAtCursor( &s_roster.menu ) == self );
+	hot = UI_DFocus( &s_roster.menu, self ) > 0.0f;
 	color[0] = 0.94f; color[1] = 0.63f; color[2] = 0.53f; color[3] = 1.0f;
 	UI_DIconButton( b->generic.x, b->generic.y, b->width, UI_ICON_CLOSE, color, hot ? 1.0f : 0.0f );
 }
@@ -732,7 +758,7 @@ static void UI_BotRoster_DrawEdit( void *self ) {
 	qboolean		hot;
 
 	b = (menubitmap_s *)self;
-	hot = ( Menu_ItemAtCursor( &s_roster.menu ) == self );
+	hot = UI_DFocus( &s_roster.menu, self ) > 0.0f;
 	color[0] = 0.84f; color[1] = 0.87f; color[2] = 0.98f; color[3] = 1.0f;
 	UI_DIconButton( b->generic.x, b->generic.y, b->width, UI_ICON_EDIT, color, hot ? 1.0f : 0.0f );
 }
@@ -750,7 +776,7 @@ static void UI_BotRoster_DrawNewRow( void *self ) {
 	UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 5, edge );
 	edge[0] = 0.56f; edge[1] = 0.71f; edge[2] = 1.0f; edge[3] = 1.0f;
 	UI_DIcon( b->generic.x + 14, b->generic.y + b->height * 0.5f - 9, 18, UI_ICON_PLUS, edge );
-	UI_DText( b->generic.x + 44, b->generic.y + b->height * 0.5f - 10, va( "Add a bot to slot %i", rosterCount + 2 ), 18, UI_LEFT, edge );
+	UI_DText( b->generic.x + 44, b->generic.y + b->height * 0.5f - RL.cellSize * 0.55f, va( "Add a bot to slot %i", rosterCount + 2 ), RL.cellSize, UI_LEFT, edge );
 }
 
 static void UI_BotRoster_DrawButton( void *self ) {
@@ -771,7 +797,8 @@ static void UI_BotRoster_DrawButton( void *self ) {
 		warn[0] = 0.94f; warn[1] = 0.63f; warn[2] = 0.53f; warn[3] = 0.5f + 0.5f * focus;
 		UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 4, warn );
 		warn[3] = 1.0f;
-		UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + b->height * 0.5f - 10, "Remove all bots", 18, UI_CENTER, warn );
+		UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + b->height * 0.5f - RL.cellSize * 0.55f,
+			s_roster.menu.mobile ? "Remove all..." : "Remove all bots", RL.cellSize, UI_CENTER, warn );
 		return;
 	case ID_ROSTER_ADD:		label = "ADD BOT"; break;
 	case ID_ROSTER_RANDOM:	label = "FILL RANDOM"; break;
@@ -794,6 +821,21 @@ static void UI_BotRoster_Draw( void ) {
 
 	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
+
+	if ( s_roster.menu.mobile ) {
+		UI_DMobileHeader( "PLAY  >  CREATE MATCH  >", "FIGHTERS" );
+		UI_DGlass( 26, 88, 792, 212 );
+		UI_DProp( 44, 96, va( "IN THIS MATCH  -  %i OF 12", rosterCount + 1 ), 10, UI_LEFT, zeq_gold );
+		if ( s_roster.scroll == 0 ) {
+			UI_Bots_HumanInfo( name, sizeof( name ), model, sizeof( model ) );
+			UI_BotRoster_DrawLine( ROSTER_LIST_Y, UI_BotRoster_RowH() - 4, UI_Bots_Portrait( model ), name, va( "%s  -  you", model ), 0, "", 0.0f, 0 );
+		}
+		if ( rosterCount + 2 > ROSTER_LIST_H / ROSTER_ROW_MAX ) {
+			UI_DText( 800, 96, "drag the list for more", 11, UI_RIGHT, zeq_text3 );
+		}
+		Menu_Draw( &s_roster.menu );
+		return;
+	}
 
 	UI_DHeader( "PLAY  >  CREATE MATCH  >", "FIGHTERS" );
 
@@ -850,6 +892,13 @@ static void UI_BotRoster_Draw( void ) {
 static sfxHandle_t UI_BotRoster_Key( int key ) {
 	menucommon_s *item;
 
+	// phone: the wheel and a dragging finger scroll the list
+	if ( s_roster.menu.mobile && ( key == K_MWHEELUP || key == K_MWHEELDOWN ) ) {
+		s_roster.scroll += ( key == K_MWHEELUP ) ? -1 : 1;
+		UI_BotRoster_Refresh();
+		return menu_null_sound;
+	}
+
 	if ( key == K_DEL || key == K_BACKSPACE || key == K_KP_DEL ) {
 		item = (menucommon_s *)Menu_ItemAtCursor( &s_roster.menu );
 		if ( item && item->id >= ID_ROSTER_ROW && item->id < ID_ROSTER_ROW + UI_MAX_ROSTER ) {
@@ -862,18 +911,28 @@ static sfxHandle_t UI_BotRoster_Key( int key ) {
 
 static void UI_BotRoster_Refresh( void ) {
 	int		i;
+	int		visible;
 	float	rowH;
 	float	button;
 	float	y;
 
+	UI_DCanvas( s_roster.menu.mobile );
 	rowH = UI_BotRoster_RowH();
 	button = rowH - 6 - 8;
-	if ( button > 32 ) {
-		button = 32;
+	if ( button > RL.buttonMax ) {
+		button = RL.buttonMax;
+	}
+	// phone: rows 0 (the human) to rosterCount + 1 (add) in a window of three
+	visible = s_roster.menu.mobile ? ROSTER_LIST_H / ROSTER_ROW_MAX : UI_MAX_ROSTER + 2;
+	if ( s_roster.scroll > rosterCount + 2 - visible ) {
+		s_roster.scroll = rosterCount + 2 - visible;
+	}
+	if ( s_roster.scroll < 0 || !s_roster.menu.mobile ) {
+		s_roster.scroll = 0;
 	}
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
-		if ( i < rosterCount ) {
-			y = ROSTER_LIST_Y + ( i + 1 ) * rowH;
+		if ( i < rosterCount && i + 1 >= s_roster.scroll && i + 1 < s_roster.scroll + visible ) {
+			y = ROSTER_LIST_Y + ( i + 1 - s_roster.scroll ) * rowH;
 			// the row ends before its buttons so each takes its own clicks
 			UI_DItem( &s_roster.rows[i], ROSTER_ROW_X, y, ROSTER_COL_ACTIONS - 8 - ROSTER_ROW_X, rowH - 6 );
 			UI_DItem( &s_roster.edits[i], ROSTER_COL_ACTIONS, y + ( rowH - 6 - button ) * 0.5f, button, button );
@@ -890,9 +949,15 @@ static void UI_BotRoster_Refresh( void ) {
 	}
 
 	// the add row sits right under the last bot
-	if ( rosterCount < UI_MAX_ROSTER ) {
+	if ( rosterCount < UI_MAX_ROSTER && rosterCount + 1 < s_roster.scroll + visible ) {
 		s_roster.newRow.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
-		UI_DItem( &s_roster.newRow, ROSTER_ROW_X, ROSTER_LIST_Y + ( rosterCount + 1 ) * rowH, ROSTER_ROW_W, rowH - 6 );
+		UI_DItem( &s_roster.newRow, ROSTER_ROW_X, ROSTER_LIST_Y + ( rosterCount + 1 - s_roster.scroll ) * rowH, ROSTER_ROW_W, rowH - 6 );
+		s_roster.add.generic.flags &= ~QMF_GRAYED;
+		s_roster.random.generic.flags &= ~QMF_GRAYED;
+	}
+	else if ( rosterCount < UI_MAX_ROSTER ) {
+		// scrolled out of the phone window
+		s_roster.newRow.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 		s_roster.add.generic.flags &= ~QMF_GRAYED;
 		s_roster.random.generic.flags &= ~QMF_GRAYED;
 	}
@@ -904,6 +969,10 @@ static void UI_BotRoster_Refresh( void ) {
 	if ( rosterCount ) {
 		s_roster.edit.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
 		s_roster.clear.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+		if ( s_roster.menu.mobile ) {
+			// the info panel and its EDIT BOT are not on the phone: a row edits
+			s_roster.edit.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		}
 	}
 	else {
 		s_roster.edit.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
@@ -941,6 +1010,8 @@ void UI_BotRosterMenu( void ) {
 	s_roster.menu.key = UI_BotRoster_Key;
 	s_roster.menu.fullscreen = qtrue;
 	s_roster.menu.wrapAround = qtrue;
+	s_roster.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( s_roster.menu.mobile );
 	s_roster.shownSlot = rosterCount ? 0 : -1;
 	s_roster.shownTime = uis.realtime;
 
@@ -951,11 +1022,21 @@ void UI_BotRosterMenu( void ) {
 		UI_BotRoster_DItem( &s_roster.removes[i], ID_ROSTER_REMOVE + i, UI_BotRoster_DrawRemove, 0, 0, 1, 1, QMF_MOUSEONLY );
 	}
 	UI_BotRoster_DItem( &s_roster.newRow, ID_ROSTER_NEWROW, UI_BotRoster_DrawNewRow, 0, 0, 1, 1, 0 );
-	UI_BotRoster_DItem( &s_roster.add, ID_ROSTER_ADD, UI_BotRoster_DrawButton, 72, 606, 170, 42, 0 );
-	UI_BotRoster_DItem( &s_roster.random, ID_ROSTER_RANDOM, UI_BotRoster_DrawButton, 252, 606, 200, 42, 0 );
-	UI_BotRoster_DItem( &s_roster.clear, ID_ROSTER_CLEAR, UI_BotRoster_DrawButton, 634, 609, 170, 36, 0 );
-	UI_BotRoster_DItem( &s_roster.edit, ID_ROSTER_EDIT, UI_BotRoster_DrawButton, 876, 596, 170, 42, 0 );
-	UI_BotRoster_DItem( &s_roster.done, ID_ROSTER_DONE, UI_BotRoster_DrawButton, 1060 + UI_DExtra(), 664, 172, 46, 0 );
+	if ( s_roster.menu.mobile ) {
+		UI_BotRoster_DItem( &s_roster.add, ID_ROSTER_ADD, UI_BotRoster_DrawButton, 26, 312, 170, 52, 0 );
+		UI_BotRoster_DItem( &s_roster.random, ID_ROSTER_RANDOM, UI_BotRoster_DrawButton, 204, 312, 196, 52, 0 );
+		UI_BotRoster_DItem( &s_roster.clear, ID_ROSTER_CLEAR, UI_BotRoster_DrawButton, 410, 312, 170, 52, 0 );
+		UI_BotRoster_DItem( &s_roster.edit, ID_ROSTER_EDIT, UI_BotRoster_DrawButton, 0, 0, 1, 1, 0 );
+		UI_BotRoster_DItem( &s_roster.done, ID_ROSTER_DONE, UI_BotRoster_DrawButton, 664, 312, 154, 52, 0 );
+		UI_DBackItem( &s_roster.menu );
+	}
+	else {
+		UI_BotRoster_DItem( &s_roster.add, ID_ROSTER_ADD, UI_BotRoster_DrawButton, 72, 606, 170, 42, 0 );
+		UI_BotRoster_DItem( &s_roster.random, ID_ROSTER_RANDOM, UI_BotRoster_DrawButton, 252, 606, 200, 42, 0 );
+		UI_BotRoster_DItem( &s_roster.clear, ID_ROSTER_CLEAR, UI_BotRoster_DrawButton, 634, 609, 170, 36, 0 );
+		UI_BotRoster_DItem( &s_roster.edit, ID_ROSTER_EDIT, UI_BotRoster_DrawButton, 876, 596, 170, 42, 0 );
+		UI_BotRoster_DItem( &s_roster.done, ID_ROSTER_DONE, UI_BotRoster_DrawButton, 1060 + UI_DExtra(), 664, 172, 46, 0 );
+	}
 
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
 		Menu_AddItem( &s_roster.menu, &s_roster.rows[i] );
@@ -997,10 +1078,11 @@ EDIT MENU: one bot (menu redesign, design canvas)
 #define ID_EDIT_NAME		90
 #define ID_EDIT_DEFAULTS	91
 
-// as the BotEdit artboard: two rows of four 76 px portraits
-#define EDIT_CELL_W			93
-#define EDIT_CELL_H			107
-#define EDIT_ROWS			2
+// as the BotEdit artboard: two rows of four 76 px portraits (the phone:
+// three rows of four 52 dp portraits)
+#define EDIT_CELL_W			( s_edit.menu.mobile ? 62 : 93 )
+#define EDIT_CELL_H			( s_edit.menu.mobile ? 78 : 107 )
+#define EDIT_ROWS			( s_edit.menu.mobile ? 3 : 2 )
 
 typedef struct {
 	menuframework_s	menu;
@@ -1043,7 +1125,13 @@ static void UI_BotEdit_LayoutChars( void ) {
 	for ( i = 0; i < numBotDefs; i++ ) {
 		row = i / 4 - s_edit.charScroll;
 		if ( row >= 0 && row < EDIT_ROWS ) {
-			UI_DItem( &s_edit.chars[i], 72 + ( i % 4 ) * EDIT_CELL_W, 176 + row * EDIT_CELL_H, 85, 95 );
+			UI_DCanvas( s_edit.menu.mobile );
+			if ( s_edit.menu.mobile ) {
+				UI_DItem( &s_edit.chars[i], 42 + ( i % 4 ) * EDIT_CELL_W, 118 + row * EDIT_CELL_H, 58, 72 );
+			}
+			else {
+				UI_DItem( &s_edit.chars[i], 72 + ( i % 4 ) * EDIT_CELL_W, 176 + row * EDIT_CELL_H, 85, 95 );
+			}
 			s_edit.chars[i].generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
 		}
 		else {
@@ -1248,6 +1336,11 @@ static void UI_BotEdit_DrawChar( void *self ) {
 	def = b->generic.id - ID_EDIT_CHAR;
 	focus = UI_DFocus( &s_edit.menu, self );
 	selected = ( def == s_edit.def );
+	if ( s_edit.menu.mobile ) {
+		UI_DPortrait( b->generic.x + 3, b->generic.y, 52, UI_Bots_Portrait( botDefs[def].player ), selected, focus );
+		UI_DText( b->generic.x + 29, b->generic.y + 56, botDefs[def].player, 11, UI_CENTER, ( selected || focus > 0.0f ) ? zeq_white : zeq_text3 );
+		return;
+	}
 	UI_DPortrait( b->generic.x + 4.5f, b->generic.y, 76, UI_Bots_Portrait( botDefs[def].player ), selected, focus );
 	UI_DText( b->generic.x + 42.5f, b->generic.y + 80, botDefs[def].player, 15, UI_CENTER,
 		( selected || focus > 0.0f ) ? zeq_white : zeq_text2 );
@@ -1279,9 +1372,11 @@ static void UI_BotEdit_DrawSkill( void *self ) {
 	}
 	UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 6, edge );
 
-	UI_DPips( b->generic.x + 12, b->generic.y + 14, skill, 3, UI_AnimFrac( uis.transitionTime, 100 + skill * 60, 300 ) );
-	UI_DProp( b->generic.x + 12, b->generic.y + 30, va( "%s", skillNames[skill] ), 14, UI_LEFT, zeq_white );
-	UI_DTextWrapped( b->generic.x + 12, b->generic.y + 52, b->width - 22, va( "%s, %s", skillLines[skill][0], skillLines[skill][1] ), 16, zeq_text2 );
+	UI_DPips( b->generic.x + 12, b->generic.y + ( s_edit.menu.mobile ? 12 : 14 ), skill, 3, UI_AnimFrac( uis.transitionTime, 100 + skill * 60, 300 ) );
+	UI_DProp( b->generic.x + 12, b->generic.y + ( s_edit.menu.mobile ? 28 : 30 ), va( "%s", skillNames[skill] ), s_edit.menu.mobile ? 13 : 14, UI_LEFT, zeq_white );
+	if ( !s_edit.menu.mobile ) {
+		UI_DTextWrapped( b->generic.x + 12, b->generic.y + 52, b->width - 22, va( "%s, %s", skillLines[skill][0], skillLines[skill][1] ), 16, zeq_text2 );
+	}
 }
 
 static void UI_BotEdit_DrawStyle( void *self ) {
@@ -1308,8 +1403,8 @@ static void UI_BotEdit_DrawStyle( void *self ) {
 	}
 	UI_DRoundFill( b->generic.x, b->generic.y, b->width, b->height, b->height * 0.5f, fill );
 	UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, b->height * 0.5f, edge );
-	UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + 6, botStyles[style].label, 18, UI_CENTER,
-		( style == s_edit.style || focus > 0.0f ) ? zeq_white : zeq_text2 );
+	UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + b->height * 0.5f - ( s_edit.menu.mobile ? 8 : 10 ), botStyles[style].label,
+		s_edit.menu.mobile ? 14 : 18, UI_CENTER, ( style == s_edit.style || focus > 0.0f ) ? zeq_white : zeq_text2 );
 }
 
 static void UI_BotEdit_DrawName( void *self ) {
@@ -1319,6 +1414,12 @@ static void UI_BotEdit_DrawName( void *self ) {
 
 	f = (menufield_s *)self;
 	focus = ( Menu_ItemAtCursor( &s_edit.menu ) == self );
+	if ( s_edit.menu.mobile ) {
+		UI_DField( 598 + UI_DExtra(), 26, 220, 52, uis.textField == self ? 1.0f : 0.0f );
+		UI_DProp( 612 + UI_DExtra(), 32, "NAME", 9, UI_LEFT, zeq_text3 );
+		UI_DText( 612 + UI_DExtra(), 47, f->field.buffer, 19, UI_LEFT, zeq_white );
+		return;
+	}
 	UI_DField( 72, 420, 364, 42, focus ? 1.0f : 0.0f );
 	Q_strncpyz( clean, f->field.buffer, sizeof( clean ) );
 	Q_CleanStr( clean );
@@ -1339,6 +1440,12 @@ static void UI_BotEdit_DrawDefaults( void *self ) {
 	UI_DRoundFill( b->generic.x, b->generic.y, b->width, b->height, 6, fill );
 	edge[0] = 0.18f + 0.29f * focus; edge[1] = 0.27f + 0.36f * focus; edge[2] = 0.56f + 0.44f * focus; edge[3] = 1.0f;
 	UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 6, edge );
+	if ( s_edit.menu.mobile ) {
+		UI_DText( b->generic.x + 12, b->generic.y + 8, "Roster defaults", 16, UI_LEFT, zeq_white );
+		UI_DText( b->generic.x + 12, b->generic.y + 29, "Level and style from bots.txt", 12, UI_LEFT, zeq_text3 );
+		UI_DToggle( b->generic.x + b->width - 74, b->generic.y + 15, !s_edit.touched );
+		return;
+	}
 	UI_DText( b->generic.x + 12, b->generic.y + 7, "Roster defaults", 18, UI_LEFT, zeq_white );
 	UI_DText( b->generic.x + 12, b->generic.y + 28, "Level and style from bots.txt", 15, UI_LEFT, zeq_text3 );
 	UI_DToggle( b->generic.x + b->width - 74, b->generic.y + 15, !s_edit.touched );
@@ -1362,6 +1469,21 @@ static void UI_BotEdit_Draw( void ) {
 
 	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
+
+	if ( s_edit.menu.mobile ) {
+		UI_DMobileHeader( s_edit.live ? "PAUSED  >  BOTS  >" : "CREATE MATCH  >  FIGHTERS  >",
+			s_edit.slot >= 0 || s_edit.liveClient >= 0 ? "EDIT BOT" : "ADD BOT" );
+		UI_DGlass( 26, 88, 276, 276 );
+		UI_DProp( 44, 96, "CHARACTER", 10, UI_LEFT, zeq_gold );
+		if ( numBotDefs > EDIT_ROWS * 4 ) {
+			UI_DText( 290, 96, "drag for more", 11, UI_RIGHT, zeq_text3 );
+		}
+		UI_DGlass( 314, 88, 504, 212 );
+		UI_DProp( 332, 96, "LEVEL", 10, UI_LEFT, zeq_gold );
+		UI_DProp( 332, 176, "STYLE", 10, UI_LEFT, zeq_gold );
+		Menu_Draw( &s_edit.menu );
+		return;
+	}
 
 	UI_DHeader( s_edit.live ? "PAUSED  >  BOTS  >" : "CREATE MATCH  >  FIGHTERS  >",
 		s_edit.slot >= 0 || s_edit.liveClient >= 0 ? "EDIT BOT" : ( s_edit.live ? "ADD BOT" : va( "ADD BOT  -  SLOT %i", rosterCount + 2 ) ) );
@@ -1435,6 +1557,8 @@ void UI_BotEditMenu( int slot ) {
 	s_edit.menu.key = UI_BotEdit_Key;
 	s_edit.menu.fullscreen = qtrue;
 	s_edit.menu.wrapAround = qtrue;
+	s_edit.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( s_edit.menu.mobile );
 	s_edit.slot = ( slot >= 0 && slot < rosterCount ) ? slot : -1;
 	s_edit.liveClient = -1;
 	s_edit.defTime = uis.realtime;
@@ -1459,20 +1583,43 @@ void UI_BotEditMenu( int slot ) {
 	}
 	s_edit.charScroll = 0;
 	UI_BotEdit_ScrollTo( s_edit.def );
-	for ( i = 0; i < 3; i++ ) {
-		UI_BotEdit_DItem( &s_edit.skills[i], ID_EDIT_SKILL + i, UI_BotEdit_DrawSkill, 756 + i * 154, 176, 144, 108 );
-	}
-	chipX = 756;
-	chipY = 326;
-	for ( i = 0; i < numBotStyles; i++ ) {
-		// pills as wide as their label, wrapping inside the panel
-		chipW = UI_DTextWidth( botStyles[i].label, 18 ) + 30;
-		if ( chipX + chipW > 1208 ) {
-			chipX = 756;
-			chipY += 40;
+	if ( s_edit.menu.mobile ) {
+		// level cards, then style chips that wrap inside the panel
+		UI_DCanvas( qtrue );
+		for ( i = 0; i < 3; i++ ) {
+			UI_BotEdit_DItem( &s_edit.skills[i], ID_EDIT_SKILL + i, UI_BotEdit_DrawSkill, 330 + i * 160, 112, 152, 56 );
 		}
-		UI_BotEdit_DItem( &s_edit.styles[i], ID_EDIT_STYLE + i, UI_BotEdit_DrawStyle, chipX, chipY, chipW, 32 );
-		chipX += chipW + 8;
+		chipX = 330;
+		chipY = 190;
+		for ( i = 0; i < numBotStyles; i++ ) {
+			chipW = UI_DTextWidth( botStyles[i].label, 14 ) + 28;
+			if ( chipW < 64 ) {
+				chipW = 64;
+			}
+			if ( chipX + chipW > 802 ) {
+				chipX = 330;
+				chipY += 52;
+			}
+			UI_BotEdit_DItem( &s_edit.styles[i], ID_EDIT_STYLE + i, UI_BotEdit_DrawStyle, chipX, chipY, chipW, 44 );
+			chipX += chipW + 8;
+		}
+	}
+	else {
+		for ( i = 0; i < 3; i++ ) {
+			UI_BotEdit_DItem( &s_edit.skills[i], ID_EDIT_SKILL + i, UI_BotEdit_DrawSkill, 756 + i * 154, 176, 144, 108 );
+		}
+		chipX = 756;
+		chipY = 326;
+		for ( i = 0; i < numBotStyles; i++ ) {
+			// pills as wide as their label, wrapping inside the panel
+			chipW = UI_DTextWidth( botStyles[i].label, 18 ) + 30;
+			if ( chipX + chipW > 1208 ) {
+				chipX = 756;
+				chipY += 40;
+			}
+			UI_BotEdit_DItem( &s_edit.styles[i], ID_EDIT_STYLE + i, UI_BotEdit_DrawStyle, chipX, chipY, chipW, 32 );
+			chipX += chipW + 8;
+		}
 	}
 	s_edit.barsY = chipY + 32 + 24;
 
@@ -1483,7 +1630,12 @@ void UI_BotEditMenu( int slot ) {
 	s_edit.name.generic.ownerdraw	= UI_BotEdit_DrawName;
 	s_edit.name.field.widthInChars	= 20;
 	s_edit.name.field.maxchars		= 20;
-	vx = 72; vy = 420; vw = 364; vh = 42;
+	if ( s_edit.menu.mobile ) {
+		vx = 598 + UI_DExtra(); vy = 26; vw = 220; vh = 52;
+	}
+	else {
+		vx = 72; vy = 420; vw = 364; vh = 42;
+	}
 	UI_DToV( &vx, &vy, &vw, &vh );
 	s_edit.name.generic.x			= vx;
 	s_edit.name.generic.y			= vy;
@@ -1494,8 +1646,15 @@ void UI_BotEditMenu( int slot ) {
 	Q_strncpyz( s_edit.name.field.buffer, ( s_edit.slot >= 0 && roster[s_edit.slot].name[0] ) ? roster[s_edit.slot].name : botDefs[s_edit.def].name,
 		sizeof( s_edit.name.field.buffer ) );
 	s_edit.name.field.cursor = strlen( s_edit.name.field.buffer );
-	UI_BotEdit_DItem( &s_edit.defaults, ID_EDIT_DEFAULTS, UI_BotEdit_DrawDefaults, 72, 480, 364, 52 );
-	UI_BotEdit_DItem( &s_edit.accept, ID_EDIT_ACCEPT, UI_BotEdit_DrawAccept, 1060 + UI_DExtra(), 664, 172, 46 );
+	if ( s_edit.menu.mobile ) {
+		UI_BotEdit_DItem( &s_edit.defaults, ID_EDIT_DEFAULTS, UI_BotEdit_DrawDefaults, 314, 312, 336, 52 );
+		UI_BotEdit_DItem( &s_edit.accept, ID_EDIT_ACCEPT, UI_BotEdit_DrawAccept, 664, 312, 154, 52 );
+		UI_DBackItem( &s_edit.menu );
+	}
+	else {
+		UI_BotEdit_DItem( &s_edit.defaults, ID_EDIT_DEFAULTS, UI_BotEdit_DrawDefaults, 72, 480, 364, 52 );
+		UI_BotEdit_DItem( &s_edit.accept, ID_EDIT_ACCEPT, UI_BotEdit_DrawAccept, 1060 + UI_DExtra(), 664, 172, 46 );
+	}
 
 	for ( i = 0; i < numBotDefs; i++ ) {
 		Menu_AddItem( &s_edit.menu, &s_edit.chars[i] );
@@ -1564,19 +1723,47 @@ as soon as the server applies them.
 #define ID_PB_KICKALL		62
 #define ID_PB_BACK			63
 
-// design canvas, as the PauseBots artboard
-#define PB_X				190
-#define PB_Y				96
-#define PB_W				900
-#define PB_H				548
-#define PB_IN_X				( PB_X + 24 )			// inside the glass border
-#define PB_IN_W				( PB_W - 48 )
-#define PB_ROWS_Y			204
-#define PB_ROWS_H			330
-#define PB_ROW_MAX			66						// 60 px row and its gap
-#define PB_COL_LEVEL		622
-#define PB_COL_STYLE		826
-#define PB_KICK_X			1014
+// design canvas, as the PauseBots artboard: PC on 1280x720, phone on 844x390
+typedef struct {
+	int		x, y, w, h;				// glass panel
+	int		inX, inW;				// inside the glass border
+	int		titleY;
+	int		colY, colBot, colLevel, colStyle, colSize;
+	int		lineY;
+	int		rowsY, rowsH, rowMax;	// rows share rowsH (PC) or scroll (phone)
+	int		kickX, kickMax;
+	int		noteY, noteSize;
+	int		barY;
+	int		freezeX, freezeY, freezeW, freezeH;
+	int		addX, addY, addW, addH;
+	int		kickAllX, kickAllY, kickAllW, kickAllH;
+	int		slotsX, slotsY, slotsSize;
+	int		nameSize, infoSize, cellSize;
+	int		portraitMax;
+} pbLayout_t;
+
+static const pbLayout_t pbLayouts[2] = {
+	{	190, 96, 900, 548,		214, 852,	126,
+		172, 226, 622, 826, 15,		194,
+		204, 330, 66,			1014, 36,
+		537, 17,		566,
+		760, 112, 306, 46,
+		226, 578, 170, 42,
+		904, 581, 150, 36,
+		414, 586, 17,
+		19, 15, 18,		46 },
+	{	26, 88, 792, 212,		38, 768,	0,
+		96, 54, 384, 516, 12,		118,
+		122, 124, 62,			754, 52,
+		262, 13,		0,
+		548, 26, 270, 52,
+		26, 312, 170, 52,
+		618, 312, 200, 52,
+		208, 330, 14,
+		17, 13, 15,		44 }
+};
+
+#define PBL		( pbLayouts[s_pauseBots.menu.mobile ? 1 : 0] )
 
 typedef struct {
 	int		client;
@@ -1597,6 +1784,7 @@ typedef struct {
 	menubitmap_s	back;
 	pauseBot_t		bots[UI_MAX_ROSTER];
 	int				count;
+	int				scroll;		// phone: first row shown
 } pauseBotsMenu_t;
 
 static pauseBotsMenu_t s_pauseBots;
@@ -1662,6 +1850,12 @@ static void UI_PauseBots_Kick( int row ) {
 	trap_Cmd_ExecuteText( EXEC_APPEND, va( "clientkick %i\n", s_pauseBots.bots[row].client ) );
 }
 
+static void UI_PauseBots_KickAllAction( qboolean result ) {
+	if ( result ) {
+		trap_Cmd_ExecuteText( EXEC_APPEND, "remove_allbots\n" );
+	}
+}
+
 /*
 =================
 UI_PauseBots_Leave
@@ -1704,7 +1898,8 @@ static void UI_PauseBots_Event( void *ptr, int event ) {
 		trap_Cvar_Set( "bot_pause", trap_Cvar_VariableValue( "bot_pause" ) ? "0" : "1" );
 		break;
 	case ID_PB_KICKALL:
-		trap_Cmd_ExecuteText( EXEC_APPEND, "remove_allbots\n" );
+		// it emptied the match at once: ask first
+		UI_ConfirmMenu( "KICK ALL BOTS?", 0, UI_PauseBots_KickAllAction );
 		break;
 	case ID_PB_BACK:
 		UI_PauseBots_Leave();
@@ -1716,18 +1911,27 @@ static float UI_PauseBots_Focus( void *item ) {
 	if ( Menu_ItemAtCursor( &s_pauseBots.menu ) != item ) {
 		return 0.0f;
 	}
+	if ( UI_TouchMode() && !UI_TouchPressed( item ) ) {
+		return 0.0f;
+	}
 	return UI_AnimFrac( uis.focusTime, 0, 160 );
 }
 
-// rows share the list height, 66 px each until they no longer fit
+// rows the phone list shows at once
+static int UI_PauseBots_Visible( void ) {
+	return PBL.rowsH / PBL.rowMax;
+}
+
+// PC: rows share the list height, 66 px each until they no longer fit.
+// Phone: always 62 dp, the list scrolls instead
 static float UI_PauseBots_RowH( void ) {
 	float h;
 
-	if ( !s_pauseBots.count ) {
-		return PB_ROW_MAX;
+	if ( !s_pauseBots.count || s_pauseBots.menu.mobile ) {
+		return PBL.rowMax;
 	}
-	h = (float)PB_ROWS_H / s_pauseBots.count;
-	return ( h > PB_ROW_MAX ) ? PB_ROW_MAX : h;
+	h = (float)PBL.rowsH / s_pauseBots.count;
+	return ( h > PBL.rowMax ) ? PBL.rowMax : h;
 }
 
 static void UI_PauseBots_DrawRow( void *self ) {
@@ -1756,28 +1960,28 @@ static void UI_PauseBots_DrawRow( void *self ) {
 	if ( focus > 0.0f ) {
 		left[0] = 0.33f; left[1] = 0.59f; left[2] = 1.0f; left[3] = 0.32f * focus;
 		right[0] = 0.33f; right[1] = 0.59f; right[2] = 1.0f; right[3] = 0.04f * focus;
-		UI_DRoundRowGlow( PB_IN_X, y, PB_IN_W, h, 6, left, right );
+		UI_DRoundRowGlow( PBL.inX, y, PBL.inW, h, 6, left, right );
 		left[0] = 0.47f; left[1] = 0.63f; left[2] = 1.0f; left[3] = 0.45f * focus;
-		UI_DRoundEdge( PB_IN_X, y, PB_IN_W, h, 8, left );
+		UI_DRoundEdge( PBL.inX, y, PBL.inW, h, 8, left );
 	}
 
 	size = h - 14;
-	if ( size > 46 ) {
-		size = 46;
+	if ( size > PBL.portraitMax ) {
+		size = PBL.portraitMax;
 	}
-	UI_DPortrait( PB_IN_X + 12, y + ( h - size ) * 0.5f, size, UI_Bots_Portrait( bot->model ), qfalse, focus );
-	x = PB_IN_X + 26 + size;
+	UI_DPortrait( PBL.inX + 12, y + ( h - size ) * 0.5f, size, UI_Bots_Portrait( bot->model ), qfalse, focus );
+	x = PBL.inX + 26 + size;
 	if ( h >= 44 ) {
-		UI_DText( x, y + h * 0.5f - 20, bot->name, 19, UI_LEFT|UI_DROPSHADOW, zeq_white );
-		UI_DText( x, y + h * 0.5f + 1, va( "%s  -  slot %i", bot->model, bot->client ), 15, UI_LEFT, zeq_text3 );
+		UI_DText( x, y + h * 0.5f - PBL.nameSize - 1, bot->name, PBL.nameSize, UI_LEFT|UI_DROPSHADOW, zeq_white );
+		UI_DText( x, y + h * 0.5f + 1, va( "%s  -  slot %i", bot->model, bot->client ), PBL.infoSize, UI_LEFT, zeq_text3 );
 	}
 	else {
 		UI_DText( x, y + h * 0.5f - 9, bot->name, 17, UI_LEFT|UI_DROPSHADOW, zeq_white );
 		UI_DText( x + UI_DTextWidth( bot->name, 17 ) + 12, y + h * 0.5f - 7, va( "%s  -  slot %i", bot->model, bot->client ), 14, UI_LEFT, zeq_text3 );
 	}
-	UI_DPips( PB_COL_LEVEL + 30, y + h * 0.5f - 4, bot->skill, 3, UI_AnimFrac( uis.transitionTime, 120 + row * 40, 400 ) );
-	UI_DText( PB_COL_LEVEL + 84, y + h * 0.5f - 10, UI_Bots_SkillName( bot->skill ), 18, UI_LEFT, zeq_white );
-	UI_DText( PB_COL_STYLE + 30, y + h * 0.5f - 10, style ? style->label : "", 18, UI_LEFT, zeq_white );
+	UI_DPips( PBL.colLevel + 30 * PBL.cellSize / 18, y + h * 0.5f - 4, bot->skill, 3, UI_AnimFrac( uis.transitionTime, 120 + row * 40, 400 ) );
+	UI_DText( PBL.colLevel + 84 * PBL.cellSize / 18, y + h * 0.5f - PBL.cellSize * 0.55f, UI_Bots_SkillName( bot->skill ), PBL.cellSize, UI_LEFT, zeq_white );
+	UI_DText( PBL.colStyle + ( s_pauseBots.menu.mobile ? 0 : 30 ), y + h * 0.5f - PBL.cellSize * 0.55f, style ? style->label : "", PBL.cellSize, UI_LEFT, zeq_white );
 }
 
 static void UI_PauseBots_DrawKick( void *self ) {
@@ -1786,7 +1990,7 @@ static void UI_PauseBots_DrawKick( void *self ) {
 	qboolean		hot;
 
 	b = (menubitmap_s *)self;
-	hot = ( Menu_ItemAtCursor( &s_pauseBots.menu ) == self );
+	hot = UI_PauseBots_Focus( self ) > 0.0f || ( !UI_TouchMode() && Menu_ItemAtCursor( &s_pauseBots.menu ) == self );
 	// the red .ib kick button of the artboard
 	color[0] = 0.235f; color[1] = 0.063f; color[2] = 0.04f; color[3] = hot ? 0.7f : 0.35f;
 	UI_DRoundFill( b->generic.x, b->generic.y, b->width, b->height, 4, color );
@@ -1802,23 +2006,36 @@ static void UI_PauseBots_DrawButton( void *self ) {
 	float			*color;
 	qboolean		frozen;
 	qboolean		disabled;
+	qboolean		mobile;
 	vec4_t			edge;
 
 	b = (menubitmap_s *)self;
 	focus = UI_PauseBots_Focus( self );
 	frozen = trap_Cvar_VariableValue( "bot_pause" ) != 0;
 	disabled = ( b->generic.flags & QMF_GRAYED ) != 0;
+	mobile = s_pauseBots.menu.mobile;
 	if ( disabled ) {
 		focus = 0.0f;
 	}
 
 	switch ( b->generic.id ) {
 	case ID_PB_ADD:
-		UI_DKiButton( b->generic.x + 4.0f * focus, b->generic.y, b->width, b->height, "ADD BOT", NULL, focus, disabled, qfalse );
+		UI_DKiButton( b->generic.x + ( mobile ? 0.0f : 4.0f * focus ), b->generic.y, b->width, b->height, "ADD BOT", NULL, focus, disabled, qfalse );
 		break;
 
 	case ID_PB_FREEZE:
 		// switch on the right of the title, as the artboard
+		if ( mobile ) {
+			edge[0] = 0.33f; edge[1] = 0.59f; edge[2] = 1.0f; edge[3] = 0.12f + 0.25f * focus;
+			UI_DRoundFill( b->generic.x, b->generic.y, b->width, b->height, 8, edge );
+			edge[3] = 0.35f + 0.5f * focus;
+			UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 8, edge );
+			UI_DText( b->generic.x + 14, b->generic.y + 8, "Freeze bots", 16, UI_LEFT, frozen ? zeq_gold : zeq_white );
+			UI_DText( b->generic.x + 14, b->generic.y + 29, frozen ? "They stand still until resumed" : "They keep fighting while paused", 12, UI_LEFT, zeq_text3 );
+			trap_R_SetColor( NULL );
+			UI_DToggle( b->generic.x + b->width - 74, b->generic.y + 15, frozen );
+			break;
+		}
 		if ( focus > 0.0f ) {
 			edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.45f * focus;
 			UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 6, edge );
@@ -1835,7 +2052,8 @@ static void UI_PauseBots_DrawButton( void *self ) {
 		edge[0] = 0.94f; edge[1] = 0.63f; edge[2] = 0.53f; edge[3] = disabled ? 0.25f : 0.5f + 0.5f * focus;
 		UI_DRoundEdge( b->generic.x, b->generic.y, b->width, b->height, 4, edge );
 		edge[3] = disabled ? 0.4f : 1.0f;
-		UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + b->height * 0.5f - 10, "Kick all bots", 19, UI_CENTER, focus > 0.0f ? color : edge );
+		UI_DText( b->generic.x + b->width * 0.5f, b->generic.y + b->height * 0.5f - ( mobile ? 8 : 10 ), mobile ? "Kick all bots..." : "Kick all bots",
+			mobile ? 16 : 19, UI_CENTER, focus > 0.0f ? color : edge );
 		break;
 	}
 }
@@ -1843,23 +2061,32 @@ static void UI_PauseBots_DrawButton( void *self ) {
 // rows and buttons follow the live list
 static void UI_PauseBots_Sync( void ) {
 	int				i;
+	int				visible;
 	float			rowH;
 	float			kick;
 	float			y;
 	menucommon_s	*item;
 
+	UI_DCanvas( s_pauseBots.menu.mobile );
 	UI_PauseBots_Scan();
 	rowH = UI_PauseBots_RowH();
-	kick = rowH - 18;
-	if ( kick > 36 ) {
-		kick = 36;
+	kick = rowH - ( s_pauseBots.menu.mobile ? 10 : 18 );
+	if ( kick > PBL.kickMax ) {
+		kick = PBL.kickMax;
+	}
+	visible = s_pauseBots.menu.mobile ? UI_PauseBots_Visible() : UI_MAX_ROSTER;
+	if ( s_pauseBots.scroll > s_pauseBots.count - visible ) {
+		s_pauseBots.scroll = s_pauseBots.count - visible;
+	}
+	if ( s_pauseBots.scroll < 0 ) {
+		s_pauseBots.scroll = 0;
 	}
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
-		if ( i < s_pauseBots.count ) {
-			y = PB_ROWS_Y + i * rowH;
+		if ( i < s_pauseBots.count && i >= s_pauseBots.scroll && i < s_pauseBots.scroll + visible ) {
+			y = PBL.rowsY + ( i - s_pauseBots.scroll ) * rowH;
 			// the row ends before the kick button so both take clicks
-			UI_DItem( &s_pauseBots.rows[i], PB_IN_X, y, PB_KICK_X - 8 - PB_IN_X, rowH - 6 );
-			UI_DItem( &s_pauseBots.kicks[i], PB_KICK_X, y + ( rowH - 6 - kick ) * 0.5f, kick, kick );
+			UI_DItem( &s_pauseBots.rows[i], PBL.inX, y, PBL.kickX - 8 - PBL.inX, rowH - ( s_pauseBots.menu.mobile ? 2 : 6 ) );
+			UI_DItem( &s_pauseBots.kicks[i], PBL.kickX, y + ( rowH - ( s_pauseBots.menu.mobile ? 2 : 6 ) - kick ) * 0.5f, kick, kick );
 			s_pauseBots.rows[i].generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
 			s_pauseBots.kicks[i].generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
 		}
@@ -1882,13 +2109,14 @@ static void UI_PauseBots_Sync( void ) {
 	}
 	item = (menucommon_s *)Menu_ItemAtCursor( &s_pauseBots.menu );
 	if ( !item || ( item->flags & ( QMF_INACTIVE|QMF_GRAYED ) ) ) {
-		Menu_SetCursorToItem( &s_pauseBots.menu, s_pauseBots.count ? (void *)&s_pauseBots.rows[0] : (void *)&s_pauseBots.add );
+		Menu_SetCursorToItem( &s_pauseBots.menu, s_pauseBots.count ? (void *)&s_pauseBots.rows[s_pauseBots.scroll] : (void *)&s_pauseBots.add );
 	}
 }
 
 static void UI_PauseBots_Draw( void ) {
 	float			bias;
 	int				slotsFree;
+	int				hidden;
 	vec4_t			shade;
 	vec4_t			warn;
 	static const char *hints[] = { "UD", "Bot", "ENTER", "Edit", "F", "Freeze", "DEL", "Kick", "ESC", "Back" };
@@ -1899,33 +2127,53 @@ static void UI_PauseBots_Draw( void ) {
 	bias = ( uis.scale > 0.0f ) ? ( uis.bias / uis.scale ) : 0.0f;
 	shade[0] = 0.02f; shade[1] = 0.02f; shade[2] = 0.10f; shade[3] = 0.62f;
 	UI_FillRect( -bias - uis.drawOffsetX, 0, 640 + 2 * bias, 480, shade );
-	InGame_DrawTopStrip( qtrue );
+	if ( s_pauseBots.menu.mobile ) {
+		// a darker band keeps the title clear of the HUD under it
+		shade[3] = 0.55f;
+		UI_DFill( -200 - UI_DExtra(), 0, 1244 + 2 * UI_DExtra(), 80, shade );
+		shade[3] = 0.62f;
+		UI_DMobileHeader( "PAUSED >", "BOTS" );
+	}
+	else {
+		InGame_DrawTopStrip( qtrue );
+	}
 
-	UI_DGlass( PB_X, PB_Y, PB_W, PB_H );
-	UI_DSectionTitle( PB_IN_X + 12, PB_Y + 30, "BOTS IN THIS MATCH" );
+	UI_DGlass( PBL.x, PBL.y, PBL.w, PBL.h );
+	if ( !s_pauseBots.menu.mobile ) {
+		UI_DSectionTitle( PBL.inX + 12, PBL.titleY, "BOTS IN THIS MATCH" );
+	}
 
 	// column titles
-	UI_DText( PB_IN_X + 12, 172, "BOT", 15, UI_LEFT, zeq_text3 );
-	UI_DText( PB_COL_LEVEL, 172, "LEVEL", 15, UI_LEFT, zeq_text3 );
-	UI_DText( PB_COL_STYLE, 172, "STYLE", 15, UI_LEFT, zeq_text3 );
+	UI_DText( PBL.colBot, PBL.colY, "BOT", PBL.colSize, UI_LEFT, zeq_text3 );
+	UI_DText( PBL.colLevel, PBL.colY, "LEVEL", PBL.colSize, UI_LEFT, zeq_text3 );
+	UI_DText( PBL.colStyle, PBL.colY, "STYLE", PBL.colSize, UI_LEFT, zeq_text3 );
 	shade[0] = 0.35f; shade[1] = 0.51f; shade[2] = 0.9f; shade[3] = 0.4f;
-	UI_DFill( PB_IN_X, 194, PB_IN_W, 1, shade );
+	UI_DFill( PBL.inX, PBL.lineY, PBL.inW, 1, shade );
 
 	if ( !s_pauseBots.count ) {
-		UI_DText( 640, 320, "No bots in this match.", 22, UI_CENTER, zeq_white );
-		UI_DText( 640, 350, "ADD BOT brings one in.", 18, UI_CENTER, zeq_text2 );
+		UI_DText( PBL.x + PBL.w * 0.5f, PBL.rowsY + PBL.rowsH * 0.5f - ( s_pauseBots.menu.mobile ? 22 : 49 ), "No bots in this match.", s_pauseBots.menu.mobile ? 17 : 22, UI_CENTER, zeq_white );
+		UI_DText( PBL.x + PBL.w * 0.5f, PBL.rowsY + PBL.rowsH * 0.5f - ( s_pauseBots.menu.mobile ? 0 : 19 ), "ADD BOT brings one in.", s_pauseBots.menu.mobile ? 14 : 18, UI_CENTER, zeq_text2 );
 	}
 	else {
 		warn[0] = 0.96f; warn[1] = 0.81f; warn[2] = 0.52f; warn[3] = 1.0f;
-		UI_DIcon( PB_IN_X + 12, 538, 18, UI_ICON_WARN, zeq_gold );
-		UI_DText( PB_IN_X + 40, 537, "ENTER edits a bot: it re-enters the match at a spawn point.", 17, UI_LEFT, warn );
+		UI_DIcon( PBL.inX + 12, PBL.noteY + 1, PBL.noteSize + 1, UI_ICON_WARN, zeq_gold );
+		if ( s_pauseBots.menu.mobile ) {
+			hidden = s_pauseBots.count - UI_PauseBots_Visible();
+			UI_DText( PBL.inX + 20 + PBL.noteSize, PBL.noteY, hidden > 0 ? va( "Tap a bot to edit it, drag the list for %i more.", hidden ) :
+				"Tap a bot to edit it: it re-enters at a spawn point.", PBL.noteSize, UI_LEFT, warn );
+		}
+		else {
+			UI_DText( PBL.inX + 40, PBL.noteY, "ENTER edits a bot: it re-enters the match at a spawn point.", PBL.noteSize, UI_LEFT, warn );
+		}
 	}
 
 	// bottom bar
-	shade[3] = 0.25f;
-	UI_DFill( PB_IN_X, 566, PB_IN_W, 1, shade );
+	if ( !s_pauseBots.menu.mobile ) {
+		shade[3] = 0.25f;
+		UI_DFill( PBL.inX, PBL.barY, PBL.inW, 1, shade );
+	}
 	slotsFree = UI_MAX_ROSTER - s_pauseBots.count;
-	UI_DText( 414, 586, slotsFree == 1 ? "1 slot free" : va( "%i slots free", slotsFree ), 17, UI_LEFT, zeq_text3 );
+	UI_DText( PBL.slotsX, PBL.slotsY, slotsFree == 1 ? "1 slot free" : va( "%i slots free", slotsFree ), PBL.slotsSize, UI_LEFT, zeq_text3 );
 
 	Menu_Draw( &s_pauseBots.menu );
 
@@ -1950,6 +2198,12 @@ static sfxHandle_t UI_PauseBots_Key( int key ) {
 		trap_Cvar_Set( "bot_pause", trap_Cvar_VariableValue( "bot_pause" ) ? "0" : "1" );
 		return menu_move_sound;
 	}
+	// phone: the wheel and a dragging finger scroll the rows
+	if ( s_pauseBots.menu.mobile && ( key == K_MWHEELUP || key == K_MWHEELDOWN ) ) {
+		s_pauseBots.scroll += ( key == K_MWHEELUP ) ? -1 : 1;
+		UI_PauseBots_Sync();
+		return menu_null_sound;
+	}
 	return Menu_DefaultKey( &s_pauseBots.menu, key );
 }
 
@@ -1972,6 +2226,8 @@ void UI_PauseBotsMenu( void ) {
 	s_pauseBots.menu.key = UI_PauseBots_Key;
 	s_pauseBots.menu.fullscreen = qfalse;
 	s_pauseBots.menu.wrapAround = qtrue;
+	s_pauseBots.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( s_pauseBots.menu.mobile );
 
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
 		s_pauseBots.rows[i].generic.type		= MTYPE_BITMAP;
@@ -1987,11 +2243,14 @@ void UI_PauseBotsMenu( void ) {
 		s_pauseBots.kicks[i].generic.ownerdraw	= UI_PauseBots_DrawKick;
 	}
 
-	// ESC goes back, the artboard has no BACK button
-	UI_PauseBots_Button( &s_pauseBots.freeze, ID_PB_FREEZE, 760, 112, 306, 46 );
-	UI_PauseBots_Button( &s_pauseBots.add, ID_PB_ADD, PB_IN_X + 12, 578, 170, 42 );
-	UI_PauseBots_Button( &s_pauseBots.kickall, ID_PB_KICKALL, PB_X + PB_W - 24 - 12 - 150, 581, 150, 36 );
+	// ESC goes back, the artboard has no BACK button (the phone has its arrow)
+	UI_PauseBots_Button( &s_pauseBots.freeze, ID_PB_FREEZE, PBL.freezeX, PBL.freezeY, PBL.freezeW, PBL.freezeH );
+	UI_PauseBots_Button( &s_pauseBots.add, ID_PB_ADD, PBL.addX, PBL.addY, PBL.addW, PBL.addH );
+	UI_PauseBots_Button( &s_pauseBots.kickall, ID_PB_KICKALL, PBL.kickAllX, PBL.kickAllY, PBL.kickAllW, PBL.kickAllH );
 
+	if ( s_pauseBots.menu.mobile ) {
+		UI_DBackItem( &s_pauseBots.menu );
+	}
 	Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.freeze );
 	for ( i = 0; i < UI_MAX_ROSTER; i++ ) {
 		Menu_AddItem( &s_pauseBots.menu, &s_pauseBots.rows[i] );

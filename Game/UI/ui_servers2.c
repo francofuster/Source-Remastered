@@ -205,7 +205,7 @@ typedef struct {
 	menubitmap_s		remove;
 
 	// menu redesign
-	menubitmap_s		tabs[3];
+	menubitmap_s		tabs[4];		// the fourth, ADDRESS, only on a phone
 	menubitmap_s		sortsel;
 	menubitmap_s		refreshBtn;
 	menubitmap_s		joinBtn;
@@ -1243,11 +1243,23 @@ these functions only lay the screen out on the design canvas.
 #define PLAY_LIST_W			762
 #define PLAY_LIST_ROWS		12
 
+// phone: the list on the 844x390 canvas, rows of 58 dp
+#define PLAYM_LIST_X		34
+#define PLAYM_LIST_Y		126
+#define PLAYM_LIST_W		532
+#define PLAYM_ROW_H			58
+#define PLAYM_ROWS			4
+
 static const int playTabTypes[3] = { UIAS_GLOBAL1, UIAS_LOCAL, UIAS_FAVORITES };
-static const char *playTabLabels[3] = { "INTERNET", "LAN", "FAVORITES" };
+static const char *playTabLabels[4] = { "INTERNET", "LAN", "FAVORITES", "ADDRESS" };
+static qboolean playAddress;	// phone: the ADDRESS tab is open
+static void ArenaServers_PhoneItems( void );
 static const char *playSortLabels[5] = { "Server name", "Map name", "Open spots", "Game type", "Ping time" };
 
 static qboolean ArenaServers_TabActive( int tab ) {
+	if ( tab == 3 || playAddress ) {
+		return tab == 3 && playAddress;
+	}
 	if ( playTabTypes[tab] == UIAS_GLOBAL1 ) {
 		return ( g_servertype >= UIAS_GLOBAL1 && g_servertype <= UIAS_GLOBAL5 );
 	}
@@ -1270,6 +1282,13 @@ static void ArenaServers_DrawSort( void *self ) {
 
 	b = (menubitmap_s *)self;
 	focus = UI_DFocus( &g_arenaservers.menu, self );
+	if ( g_arenaservers.menu.mobile ) {
+		UI_DField( b->generic.x, b->generic.y, b->width, b->height, focus );
+		UI_DText( b->generic.x + 14, b->generic.y + b->height * 0.5f - 8, "Sort:", 15, UI_LEFT, zeq_text3 );
+		UI_DText( b->generic.x + 60, b->generic.y + b->height * 0.5f - 8, playSortLabels[g_sortkey], 15, UI_LEFT, zeq_white );
+		UI_DIcon( b->generic.x + b->width - 24, b->generic.y + b->height * 0.5f - 5, 10, UI_ICON_CHEVDOWN, zeq_text2 );
+		return;
+	}
 	UI_DText( b->generic.x - 12, b->generic.y + 5, "SORT BY", 16, UI_RIGHT, zeq_text3 );
 	// a dropdown box as the artboard; arrows and clicks cycle the order
 	UI_DField( b->generic.x, b->generic.y, b->width, 34, focus );
@@ -1287,7 +1306,7 @@ static void ArenaServers_DrawButton( void *self ) {
 	switch ( b->generic.id ) {
 	case ID_REFRESH:	label = g_arenaservers.refreshservers ? "STOP" : "REFRESH"; break;
 	case ID_CONNECT:	label = "JOIN"; break;
-	default:			label = "FIGHT!"; break;
+	default:			label = g_arenaservers.menu.mobile ? "CONNECT" : "FIGHT!"; break;
 	}
 	UI_DKiButton( b->generic.x, b->generic.y, b->width, b->height, label, NULL, UI_DFocus( &g_arenaservers.menu, self ), disabled, qfalse );
 }
@@ -1296,7 +1315,7 @@ static void ArenaServers_DrawCreate( void *self ) {
 	menubitmap_s *b;
 
 	b = (menubitmap_s *)self;
-	UI_DCta( b->generic.x, b->generic.y, b->width, b->height, "CREATE", UI_DFocus( &g_arenaservers.menu, self ) );
+	UI_DCta( b->generic.x, b->generic.y, b->width, b->height, g_arenaservers.menu.mobile ? "CREATE MATCH" : "CREATE", UI_DFocus( &g_arenaservers.menu, self ) );
 }
 
 // the typed address of the connect card
@@ -1306,6 +1325,14 @@ static void ArenaServers_DrawAddress( void *self ) {
 
 	f = (menufield_s *)self;
 	focus = ( Menu_ItemAtCursor( &g_arenaservers.menu ) == self );
+	if ( g_arenaservers.menu.mobile ) {
+		UI_DField( 50, 150, 500, 52, focus ? 1.0f : 0.0f );
+		UI_DText( 66, 166, f->field.buffer[0] ? f->field.buffer : "ip:port", 19, UI_LEFT, f->field.buffer[0] ? zeq_white : zeq_text3 );
+		if ( focus && f->field.buffer[0] && ( ( uis.realtime / 400 ) & 1 ) ) {
+			UI_DFill( 66 + UI_DTextWidth( f->field.buffer, 19 ) + 2, 165, 2, 22, zeq_white );
+		}
+		return;
+	}
 	UI_DField( 904, 512, 304, 42, focus ? 1.0f : 0.0f );
 	if ( f->field.buffer[0] ) {
 		UI_DText( 918, 523, f->field.buffer, 20, UI_LEFT, zeq_white );
@@ -1320,6 +1347,78 @@ static void ArenaServers_DrawAddress( void *self ) {
 
 static int ArenaServers_GametypeIndex( int gametype ) {
 	return gametype;
+}
+
+static void ArenaServers_PingColor( int ping, vec4_t c ) {
+	if ( ping < 200 ) {
+		c[0] = 0.44f; c[1] = 0.86f; c[2] = 0.55f;
+	}
+	else if ( ping < 400 ) {
+		c[0] = 0.95f; c[1] = 0.70f; c[2] = 0.24f;
+	}
+	else {
+		c[0] = 0.94f; c[1] = 0.50f; c[2] = 0.43f;
+	}
+	c[3] = 1.0f;
+}
+
+// phone: 58 dp rows, the map and mode on a second line; a drag scrolls
+static void ArenaServers_DrawListPhone( menulist_s *l, qboolean focus ) {
+	static const char *gametypeNames[] = { "Free for all", "Tournament", "Single", "Struggle", "Team", "CTF" };
+	servernode_t	*node;
+	char			host[64];
+	vec4_t			line, ping;
+	float			y, h;
+	int				i, row;
+
+	line[0] = 0.35f; line[1] = 0.51f; line[2] = 0.90f; line[3] = 0.4f;
+	UI_DText( 50, 100, "SERVER", 12, UI_LEFT, zeq_text3 );
+	UI_DText( 430, 100, "PLAYERS", 12, UI_LEFT, zeq_text3 );
+	UI_DText( 552, 100, "PING", 12, UI_RIGHT, zeq_text3 );
+	UI_DFill( 42, 120, 516, 1, line );
+
+	if ( !l->numitems ) {
+		trap_R_SetColor( NULL );
+		UI_DPic( 278, 160 + 2.0f * sin( uis.realtime / 300.0f ), 40, 48, uis.dragonBall );
+		UI_DProp( 298, 222, g_arenaservers.refreshservers ? "SCANNING" : "NO SERVERS FOUND", 15, UI_CENTER, zeq_white );
+		UI_DText( 298, 246, g_arenaservers.refreshservers ? "Asking the master server for games..." :
+			"Refresh the list, or host your own match with bots.", 14, UI_CENTER, zeq_text2 );
+		UI_DText( 298, 268, g_arenaservers.status.string, 12, UI_CENTER, zeq_text3 );
+		return;
+	}
+
+	for ( i = 0; i < PLAYM_ROWS; i++ ) {
+		row = l->top + i;
+		if ( row >= l->numitems ) {
+			break;
+		}
+		node = g_arenaservers.table[row].servernode;
+		if ( !node ) {
+			continue;
+		}
+		y = PLAYM_LIST_Y + i * PLAYM_ROW_H;
+		h = PLAYM_ROW_H - 2;
+		if ( row == l->curvalue ) {
+			UI_DFocusRow( PLAYM_LIST_X, y, PLAYM_LIST_W, h, 0.8f );
+		}
+		trap_R_SetColor( NULL );
+		UI_DPic( PLAYM_LIST_X + 6, y + 7, 60, h - 14, trap_R_RegisterShaderNoMip( va( "maps/%s.jpg", node->mapname ) ) );
+		Q_strncpyz( host, node->hostname, sizeof( host ) );
+		UI_DText( PLAYM_LIST_X + 76, y + 9, host, 16, UI_LEFT, row == l->curvalue ? zeq_white : zeq_text2 );
+		UI_DText( PLAYM_LIST_X + 76, y + 31, va( "%s  -  %s", node->mapname, ( node->gametype >= 0 && node->gametype < 6 ) ? gametypeNames[node->gametype] : "?" ),
+			13, UI_LEFT, zeq_text3 );
+		UI_DText( 430, y + h * 0.5f - 8, va( "%i / %i", node->numclients, node->maxclients ), 15, UI_LEFT, zeq_text2 );
+		ArenaServers_PingColor( node->pingtime, ping );
+		UI_DText( 552, y + h * 0.5f - 8, va( "%i", node->pingtime ), 15, UI_RIGHT, ping );
+	}
+	// scroll bar
+	if ( l->numitems > PLAYM_ROWS ) {
+		line[3] = 0.2f;
+		UI_DFill( 563, PLAYM_LIST_Y, 3, PLAYM_ROWS * PLAYM_ROW_H, line );
+		line[3] = 0.8f;
+		h = PLAYM_ROWS * PLAYM_ROW_H * PLAYM_ROWS / (float)l->numitems;
+		UI_DFill( 563, PLAYM_LIST_Y + ( PLAYM_ROWS * PLAYM_ROW_H - h ) * l->top / (float)( l->numitems - PLAYM_ROWS ), 3, h, line );
+	}
 }
 
 // one row per server; the scroll list keeps the selection and the keys
@@ -1340,6 +1439,10 @@ static void ArenaServers_DrawList( void *self ) {
 	l = (menulist_s *)self;
 	focus = ( Menu_ItemAtCursor( &g_arenaservers.menu ) == self );
 	rowH = SMALLCHAR_HEIGHT / UI_DScale();
+	if ( g_arenaservers.menu.mobile ) {
+		ArenaServers_DrawListPhone( l, focus );
+		return;
+	}
 
 	line[0] = 0.35f; line[1] = 0.51f; line[2] = 0.90f; line[3] = 0.4f;
 	UI_DText( 84, 214, "SERVER", 16, UI_LEFT, zeq_text3 );
@@ -1393,6 +1496,38 @@ static void ArenaServers_DrawList( void *self ) {
 	}
 }
 
+static void ArenaServers_MenuDrawPhone( void ) {
+	const char	*arena;
+	vec4_t		fade;
+	int			i;
+
+	ArenaServers_PhoneItems();
+	UI_DMobileHeader( "MAIN MENU  >", "PLAY" );
+	UI_DGlass( 26, 88, 548, 276 );
+	if ( playAddress ) {
+		UI_DProp( 50, 112, "CONNECT BY ADDRESS", 11, UI_LEFT, zeq_gold );
+		UI_DText( 50, 214, "Server address and port; the default port if omitted.", 14, UI_LEFT, zeq_text3 );
+	}
+
+	// host a match card
+	arena = UI_GetArenaInfoByNumber( 0 );
+	if ( arena ) {
+		trap_R_SetColor( NULL );
+		UI_DPic( 586, 88, 232, 132, trap_R_RegisterShaderNoMip( va( "maps/%s.jpg", Info_ValueForKey( arena, "map" ) ) ) );
+		for ( i = 0; i < 10; i++ ) {
+			fade[0] = 0.02f; fade[1] = 0.024f; fade[2] = 0.10f; fade[3] = 0.6f - 0.06f * i;
+			UI_DFill( 586, 88 + i * 5, 232, 5, fade );
+		}
+		UI_DRoundCorners( 586, 88, 232, 132, 8, zeq_portraitBack );
+		fade[0] = 0.47f; fade[1] = 0.63f; fade[2] = 1.0f; fade[3] = 0.45f;
+		UI_DRoundEdge( 586, 88, 232, 132, 8, fade );
+	}
+	UI_DProp( 598, 98, "HOST A MATCH", 10, UI_LEFT, zeq_gold );
+	UI_DText( 598, 114, "Local match with bots", 13, UI_LEFT, zeq_white );
+
+	Menu_Draw( &g_arenaservers.menu );
+}
+
 static void ArenaServers_MenuDraw( void )
 {
 	static const char *hints[] = { "TAB", "Source", "R", "Refresh", "ENTER", "Join", "ESC", "Back" };
@@ -1407,6 +1542,11 @@ static void ArenaServers_MenuDraw( void )
 
 	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
+
+	if ( g_arenaservers.menu.mobile ) {
+		ArenaServers_MenuDrawPhone();
+		return;
+	}
 
 	UI_DHeader( "MAIN MENU  >", "PLAY" );
 
@@ -1476,7 +1616,14 @@ static void ArenaServers_NewEvent( void *ptr, int event ) {
 		return;
 	}
 	id = ((menucommon_s *)ptr)->id;
+	if ( id == ID_TAB0 + 3 ) {
+		playAddress = qtrue;
+		ArenaServers_PhoneItems();
+		return;
+	}
 	if ( id >= ID_TAB0 && id < ID_TAB0 + 3 ) {
+		playAddress = qfalse;
+		ArenaServers_PhoneItems();
 		ArenaServers_PickTab( id - ID_TAB0 );
 		return;
 	}
@@ -1509,6 +1656,28 @@ static sfxHandle_t ArenaServers_MenuKey( int key ) {
 	int		tab;
 
 	item = Menu_ItemAtCursor( &g_arenaservers.menu );
+
+	// phone: a tap picks a row, a tap on the picked row joins it
+	if ( g_arenaservers.menu.mobile && key == K_MOUSE1 && item == &g_arenaservers.list &&
+		( g_arenaservers.list.generic.flags & QMF_HASMOUSEFOCUS ) && g_arenaservers.list.numitems ) {
+		float	x, y, w, h;
+		int		row;
+
+		UI_DCanvas( qtrue );
+		x = PLAYM_LIST_X; y = PLAYM_LIST_Y; w = PLAYM_LIST_W; h = PLAYM_ROW_H;
+		UI_DToV( &x, &y, &w, &h );
+		row = g_arenaservers.list.top + (int)( ( uis.cursory - y ) / h );
+		if ( row < 0 || row >= g_arenaservers.list.numitems ) {
+			return menu_null_sound;
+		}
+		if ( row == g_arenaservers.list.curvalue ) {
+			ArenaServers_Go();
+			return menu_move_sound;
+		}
+		g_arenaservers.list.curvalue = row;
+		ArenaServers_UpdatePicture();
+		return menu_move_sound;
+	}
 
 	if( key == K_SPACE  && g_arenaservers.refreshservers ) {
 		ArenaServers_StopRefresh();
@@ -1571,6 +1740,82 @@ static void ArenaServers_DItem( menubitmap_s *b, int id, void (*draw)( void * ),
 	UI_DItem( b, x, y, w, h );
 }
 
+
+static void ArenaServers_InitState( void );
+
+/*
+=================
+ArenaServers_PhoneItems
+
+phone: the ADDRESS tab swaps the list for the address field
+=================
+*/
+static void ArenaServers_PhoneItems( void ) {
+	if ( !g_arenaservers.menu.mobile ) {
+		return;
+	}
+	if ( playAddress ) {
+		g_arenaservers.list.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		g_arenaservers.address.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+		g_arenaservers.connectBtn.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+	}
+	else {
+		g_arenaservers.list.generic.flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+		g_arenaservers.address.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+		g_arenaservers.connectBtn.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+	}
+}
+
+/*
+=================
+ArenaServers_MenuInitPhone
+
+the phone layout on the 844x390 canvas, after the arenaservers_t items
+of the old screen are set up
+=================
+*/
+static void ArenaServers_MenuInitPhone( void ) {
+	static const int tabX[4] = { 196, 318, 404, 530 };
+	static const int tabW[4] = { 118, 82, 122, 108 };
+	int i;
+
+	for ( i = 0; i < 4; i++ ) {
+		ArenaServers_DItem( &g_arenaservers.tabs[i], ID_TAB0 + i, ArenaServers_DrawTab, tabX[i], 26, tabW[i], 48 );
+	}
+	ArenaServers_DItem( &g_arenaservers.sortsel, ID_SORTSEL, ArenaServers_DrawSort, 586, 296, 232, 52 );
+	ArenaServers_DItem( &g_arenaservers.refreshBtn, ID_REFRESH, ArenaServers_DrawButton, 586, 232, 114, 52 );
+	ArenaServers_DItem( &g_arenaservers.joinBtn, ID_CONNECT, ArenaServers_DrawButton, 704, 232, 114, 52 );
+	ArenaServers_DItem( &g_arenaservers.createBtn, ID_CREATE, ArenaServers_DrawCreate, 598, 156, 206, 52 );
+	ArenaServers_DItem( &g_arenaservers.connectBtn, ID_CONNECTTYPED, ArenaServers_DrawButton, 50, 252, 170, 52 );
+
+	g_arenaservers.address.generic.type			= MTYPE_FIELD;
+	g_arenaservers.address.generic.flags		= QMF_NODEFAULTINIT;
+	g_arenaservers.address.generic.ownerdraw	= ArenaServers_DrawAddress;
+	g_arenaservers.address.field.widthInChars	= 32;
+	g_arenaservers.address.field.maxchars		= 64;
+	UI_DSetRect( &g_arenaservers.address.generic, 50, 150, 500, 52 );
+	g_arenaservers.address.generic.x = g_arenaservers.address.generic.left;
+	g_arenaservers.address.generic.y = g_arenaservers.address.generic.top;
+
+	UI_DBackItem( &g_arenaservers.menu );
+	for ( i = 0; i < 4; i++ ) {
+		Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.tabs[i] );
+	}
+	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.list );
+	// the scroll list sized itself in chars: give it the phone rows
+	g_arenaservers.list.height = PLAYM_ROWS;
+	UI_DSetRect( &g_arenaservers.list.generic, PLAYM_LIST_X, PLAYM_LIST_Y, PLAYM_LIST_W, PLAYM_ROWS * PLAYM_ROW_H );
+	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.createBtn );
+	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.refreshBtn );
+	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.joinBtn );
+	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.sortsel );
+	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.address );
+	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.connectBtn );
+	ArenaServers_PhoneItems();
+
+	ArenaServers_LoadFavorites();
+	ArenaServers_InitState();
+}
 
 /*
 =================
@@ -1762,6 +2007,13 @@ static void ArenaServers_MenuInit( void ) {
 
 
 	// menu redesign: tabs, sort, list, footer buttons and the two cards
+	g_arenaservers.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( g_arenaservers.menu.mobile );
+	playAddress = qfalse;
+	if ( g_arenaservers.menu.mobile ) {
+		ArenaServers_MenuInitPhone();
+		return;
+	}
 	for ( i = 0; i < 3; i++ ) {
 		ArenaServers_DItem( &g_arenaservers.tabs[i], ID_TAB0 + i, ArenaServers_DrawTab, 72 + i * 156, 152, 150, 40 );
 	}
@@ -1801,6 +2053,19 @@ static void ArenaServers_MenuInit( void ) {
 	Menu_AddItem( &g_arenaservers.menu, (void*) &g_arenaservers.connectBtn );
 
 	ArenaServers_LoadFavorites();
+
+	ArenaServers_InitState();
+}
+
+/*
+=================
+ArenaServers_InitState
+
+browser settings, shared by both layouts
+=================
+*/
+static void ArenaServers_InitState( void ) {
+	int value;
 
 	g_servertype = Com_Clamp( 0, 3, ui_browserMaster.integer );
 	// hack to get rid of MPlayer stuff

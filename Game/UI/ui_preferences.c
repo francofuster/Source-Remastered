@@ -324,6 +324,14 @@ void Preferences_MenuDraw (void)
 	uis.hideEarth = qtrue;
 	uis.showFrame = qfalse;
 
+	if ( s_preferences.menu.mobile ) {
+		UI_DMobileHeader( "MAIN MENU  >", "OPTIONS" );
+		UI_DOptionsDrawPhone( ( s_preferences.apply.generic.flags & QMF_HIDDEN ) ? NULL : "Changes apply after a video restart." );
+		UI_DOptionsDrawSections();
+		Menu_Draw( &s_preferences.menu );
+		return;
+	}
+
 	UI_DHeader( "MAIN MENU  >", "OPTIONS" );
 	UI_DGlass( 48, 186, 760, 466 );
 	UI_DOptionsDrawSections();
@@ -575,6 +583,8 @@ static void Preferences_MenuInit( void ) {
 	Menu_AddItem( &s_preferences.menu, &s_preferences.apply );
 
 	// menu redesign: tabs, rows and the help panel on the design canvas
+	s_preferences.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( s_preferences.menu.mobile );
 	UI_DTabItem( &s_preferences.controls, 0, "CONTROLS", qfalse );
 	UI_DTabItem( &s_preferences.system, 1, "VIDEO & AUDIO", qfalse );
 	UI_DTabItem( &s_preferences.general, 2, "GAME", qtrue );
@@ -599,7 +609,13 @@ static void Preferences_MenuInit( void ) {
 	UI_DOptionsRow( &s_preferences.bloomDarken, "Bloom darken", "How much of the scene is kept out of the glow.", qfalse );
 	UI_DOptionsRow( &s_preferences.bloomAlpha, "Bloom alpha", "How much the glow is blended over the picture.", qfalse );
 
-	UI_DItem( &s_preferences.apply, 1012, 590, 196, 46 );
+	if ( s_preferences.menu.mobile ) {
+		UI_DItem( &s_preferences.apply, 664, 312, 154, 52 );
+		UI_DBackItem( &s_preferences.menu );
+	}
+	else {
+		UI_DItem( &s_preferences.apply, 1012, 590, 196, 46 );
+	}
 	s_preferences.apply.generic.ownerdraw = Preferences_DrawApply;
 
 	Preferences_SetMenuItems();

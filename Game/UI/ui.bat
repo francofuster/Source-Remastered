@@ -55,6 +55,7 @@ set cc=call ..\..\..\Tools\Compiler\Perform.bat
 %cc% ../ui_startserver.c
 @if errorlevel 1 goto quit
 %cc% ../ui_camera.c
+%cc% ../ui_touch.c
 @if errorlevel 1 goto quit
 %cc% ../ui_system.c
 @if errorlevel 1 goto quit

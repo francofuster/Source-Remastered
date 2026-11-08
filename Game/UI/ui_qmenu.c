@@ -596,7 +596,17 @@ static sfxHandle_t Slider_Key( menuslider_s *s, int key )
 		case K_MOUSE1:
 			x           = uis.cursorx - s->generic.x - 2*SMALLCHAR_WIDTH;
 			oldvalue    = s->curvalue;
-			s->curvalue = (x/(float)(SLIDER_RANGE*SMALLCHAR_WIDTH)) * (s->maxvalue-s->minvalue) + s->minvalue;
+			{
+				float	spanX, spanW;
+
+				// phone options: the whole track follows the finger
+				if ( UI_DOptSliderSpan( &s->generic, &spanX, &spanW ) && spanW > 0.0f ) {
+					s->curvalue = ( ( uis.cursorx - spanX ) / spanW ) * ( s->maxvalue - s->minvalue ) + s->minvalue;
+				}
+				else {
+					s->curvalue = (x/(float)(SLIDER_RANGE*SMALLCHAR_WIDTH)) * (s->maxvalue-s->minvalue) + s->minvalue;
+				}
+			}
 
 			if (s->curvalue < s->minvalue)
 				s->curvalue = s->minvalue;
@@ -812,6 +822,10 @@ static sfxHandle_t SpinControl_Key( menulist_s *s, int key )
 	sfxHandle_t	sound;
 
 	sound = 0;
+	// phone options: the left arrow of the selector steps back
+	if ( key == K_MOUSE1 && UI_DOptTapLeft( &s->generic ) ) {
+		key = K_LEFTARROW;
+	}
 	switch (key)
 	{
 		case K_MOUSE1:
@@ -1015,6 +1029,28 @@ sfxHandle_t ScrollList_Key( menulist_s *l, int key )
 				return (menu_move_sound);
 			}
 			return (menu_buzz_sound);
+
+		case K_MWHEELUP:
+		case K_MWHEELDOWN:
+			// the wheel (and a finger dragging the list) moves the view, not
+			// the selection
+			c = ( l->columns > 1 ) ? l->columns : 1;
+			if ( key == K_MWHEELUP ) {
+				if ( l->top <= 0 ) {
+					return menu_null_sound;
+				}
+				l->top -= c;
+				if ( l->top < 0 ) {
+					l->top = 0;
+				}
+			}
+			else {
+				if ( l->top + c * l->height >= l->numitems ) {
+					return menu_null_sound;
+				}
+				l->top += c;
+			}
+			return menu_null_sound;
 
 		case K_PGUP:
 		case K_KP_PGUP:

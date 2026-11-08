@@ -893,6 +893,7 @@ void UI_SetActiveMenu( uiMenuCommand_t menu ) {
 	// this should be the ONLY way the menu system is brought up
 	// enusure minumum menu data is cached
 	Menu_Cache();
+	UI_DCanvas( qfalse );
 
 	switch ( menu ) {
 	case UIMENU_NONE:
@@ -921,6 +922,228 @@ void UI_SetActiveMenu( uiMenuCommand_t menu ) {
 }
 
 /*
+=======================================================================
+
+TOUCH
+
+The engine moves the cursor under the finger and sends K_MOUSE1 down and
+up. A button only lights while the finger is on it and acts when it lifts
+on the same button, so a drag can scroll a list without pressing what it
+started on. Sliders follow the finger from the start.
+
+=======================================================================
+*/
+
+#define TOUCH_SLOP			12		// virtual units, about 10 dp on a phone
+#define TOUCH_SCROLL_STEP	24		// virtual units of drag per wheel step
+
+qboolean UI_TouchMode( void ) {
+	uis.touchMode = ( (int)trap_Cvar_VariableValue( "in_inputMode" ) == 1 );
+	return uis.touchMode;
+}
+
+// the item under the finger, NULL when it is on nothing
+static menucommon_s *UI_TouchItem( void ) {
+	menucommon_s *m;
+
+	if ( !uis.activemenu || uis.activemenu->nitems <= 0 ) {
+		return NULL;
+	}
+	m = (menucommon_s *)Menu_ItemAtCursor( uis.activemenu );
+	if ( !m || !( m->flags & QMF_HASMOUSEFOCUS ) ) {
+		return NULL;
+	}
+	return m;
+}
+
+// the pressed look: the finger is down on item and has not dragged away
+qboolean UI_TouchPressed( void *item ) {
+	return uis.touchDown && !uis.touchMoved && item && (void *)UI_TouchItem() == item;
+}
+
+static void UI_TouchSend( int key ) {
+	sfxHandle_t s;
+
+	if ( !uis.activemenu ) {
+		return;
+	}
+	if ( uis.activemenu->key ) {
+		s = uis.activemenu->key( key );
+	}
+	else {
+		s = Menu_DefaultKey( uis.activemenu, key );
+	}
+	if ( s > 0 && s != menu_null_sound ) {
+		trap_S_StartLocalSound( s, CHAN_LOCAL_SOUND );
+	}
+}
+
+/*
+=================
+UI_TextInput
+
+Opens the keyboard of the screen for a field (in_textInput, a new value
+each time so it opens again after Back closed it), or closes it (NULL)
+=================
+*/
+static void UI_TextInput( void *field ) {
+	// typing goes on at the end of what is there
+	if ( field ) {
+		mfield_t *f = &((menufield_s *)field)->field;
+
+		f->cursor = strlen( f->buffer );
+		f->scroll = f->cursor > f->widthInChars ? f->cursor - f->widthInChars : 0;
+	}
+	uis.textField = field;
+	uis.textMenu = field ? uis.activemenu : NULL;
+	trap_Cvar_Set( "in_textInput", field ? va( "%i", uis.realtime > 0 ? uis.realtime : 1 ) : "0" );
+}
+
+// the keyboard covers the bottom half: the edit bar shows the text on top
+#define TEXTBAR_DONE_X		664
+#define TEXTBAR_DONE_Y		8
+#define TEXTBAR_DONE_W		154
+#define TEXTBAR_DONE_H		48
+
+// a finger on the edit bar: it takes the tap, nothing under it does
+static qboolean UI_TextBarHit( void ) {
+	float x, y, w, h;
+
+	if ( !uis.textField ) {
+		return qfalse;
+	}
+	UI_DCanvas( qtrue );
+	x = 0; y = 0; w = 1; h = 64;
+	UI_DToV( &x, &y, &w, &h );
+	UI_DCanvas( qfalse );
+	return uis.cursory <= y + h;
+}
+
+static qboolean UI_TextBarDone( void ) {
+	float x, y, w, h;
+
+	UI_DCanvas( qtrue );
+	x = TEXTBAR_DONE_X + UI_DExtra(); y = TEXTBAR_DONE_Y; w = TEXTBAR_DONE_W; h = TEXTBAR_DONE_H;
+	UI_DToV( &x, &y, &w, &h );
+	UI_DCanvas( qfalse );
+	return ( uis.cursorx >= x && uis.cursorx <= x + w && uis.cursory >= y && uis.cursory <= y + h );
+}
+
+static void UI_TextBarDraw( void ) {
+	menufield_s	*f;
+	vec4_t		shade;
+	float		e, w;
+
+	if ( !uis.textField ) {
+		return;
+	}
+	// the field went away, lost the focus, or Back closed the keyboard
+	// a finger on the bar moved the focus under it: give it back to the field
+	if ( UI_TextBarHit() && uis.activemenu == uis.textMenu && Menu_ItemAtCursor( uis.activemenu ) != uis.textField ) {
+		Menu_SetCursorToItem( uis.activemenu, uis.textField );
+	}
+	if ( uis.activemenu != uis.textMenu || Menu_ItemAtCursor( uis.activemenu ) != uis.textField ||
+		!trap_Cvar_VariableValue( "in_textInput" ) ) {
+		UI_TextInput( NULL );
+		return;
+	}
+	f = (menufield_s *)uis.textField;
+	UI_DCanvas( qtrue );
+	e = UI_DExtra();
+	shade[0] = 0.02f; shade[1] = 0.024f; shade[2] = 0.10f; shade[3] = 0.94f;
+	UI_DFill( -200 - e, 0, 1244 + 2 * e, 64, shade );
+	shade[0] = 0.47f; shade[1] = 0.63f; shade[2] = 1.0f; shade[3] = 0.6f;
+	UI_DFill( -200 - e, 63, 1244 + 2 * e, 1, shade );
+	UI_DField( 26 - e, 8, 620, 48, 1.0f );
+	UI_DText( 42 - e, 21, f->field.buffer, 20, UI_LEFT, zeq_white );
+	w = UI_DTextWidth( f->field.buffer, 20 );
+	if ( ( uis.realtime / 400 ) & 1 ) {
+		UI_DFill( 44 - e + w, 20, 2, 24, zeq_white );
+	}
+	UI_DCta( TEXTBAR_DONE_X + e, TEXTBAR_DONE_Y, TEXTBAR_DONE_W, TEXTBAR_DONE_H, "DONE", 0.0f );
+	UI_DCanvas( uis.activemenu ? uis.activemenu->mobile : qfalse );
+}
+
+static void UI_TouchKey( int down ) {
+	menucommon_s *item;
+
+	item = UI_TouchItem();
+	if ( down ) {
+		uis.touchDown = qtrue;
+		uis.touchMoved = qfalse;
+		uis.touchItem = item;
+		uis.touchX = uis.cursorx;
+		uis.touchY = uis.touchLastY = uis.cursory;
+		uis.touchScroll = 0.0f;
+		uis.focusTime = uis.realtime;
+		if ( item && item->type == MTYPE_SLIDER ) {
+			UI_TouchSend( K_MOUSE1 );
+		}
+		return;
+	}
+	if ( !uis.touchDown ) {
+		return;
+	}
+	uis.touchDown = qfalse;
+	// a tap on the same thing it went down on; custom areas without an item
+	// (portrait grids) do their own hit test on K_MOUSE1
+	if ( !uis.touchMoved && uis.textField && UI_TextBarDone() ) {
+		uis.touchItem = NULL;
+		UI_TextInput( NULL );
+		return;
+	}
+	if ( UI_TextBarHit() ) {
+		uis.touchItem = NULL;
+		return;
+	}
+	if ( !uis.touchMoved && item == (menucommon_s *)uis.touchItem && !( item && item->type == MTYPE_SLIDER ) ) {
+		uis.touchItem = NULL;
+		UI_TouchSend( K_MOUSE1 );
+		// a text field takes typing: the keyboard of the screen comes up
+		if ( item && item->type == MTYPE_FIELD && !( item->flags & ( QMF_GRAYED|QMF_INACTIVE|QMF_NUMBERSONLY ) ) &&
+			Menu_ItemAtCursor( uis.activemenu ) == item ) {
+			UI_TextInput( item );
+		}
+		return;
+	}
+	uis.touchItem = NULL;
+}
+
+static void UI_TouchDrag( void ) {
+	menucommon_s	*start;
+	float			dx, dy;
+
+	start = (menucommon_s *)uis.touchItem;
+	if ( start && start->type == MTYPE_SLIDER ) {
+		UI_TouchSend( K_MOUSE1 );
+		return;
+	}
+	dx = uis.cursorx - uis.touchX;
+	dy = uis.cursory - uis.touchY;
+	if ( !uis.touchMoved && dx * dx + dy * dy > TOUCH_SLOP * TOUCH_SLOP ) {
+		uis.touchMoved = qtrue;
+	}
+	uis.touchScroll += uis.cursory - uis.touchLastY;
+	uis.touchLastY = uis.cursory;
+	if ( !uis.touchMoved ) {
+		return;
+	}
+	// dragging down shows what was above, like a wheel turned up
+	while ( uis.touchScroll >= TOUCH_SCROLL_STEP ) {
+		uis.touchScroll -= TOUCH_SCROLL_STEP;
+		if ( !UI_DOptionsWheel( uis.activemenu, -1 ) ) {
+			UI_TouchSend( K_MWHEELUP );
+		}
+	}
+	while ( uis.touchScroll <= -TOUCH_SCROLL_STEP ) {
+		uis.touchScroll += TOUCH_SCROLL_STEP;
+		if ( !UI_DOptionsWheel( uis.activemenu, 1 ) ) {
+			UI_TouchSend( K_MWHEELDOWN );
+		}
+	}
+}
+
+/*
 =================
 UI_KeyEvent
 =================
@@ -929,6 +1152,15 @@ void UI_KeyEvent( int key, int down ) {
 	sfxHandle_t		s;
 
 	if (!uis.activemenu) {
+		return;
+	}
+
+	// a key can open a screen, and its init lays it out: on the PC canvas
+	// unless that screen chooses the phone one (code of a phone screen that
+	// measures on input sets its canvas itself)
+	UI_DCanvas( qfalse );
+	if ( key == K_MOUSE1 && UI_TouchMode() ) {
+		UI_TouchKey( down );
 		return;
 	}
 
@@ -943,6 +1175,11 @@ void UI_KeyEvent( int key, int down ) {
 
 	if ((s > 0) && (s != menu_null_sound))
 		trap_S_StartLocalSound( s, CHAN_LOCAL_SOUND );
+
+	// ENTER on the keyboard of the screen ends the typing
+	if ( uis.textField && ( key == K_ENTER || key == K_KP_ENTER ) ) {
+		UI_TextInput( NULL );
+	}
 }
 
 /*
@@ -950,13 +1187,18 @@ void UI_KeyEvent( int key, int down ) {
 UI_MouseEvent
 =================
 */
-void UI_MouseEvent( int dx, int dy )
+static void UI_MouseMove( int dx, int dy )
 {
 	int				i;
 	menucommon_s*	m;
+	qboolean		pin;
 
 	if (!uis.activemenu)
 		return;
+
+	// the touch layer first pushes the cursor far past the top left corner
+	// and then moves it under the finger: no focus at the corner meanwhile
+	pin = ( dx < -50000 || dy < -50000 );
 
 	// update mouse screen position
 	uis.cursorx += dx;
@@ -981,6 +1223,10 @@ void UI_MouseEvent( int dx, int dy )
 	else if (uis.cursory > SCREEN_HEIGHT)
 		uis.cursory = SCREEN_HEIGHT;
 
+	if ( pin ) {
+		return;
+	}
+
 	// region test the active menu items
 	for (i=0; i<uis.activemenu->nitems; i++)
 	{
@@ -1004,7 +1250,7 @@ void UI_MouseEvent( int dx, int dy )
 			Menu_SetCursor( uis.activemenu, i );
 			((menucommon_s*)(uis.activemenu->items[uis.activemenu->cursor_prev]))->flags &= ~QMF_HASMOUSEFOCUS;
 
-			if ( !(((menucommon_s*)(uis.activemenu->items[uis.activemenu->cursor]))->flags & QMF_SILENT ) ) {
+			if ( !(((menucommon_s*)(uis.activemenu->items[uis.activemenu->cursor]))->flags & QMF_SILENT ) && !UI_TouchMode() ) {
 				trap_S_StartLocalSound( menu_move_sound, CHAN_LOCAL_SOUND );
 			}
 		}
@@ -1016,6 +1262,19 @@ void UI_MouseEvent( int dx, int dy )
 	if (uis.activemenu->nitems > 0) {
 		// out of any region
 		((menucommon_s*)(uis.activemenu->items[uis.activemenu->cursor]))->flags &= ~QMF_HASMOUSEFOCUS;
+	}
+}
+
+/*
+=================
+UI_MouseEvent
+=================
+*/
+void UI_MouseEvent( int dx, int dy )
+{
+	UI_MouseMove( dx, dy );
+	if ( uis.activemenu && uis.touchDown && dx > -50000 && dy > -50000 ) {
+		UI_TouchDrag();
 	}
 }
 
@@ -1454,6 +1713,7 @@ void UI_Refresh( int realtime )
 
 	if ( uis.activemenu )
 	{
+		UI_DCanvas( uis.activemenu->mobile );
 		if (uis.activemenu->fullscreen)
 		{
 			// draw the background
@@ -1481,9 +1741,13 @@ void UI_Refresh( int realtime )
 		}
 	}
 
-	// draw cursor
+	UI_TextBarDraw();
+
+	// draw cursor (none on a touch screen)
 	UI_SetColor( NULL );
-	UI_DrawHandlePic( uis.cursorx-16, uis.cursory-16, 32, 32, uis.cursor);
+	if ( !UI_TouchMode() ) {
+		UI_DrawHandlePic( uis.cursorx-16, uis.cursory-16, 32, 32, uis.cursor);
+	}
 
 #ifndef NDEBUG
 	if (uis.debug)

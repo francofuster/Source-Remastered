@@ -76,6 +76,7 @@ extern vmCvar_t	ui_browserGameType;
 extern vmCvar_t	ui_browserSortKey;
 extern vmCvar_t	ui_browserShowFull;
 extern vmCvar_t	ui_browserShowEmpty;
+extern vmCvar_t	ui_layout;
 
 extern vmCvar_t	ui_brassTime;
 extern vmCvar_t	ui_drawCrosshair;
@@ -173,6 +174,7 @@ typedef struct _tag_menuframework
 	qboolean	wrapAround;
 	qboolean	fullscreen;
 	qboolean	showlogo;
+	qboolean	mobile;		// laid out on the mobile design canvas (ui_layout)
 } menuframework_s;
 
 typedef struct
@@ -302,6 +304,15 @@ extern vec4_t		zeq_shade;
 extern float		UI_DScale( void );
 extern float		UI_DExtra( void );
 extern void			UI_DToV( float *x, float *y, float *w, float *h );
+extern qboolean		UI_TouchMode( void );
+extern qboolean		UI_TouchPressed( void *item );
+extern qboolean		UI_MobileLayout( void );
+extern void			UI_DCanvas( qboolean mobile );
+extern float		UI_DCanvasW( void );
+extern float		UI_DCanvasH( void );
+extern void			UI_DBackItem( menuframework_s *menu );
+extern void			UI_DMobileHeader( const char *crumb, const char *title );
+extern void			UI_DSetRect( menucommon_s *c, float x, float y, float w, float h );
 extern void			UI_DItem( menubitmap_s *b, int x, int y, int w, int h );
 extern void			UI_DPicST( float x, float y, float w, float h, float s0, float t0, float s1, float t1, qhandle_t shader );
 extern void			UI_DPic( float x, float y, float w, float h, qhandle_t shader );
@@ -368,6 +379,13 @@ extern void			UI_DOptionsRow( void *item, const char *label, const char *help, q
 extern void			UI_DOptionsRowValue( void *item, const char *label, const char *help, void (*value)( void *item, char *buf, int size ) );
 extern void			UI_DOptionsDrawSections( void );
 extern void			UI_DOptionsDrawHelp( float x, float y, float w, float h );
+extern qboolean		UI_DOptionsWheel( menuframework_s *menu, int dir );
+extern qboolean		UI_DOptSliderSpan( menucommon_s *item, float *x, float *w );
+extern qboolean		UI_DOptTapLeft( menucommon_s *item );
+extern void			UI_DOptionsDrawPhone( const char *note );
+extern void			UI_DOptionsHide( void *item );
+extern void			UI_DOptionsPhoneArea( float x, float w, float bottom );
+extern void			UI_TouchControlsMenu( void );
 extern void			UI_DTabItem( menutext_s *t, int index, const char *label, qboolean active );
 extern void			Menu_Draw( menuframework_s *menu );
 extern void			*Menu_ItemAtCursor( menuframework_s *m );
@@ -748,6 +766,21 @@ typedef struct {
 	qhandle_t			dragonBall;
 	qboolean			demoversion;
 	qboolean			firstdraw;
+	// Touch screens (in_inputMode 1, written by the engine): a button acts
+	// when the finger lifts, a drag scrolls, and nothing stays lit after
+	qboolean			touchMode;
+	qboolean			touchDown;			// a finger is on the screen
+	qboolean			touchMoved;			// it went past the tap slop: no activation
+	void				*touchItem;			// item under it when it went down
+	float				touchX, touchY;		// where it went down, virtual units
+	float				touchLastY;
+	float				touchScroll;		// vertical drag not yet sent as wheel steps
+	// Layout: screens converted to the phone layout use the mobile design
+	// canvas (844x390, about one dp per design pixel) instead of 1280x720
+	qboolean			dMobile;			// canvas of the screen being laid out or drawn
+	// on-screen keyboard (in_textInput): the field it types into
+	void				*textField;
+	menuframework_s		*textMenu;
 } uiStatic_t;
 
 extern void			UI_Init( void );

@@ -343,6 +343,13 @@ static sfxHandle_t PlayerModel_MenuKey( int key )
 		return Menu_DefaultKey( &s_playermodel.menu, key );
 	}
 
+	// phone: a drag over the roster flips its pages
+	if ( s_playermodel.menu.mobile && ( key == K_MWHEELUP || key == K_MWHEELDOWN ) && s_playermodel.numPages > 1 ) {
+		s_playermodel.page = ( s_playermodel.page + ( key == K_MWHEELDOWN ? 1 : s_playermodel.numPages - 1 ) ) % s_playermodel.numPages;
+		PlayerModel_Refresh();
+		return menu_move_sound;
+	}
+
 	switch ( key ) {
 	case K_KP_LEFTARROW:
 	case K_LEFTARROW:
@@ -410,6 +417,12 @@ static void PlayerModel_DrawFighter( void *self ) {
 	def = &s_playermodel.defs[index];
 	focus = UI_DFocus( &s_playermodel.menu, self );
 	enter = UI_AnimFrac( uis.transitionTime, 60 + ( b->generic.id - ID_FIGHTER0 ) * 35, 260 );
+	if ( s_playermodel.menu.mobile ) {
+		UI_DPortrait( b->generic.x + 3, b->generic.y + 6.0f * ( 1.0f - enter ), 52, trap_R_RegisterShaderNoMip( va( "players/%s/icon_default.png", def->model ) ),
+			index == s_playermodel.selected, focus );
+		UI_DText( b->generic.x + 29, b->generic.y + 56, def->model, 11, UI_CENTER, ( index == s_playermodel.selected || focus > 0.0f ) ? zeq_white : zeq_text3 );
+		return;
+	}
 	UI_DPortrait( b->generic.x + 4, b->generic.y + 10.0f * ( 1.0f - enter ), 96, trap_R_RegisterShaderNoMip( va( "players/%s/icon_default.png", def->model ) ),
 		index == s_playermodel.selected, focus );
 	UI_DText( b->generic.x + 52, b->generic.y + 106, def->model, 15, UI_CENTER, ( index == s_playermodel.selected || focus > 0.0f ) ? zeq_white : zeq_text2 );
@@ -424,6 +437,11 @@ static void PlayerModel_DrawSkin( void *self ) {
 	skin = b->generic.id - ID_SKIN0;
 	def = &s_playermodel.defs[s_playermodel.selected];
 	if ( skin >= def->numSkins ) {
+		return;
+	}
+	if ( s_playermodel.menu.mobile ) {
+		UI_DPortrait( b->generic.x, b->generic.y, 44, trap_R_RegisterShaderNoMip( va( "players/%s/icon_%s.png", def->model, def->skins[skin] ) ),
+			skin == s_playermodel.skin, UI_DFocus( &s_playermodel.menu, self ) );
 		return;
 	}
 	UI_DPortrait( b->generic.x, b->generic.y, 64, trap_R_RegisterShaderNoMip( va( "players/%s/icon_%s.png", def->model, def->skins[skin] ) ),
@@ -444,6 +462,11 @@ static void PlayerModel_DrawTier( void *self ) {
 	}
 	def = &s_playermodel.defs[s_playermodel.selected];
 	focus = UI_DFocus( &s_playermodel.menu, self );
+	if ( s_playermodel.menu.mobile ) {
+		UI_DPortrait( b->generic.x, b->generic.y + 6.0f * ( 1.0f - UI_AnimFrac( s_playermodel.selectTime, tier * 60, 260 ) ), 44,
+			trap_R_RegisterShaderNoMip( va( "players/%s/tier%i/icon.png", def->model, tier + 1 ) ), tier == s_playermodel.tier, focus );
+		return;
+	}
 	UI_DPortrait( b->generic.x, b->generic.y + 8.0f * ( 1.0f - UI_AnimFrac( s_playermodel.selectTime, tier * 60, 260 ) ), 58,
 		trap_R_RegisterShaderNoMip( va( "players/%s/tier%i/icon.png", def->model, tier + 1 ) ), tier == s_playermodel.tier, focus );
 	UI_DText( b->generic.x + 29, b->generic.y + 66, s_playermodel.tierNames[tier], 15, UI_CENTER,
@@ -465,6 +488,14 @@ static void PlayerModel_DrawName( void *self ) {
 
 	f = (menufield_s *)self;
 	focus = ( Menu_ItemAtCursor( &s_playermodel.menu ) == self );
+	if ( s_playermodel.menu.mobile ) {
+		// a tap opens the keyboard; colors show unless it is being typed
+		focus = ( uis.textField == self );
+		UI_DField( 598 + UI_DExtra(), 26, 220, 52, focus ? 1.0f : 0.0f );
+		UI_DProp( 612 + UI_DExtra(), 32, "PLAYER NAME", 9, UI_LEFT, zeq_text3 );
+		UI_DText( 612 + UI_DExtra(), 47, f->field.buffer, 19, UI_LEFT, zeq_white );
+		return;
+	}
 	UI_DField( 256, 536, 268, 42, focus ? 1.0f : 0.0f );
 	Q_strncpyz( clean, f->field.buffer, sizeof( clean ) );
 	if ( focus ) {
@@ -496,6 +527,35 @@ static void PlayerModel_DrawConfirm( void *self ) {
 	UI_DCta( b->generic.x, b->generic.y, b->width, b->height, "CONFIRM", UI_DFocus( &s_playermodel.menu, self ) );
 }
 
+static void PlayerModel_MenuDrawPhone( void ) {
+	fighterDef_t	*def;
+	char			title[MAX_QPATH];
+	float			pop;
+
+	UI_DMobileHeader( "MAIN MENU  >", "FIGHTER" );
+	UI_DGlass( 26, 88, 276, 276 );
+	UI_DProp( 44, 98, "ROSTER", 11, UI_LEFT, zeq_gold );
+	trap_R_SetColor( NULL );
+	UI_DPic( 330, 318, 180, 50, uis.blobShadow );
+
+	Menu_Draw( &s_playermodel.menu );
+	if ( !s_playermodel.numDefs ) {
+		return;
+	}
+	def = &s_playermodel.defs[s_playermodel.selected];
+	pop = UI_AnimFrac( s_playermodel.selectTime, 0, 280 );
+	Q_strncpyz( title, def->model, sizeof( title ) );
+	Q_strupr( title );
+	UI_DProp( 532, 88, "SELECTED", 10, UI_LEFT, zeq_text3 );
+	UI_DProp( 532 + 10.0f * ( 1.0f - pop ), 100, title, 26, UI_LEFT|UI_DROPSHADOW, zeq_white );
+	UI_DText( 532, 132, va( "%s skin  -  %s", def->skins[s_playermodel.skin], s_playermodel.tierNames[s_playermodel.tier] ), 13, UI_LEFT, zeq_text2 );
+	UI_DProp( 532, 154, "SKIN", 10, UI_LEFT, zeq_gold );
+	UI_DProp( 532, 222, "TRANSFORMATIONS", 10, UI_LEFT, zeq_gold );
+	if ( s_playermodel.numTiers > 1 ) {
+		UI_DText( 532, 286, "In a match: hold AURA and swipe up to power up", 12, UI_LEFT, zeq_text3 );
+	}
+}
+
 static void PlayerModel_MenuDraw( void ) {
 	static const char *hints[] = { "LR", "Fighter", "ENTER", "Select", "ESC", "Back" };
 	fighterDef_t	*def;
@@ -506,6 +566,11 @@ static void PlayerModel_MenuDraw( void ) {
 
 	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
+
+	if ( s_playermodel.menu.mobile ) {
+		PlayerModel_MenuDrawPhone();
+		return;
+	}
 
 	UI_DHeader( "MAIN MENU  >", "FIGHTER" );
 
@@ -668,6 +733,59 @@ static void PlayerModel_DItem( menubitmap_s *b, int id, void (*draw)( void * ), 
 	UI_DItem( b, x, y, w, h );
 }
 
+// phone: roster 4 x 2 of 58 dp, the fighter in the middle, skins and
+// transformations on the right, the name field on the top right
+static void PlayerModel_MenuInitPhone( void ) {
+	int i;
+
+	for ( i = 0; i < FIGHTERS_PER_PAGE; i++ ) {
+		PlayerModel_DItem( &s_playermodel.fighters[i], ID_FIGHTER0 + i, PlayerModel_DrawFighter,
+			42 + ( i % 4 ) * 62, 120 + ( i / 4 ) * 84, 58, 76 );
+	}
+	PlayerModel_DItem( &s_playermodel.prevPage, ID_PREVPAGE, PlayerModel_DrawPage, 42, 304, 244, 48 );
+	for ( i = 0; i < MAX_SKINS; i++ ) {
+		PlayerModel_DItem( &s_playermodel.skins[i], ID_SKIN0 + i, PlayerModel_DrawSkin, 532 + i * 52, 168, 48, 48 );
+	}
+	for ( i = 0; i < MAX_TIERS; i++ ) {
+		PlayerModel_DItem( &s_playermodel.tiers[i], ID_TIER0 + i, PlayerModel_DrawTier, 532 + i * 52, 236, 48, 48 );
+	}
+
+	s_playermodel.name.generic.type				= MTYPE_FIELD;
+	s_playermodel.name.generic.flags			= QMF_NODEFAULTINIT;
+	s_playermodel.name.generic.ownerdraw		= PlayerModel_DrawName;
+	s_playermodel.name.field.widthInChars		= 14;
+	s_playermodel.name.field.maxchars			= 14;
+	UI_DSetRect( &s_playermodel.name.generic, 598 + UI_DExtra(), 26, 220, 52 );
+	s_playermodel.name.generic.x = s_playermodel.name.generic.left;
+	s_playermodel.name.generic.y = s_playermodel.name.generic.top;
+
+	s_playermodel.player.generic.type			= MTYPE_BITMAP;
+	s_playermodel.player.generic.flags			= QMF_INACTIVE|QMF_NODEFAULTINIT;
+	s_playermodel.player.generic.ownerdraw		= PlayerModel_DrawPlayer;
+	UI_DSetRect( &s_playermodel.player.generic, 288, -80, 264, 480 );
+
+	PlayerModel_DItem( &s_playermodel.confirm, ID_CONFIRM, PlayerModel_DrawConfirm, 664, 312, 154, 52 );
+	UI_DBackItem( &s_playermodel.menu );
+
+	for ( i = 0; i < FIGHTERS_PER_PAGE; i++ ) {
+		Menu_AddItem( &s_playermodel.menu, &s_playermodel.fighters[i] );
+	}
+	Menu_AddItem( &s_playermodel.menu, &s_playermodel.prevPage );
+	for ( i = 0; i < MAX_SKINS; i++ ) {
+		Menu_AddItem( &s_playermodel.menu, &s_playermodel.skins[i] );
+	}
+	Menu_AddItem( &s_playermodel.menu, &s_playermodel.name );
+	Menu_AddItem( &s_playermodel.menu, &s_playermodel.player );
+	for ( i = 0; i < MAX_TIERS; i++ ) {
+		Menu_AddItem( &s_playermodel.menu, &s_playermodel.tiers[i] );
+	}
+	Menu_AddItem( &s_playermodel.menu, &s_playermodel.confirm );
+
+	PlayerModel_SetMenuItems();
+	PlayerModel_Refresh();
+	PlayerModel_UpdateModel();
+}
+
 static void PlayerModel_MenuInit( void )
 {
 	int		i;
@@ -681,6 +799,12 @@ static void PlayerModel_MenuInit( void )
 	s_playermodel.menu.draw       = PlayerModel_MenuDraw;
 	s_playermodel.menu.wrapAround = qtrue;
 	s_playermodel.menu.fullscreen = qtrue;
+	s_playermodel.menu.mobile     = UI_MobileLayout();
+	UI_DCanvas( s_playermodel.menu.mobile );
+	if ( s_playermodel.menu.mobile ) {
+		PlayerModel_MenuInitPhone();
+		return;
+	}
 
 	for ( i = 0; i < FIGHTERS_PER_PAGE; i++ ) {
 		PlayerModel_DItem( &s_playermodel.fighters[i], ID_FIGHTER0 + i, PlayerModel_DrawFighter,

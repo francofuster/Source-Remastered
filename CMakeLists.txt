@@ -320,6 +320,7 @@ set(SRC_UI
   Game/UI/ui_playermodel.c
   Game/UI/ui_players.c
   Game/UI/ui_preferences.c
+  Game/UI/ui_touch.c
   Game/UI/ui_qmenu.c
   Game/UI/ui_serverinfo.c
   Game/UI/ui_servers2.c

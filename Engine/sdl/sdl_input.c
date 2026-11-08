@@ -536,7 +536,7 @@ static float displayDPI = -1.0f;
 ===============
 IN_DisplayDPI
 
-Asked once: on Android SDL reads it through JNI
+The density is asked once: on Android SDL reads it through JNI
 ===============
 */
 float IN_DisplayDPI( void )
@@ -547,6 +547,24 @@ float IN_DisplayDPI( void )
 
 		displayDPI = ( SDL_GetDisplayDPI( 0, &ddpi, NULL, NULL ) == 0 && ddpi > 0.0f ) ? ddpi : 0.0f;
 		Com_DPrintf( "Display density: %.0f dpi\n", displayDPI );
+	}
+	// The density of the screen, in pixels of the window: on Android the
+	// window can be smaller than the screen (r_androidHeight) and the system
+	// scales it up, so a dp takes fewer window pixels
+	if( displayDPI > 0.0f && SDL_window )
+	{
+		SDL_DisplayMode mode;
+		int w, h;
+
+		SDL_GetWindowSize( SDL_window, &w, &h );
+		if( SDL_GetDesktopDisplayMode( 0, &mode ) == 0 && mode.w > 0 && mode.h > 0 && w > 0 && h > 0 )
+		{
+			float windowShort = (float)( w < h ? w : h );
+			float screenShort = (float)( mode.w < mode.h ? mode.w : mode.h );
+
+			if( windowShort < screenShort )
+				return displayDPI * windowShort / screenShort;
+		}
 	}
 	return displayDPI;
 }
@@ -846,6 +864,71 @@ static void IN_ShutdownJoystick( void )
 	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
 }
 
+#if SDL_MAJOR_VERSION >= 2
+/*
+===============
+IN_SetInputMode
+
+What the player used last, for the menus (in_inputMode): 0 mouse or
+keyboard, 1 touch screen, 2 gamepad. The menus show the cursor and the
+keyboard focus only for 0 and 2, and act on a finger when it lifts.
+===============
+*/
+static cvar_t *in_inputMode;
+static cvar_t *in_textInput;
+
+static void IN_SetInputMode( int mode )
+{
+	if( in_inputMode && in_inputMode->integer != mode )
+		Cvar_Set( "in_inputMode", va( "%i", mode ) );
+}
+
+/*
+===============
+IN_TextInputFrame
+
+The menus ask for the on-screen keyboard through in_textInput: 0 hides
+it, any other value shows it (a new value shows it again, after Back
+closed it). Android only: elsewhere the keyboard is physical.
+===============
+*/
+static void IN_TextInputFrame( void )
+{
+#ifdef __ANDROID__
+	static qboolean shownSeen;
+
+	// Back hides the keyboard without telling the game: tell the menus
+	if( in_textInput && in_textInput->integer && !in_textInput->modified && SDL_window )
+	{
+		if( SDL_IsScreenKeyboardShown( SDL_window ) )
+			shownSeen = qtrue;
+		else if( shownSeen )
+		{
+			shownSeen = qfalse;
+			Cvar_Set( "in_textInput", "0" );
+			in_textInput->modified = qfalse;
+			SDL_StopTextInput( );
+			SDL_EventState( SDL_TEXTINPUT, SDL_ENABLE );
+			return;
+		}
+	}
+	if( !in_textInput || !in_textInput->modified )
+		return;
+	in_textInput->modified = qfalse;
+	shownSeen = qfalse;
+	if( in_textInput->integer )
+		SDL_StartTextInput( );
+	else
+	{
+		SDL_StopTextInput( );
+		// SDL_StopTextInput turns the text events off: a physical keyboard
+		// still needs them
+		SDL_EventState( SDL_TEXTINPUT, SDL_ENABLE );
+	}
+#endif
+}
+#endif
+
 /*
 ===============
 IN_JoyMove
@@ -905,6 +988,10 @@ static void IN_JoyMove( void )
 			{
 				Com_QueueEvent( 0, SE_KEY, K_JOY1 + i, pressed, 0, NULL );
 				stick_state.buttons[i] = pressed;
+#if SDL_MAJOR_VERSION >= 2
+				if( pressed )
+					IN_SetInputMode( 2 );
+#endif
 			}
 		}
 	}
@@ -1062,6 +1149,11 @@ static void IN_ProcessEvents( void )
 				if( key )
 					Com_QueueEvent( 0, SE_KEY, key, qtrue, 0, NULL );
 
+				// Back is a system button, and the on-screen keyboard sends
+				// keys too: neither means a keyboard took over
+				if( key && e.key.keysym.sym != SDLK_AC_BACK && !( in_textInput && in_textInput->integer ) )
+					IN_SetInputMode( 0 );
+
 				if( key == K_BACKSPACE )
 					Com_QueueEvent( 0, SE_CHAR, CTRL('h'), 0, 0, NULL );
 				else if( keys[ K_CTRL ].down && key >= 'a' && key <= 'z' )
@@ -1098,6 +1190,8 @@ static void IN_ProcessEvents( void )
 			case SDL_FINGERUP:
 				if( e.tfinger.touchId != SDL_MOUSE_TOUCHID )
 				{
+					if( e.type == SDL_FINGERDOWN )
+						IN_SetInputMode( 1 );
 					CL_TouchEvent( e.type == SDL_FINGERDOWN ? TOUCH_DOWN : ( e.type == SDL_FINGERUP ? TOUCH_UP : TOUCH_MOVE ),
 						(long long)e.tfinger.fingerId, e.tfinger.x, e.tfinger.y );
 				}
@@ -1108,7 +1202,10 @@ static void IN_ProcessEvents( void )
 				if( e.motion.which == SDL_TOUCH_MOUSEID )
 					break;
 				if( mouseActive && ( e.motion.xrel || e.motion.yrel ) )
+				{
+					IN_SetInputMode( 0 );
 					Com_QueueEvent( 0, SE_MOUSE, e.motion.xrel, e.motion.yrel, 0, NULL );
+				}
 				break;
 
 			case SDL_MOUSEBUTTONDOWN:
@@ -1118,6 +1215,8 @@ static void IN_ProcessEvents( void )
 
 					if( e.button.which == SDL_TOUCH_MOUSEID )
 						break;
+					if( e.type == SDL_MOUSEBUTTONDOWN )
+						IN_SetInputMode( 0 );
 
 					switch( e.button.button )
 					{
@@ -1285,6 +1384,9 @@ void IN_Frame( void )
 
 	IN_JoyMove( );
 	IN_ProcessEvents( );
+#if SDL_MAJOR_VERSION >= 2
+	IN_TextInputFrame( );
+#endif
 
 	// If not DISCONNECTED (main menu) or ACTIVE (in game), we're loading
 	loading = !!( cls.state != CA_DISCONNECTED && cls.state != CA_ACTIVE );
@@ -1350,6 +1452,26 @@ void IN_Init( void )
 
 #ifdef MACOS_X_ACCELERATION_HACK
 	in_disablemacosxmouseaccel = Cvar_Get( "in_disablemacosxmouseaccel", "1", CVAR_ARCHIVE );
+#endif
+
+#if SDL_MAJOR_VERSION >= 2
+#ifdef USE_TOUCH
+	in_inputMode = Cvar_Get( "in_inputMode", "1", CVAR_TEMP );
+	{
+		// screen height in dp, for the menus to choose their layout
+		float dpi = IN_DisplayDPI( );
+		int w = 0, h = 0;
+
+		if( SDL_window )
+			SDL_GetWindowSize( SDL_window, &w, &h );
+		if( w < h )
+			h = w;
+		Cvar_Set( "in_screenDp", dpi > 0.0f && h > 0 ? va( "%i", (int)( h * 160.0f / dpi ) ) : "0" );
+	}
+#else
+	in_inputMode = Cvar_Get( "in_inputMode", "0", CVAR_TEMP );
+#endif
+	in_textInput = Cvar_Get( "in_textInput", "0", CVAR_TEMP );
 #endif
 
 #ifdef __ANDROID__

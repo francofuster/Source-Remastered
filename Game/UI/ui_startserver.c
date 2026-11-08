@@ -608,6 +608,8 @@ SERVER OPTIONS MENU *****
 #define ID_FIGHTERS				25
 #define ID_FIGHTERPANEL			26
 #define ID_PREVIEW				27
+#define ID_MAPPREV				28		// phone: arrows on the map card
+#define ID_MAPNEXT				29
 #define ID_THUMB0				28		// + thumbnail
 
 #define SO_MAP_X				160
@@ -651,6 +653,8 @@ typedef struct {
 	menubitmap_s		preview;
 	menubitmap_s		thumbs[4];
 	menubitmap_s		fightBtn;
+	menubitmap_s		mapPrev;
+	menubitmap_s		mapNext;
 	int					rulesBottom;
 
 	qboolean			multiplayer;
@@ -927,8 +931,8 @@ static void ServerOptions_Event( void* ptr, int event ) {
 		ServerOptions_SetMap( ServerOptions_FirstThumb() + id - ID_THUMB0 );
 		return;
 	}
-	if ( event == QM_ACTIVATED && id == ID_PREVIEW ) {
-		ServerOptions_SetMap( s_startserver.currentmap + 1 );
+	if ( event == QM_ACTIVATED && ( id == ID_PREVIEW || id == ID_MAPNEXT || id == ID_MAPPREV ) ) {
+		ServerOptions_SetMap( s_startserver.currentmap + ( id == ID_MAPPREV ? -1 : 1 ) );
 		return;
 	}
 
@@ -1241,25 +1245,68 @@ fighters and FIGHT!. The map list still comes from StartServer.
 
 static menucommon_s	*soRows[SO_MAX_ROWS];
 static const char	*soRowLabels[SO_MAX_ROWS];
+static int			soRowSteps[SO_MAX_ROWS];	// phone: step of the - / + buttons
 static int			soNumRows;
 static int			soMapTime;
+static int			soScroll;					// phone: first rule shown
+
+// phone: rules panel on the 844x390 canvas, rows of 56 dp that scroll
+#define SOM_ROW_X			398
+#define SOM_ROW_Y			118
+#define SOM_ROW_W			410
+#define SOM_ROW_H			56
+#define SOM_ROWS			3
+
+static void ServerOptions_PlaceRow( int row ) {
+	menucommon_s	*c;
+	float			vx, vy, vw, vh;
+	int				shown;
+
+	c = soRows[row];
+	if ( !s_serveroptions.menu.mobile ) {
+		vx = SO_ROW_X - 10; vy = SO_ROW_Y + row * SO_ROW_H - 4; vw = 492; vh = SO_ROW_H;
+	}
+	else {
+		shown = row - soScroll;
+		if ( shown < 0 || shown >= SOM_ROWS ) {
+			c->flags |= QMF_HIDDEN|QMF_INACTIVE;
+			return;
+		}
+		c->flags &= ~( QMF_HIDDEN|QMF_INACTIVE );
+		vx = SOM_ROW_X; vy = SOM_ROW_Y + shown * SOM_ROW_H; vw = SOM_ROW_W; vh = SOM_ROW_H - 2;
+	}
+	UI_DToV( &vx, &vy, &vw, &vh );
+	c->left = vx;
+	c->top = vy;
+	c->right = vx + vw;
+	c->bottom = vy + vh;
+	c->x = vx + vw * 0.5f;
+	c->y = vy;
+}
+
+static void ServerOptions_PlaceRows( void ) {
+	int i;
+
+	if ( soScroll > soNumRows - SOM_ROWS ) {
+		soScroll = soNumRows - SOM_ROWS;
+	}
+	if ( soScroll < 0 ) {
+		soScroll = 0;
+	}
+	UI_DCanvas( s_serveroptions.menu.mobile );
+	for ( i = 0; i < soNumRows; i++ ) {
+		ServerOptions_PlaceRow( i );
+	}
+}
 
 static void ServerOptions_AddRow( void *item, const char *label ) {
-	float vx, vy, vw, vh;
-
 	if ( soNumRows >= SO_MAX_ROWS ) {
 		return;
 	}
-	vx = SO_ROW_X - 10; vy = SO_ROW_Y + soNumRows * SO_ROW_H - 4; vw = 492; vh = SO_ROW_H;
-	UI_DToV( &vx, &vy, &vw, &vh );
-	((menucommon_s *)item)->left = vx;
-	((menucommon_s *)item)->top = vy;
-	((menucommon_s *)item)->right = vx + vw;
-	((menucommon_s *)item)->bottom = vy + vh;
-	((menucommon_s *)item)->x = vx + vw * 0.5f;
-	((menucommon_s *)item)->y = vy;
 	soRows[soNumRows] = (menucommon_s *)item;
 	soRowLabels[soNumRows] = label;
+	soRowSteps[soNumRows] = 1;
+	ServerOptions_PlaceRow( soNumRows );
 	soNumRows++;
 }
 
@@ -1275,11 +1322,54 @@ static int ServerOptions_RowOf( void *item ) {
 }
 
 // label on the left, value on the right, ki highlight when focused
+static float ServerOptions_RowY( void *item ) {
+	return SOM_ROW_Y + ( ServerOptions_RowOf( item ) - soScroll ) * SOM_ROW_H;
+}
+
+// phone: - value + on the right of the row, 48 dp buttons
+static void ServerOptions_StepperRect( void *item, qboolean plus, float *x, float *y, float *w, float *h ) {
+	*x = SOM_ROW_X + SOM_ROW_W - ( plus ? 52 : 168 );
+	*y = ServerOptions_RowY( item ) + 3;
+	*w = 48;
+	*h = 48;
+}
+
+static void ServerOptions_DrawStepButton( void *item, qboolean plus ) {
+	float	x, y, w, h;
+	vec4_t	color;
+
+	ServerOptions_StepperRect( item, plus, &x, &y, &w, &h );
+	color[0] = 0.33f; color[1] = 0.59f; color[2] = 1.0f; color[3] = 0.16f;
+	UI_DRoundFill( x, y, w, h, 8, color );
+	color[3] = 0.55f;
+	UI_DRoundEdge( x, y, w, h, 8, color );
+	UI_DFill( x + 15, y + 23, 18, 2, zeq_white );
+	if ( plus ) {
+		UI_DFill( x + 23, y + 15, 2, 18, zeq_white );
+	}
+}
+
+static float ServerOptions_RowFrameMobile( void *item ) {
+	int		row;
+	float	y;
+	float	focus;
+
+	row = ServerOptions_RowOf( item );
+	y = ServerOptions_RowY( item );
+	focus = UI_DFocus( &s_serveroptions.menu, item );
+	UI_DFocusRow( SOM_ROW_X, y, SOM_ROW_W, SOM_ROW_H - 2, focus );
+	UI_DText( SOM_ROW_X + 14, y + SOM_ROW_H * 0.5f - 9, soRowLabels[row], 15, UI_LEFT, focus > 0.0f ? zeq_gold : zeq_text2 );
+	return focus;
+}
+
 static float ServerOptions_RowFrame( void *item ) {
 	int		row;
 	float	y;
 	float	focus;
 
+	if ( s_serveroptions.menu.mobile ) {
+		return ServerOptions_RowFrameMobile( item );
+	}
 	row = ServerOptions_RowOf( item );
 	y = SO_ROW_Y + row * SO_ROW_H;
 	focus = UI_DFocus( &s_serveroptions.menu, item );
@@ -1296,6 +1386,18 @@ static void ServerOptions_DrawFieldRow( void *self ) {
 
 	f = (menufield_s *)self;
 	focus = ServerOptions_RowFrame( self );
+	if ( s_serveroptions.menu.mobile ) {
+		y = ServerOptions_RowY( self );
+		if ( f->generic.flags & QMF_NUMBERSONLY ) {
+			ServerOptions_DrawStepButton( self, qfalse );
+			ServerOptions_DrawStepButton( self, qtrue );
+			UI_DText( SOM_ROW_X + SOM_ROW_W - 86, y + SOM_ROW_H * 0.5f - 10, f->field.buffer[0] ? f->field.buffer : "0", 17, UI_CENTER, zeq_white );
+		}
+		else {
+			UI_DText( SOM_ROW_X + SOM_ROW_W - 16, y + SOM_ROW_H * 0.5f - 10, f->field.buffer, 17, UI_RIGHT, zeq_white );
+		}
+		return;
+	}
 	y = SO_ROW_Y + ServerOptions_RowOf( self ) * SO_ROW_H;
 	x = SO_ROW_X + 220;
 	UI_DText( x, y, f->field.buffer[0] ? f->field.buffer : "0", 19, UI_LEFT, zeq_white );
@@ -1308,6 +1410,11 @@ static void ServerOptions_DrawRadioRow( void *self ) {
 	float y;
 
 	ServerOptions_RowFrame( self );
+	if ( s_serveroptions.menu.mobile ) {
+		// the whole row switches it
+		UI_DToggle( SOM_ROW_X + SOM_ROW_W - 92, ServerOptions_RowY( self ) + SOM_ROW_H * 0.5f - 12, ((menuradiobutton_s *)self)->curvalue != 0 );
+		return;
+	}
 	y = SO_ROW_Y + ServerOptions_RowOf( self ) * SO_ROW_H;
 	UI_DToggle( SO_ROW_X + 220, y - 2, ((menuradiobutton_s *)self)->curvalue != 0 );
 }
@@ -1374,6 +1481,45 @@ static void ServerOptions_MapTitle( const char *map, char *out, int size ) {
 // the menu background behind the map pictures, for their rounded corners
 static vec4_t soBack = { 0.03f, 0.03f, 0.105f, 1.0f };
 
+// phone: the map card, 348 x 168 dp, its arrows are items of their own
+static void ServerOptions_DrawPreviewMobile( menubitmap_s *b, float focus, float pop ) {
+	const char	*info;
+	char		title[64];
+	float		x, y, w, h;
+	vec4_t		edge;
+	int			i;
+
+	x = b->generic.x; y = b->generic.y; w = b->width; h = b->height;
+	edge[0] = 0.33f; edge[1] = 0.59f; edge[2] = 1.0f; edge[3] = 0.25f + 0.15f * focus;
+	UI_DRoundGlow( x, y, w, h, 16, edge );
+	trap_R_SetColor( NULL );
+	UI_DPic( x, y, w, h, trap_R_RegisterShaderNoMip( va( "maps/%s.jpg", s_serveroptions.mapnamebuffer ) ) );
+	for ( i = 0; i < 10; i++ ) {
+		vec4_t shade;
+
+		shade[0] = 0.02f; shade[1] = 0.024f; shade[2] = 0.10f;
+		shade[3] = 0.085f * i;
+		UI_DFill( x, y + h - 70 + i * 7, w, 7, shade );
+	}
+	UI_DRoundCorners( x, y, w, h, 8, soBack );
+	edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.55f + 0.45f * focus;
+	UI_DRoundEdge( x, y, w, h, 8, edge );
+	ServerOptions_MapTitle( s_serveroptions.mapnamebuffer, title, sizeof( title ) );
+	UI_DProp( x + 16 + 10.0f * ( 1.0f - pop ), y + h - 48, title, 20, UI_LEFT|UI_DROPSHADOW, zeq_white );
+	info = UI_GetArenaInfoByNumber( s_startserver.maplist[s_startserver.currentmap] );
+	UI_DText( x + 16, y + h - 22, va( "%s  -  map %i of %i", Info_ValueForKey( info, "longname" ), s_startserver.currentmap + 1, s_startserver.nummaps ),
+		13, UI_LEFT, zeq_text2 );
+}
+
+static void ServerOptions_DrawArrow( void *self ) {
+	menubitmap_s *b;
+
+	b = (menubitmap_s *)self;
+	trap_R_SetColor( NULL );
+	UI_DPic( b->generic.x, b->generic.y + ( UI_TouchPressed( self ) ? 2.0f : 0.0f ), b->width, b->height,
+		trap_R_RegisterShaderNoMip( b->generic.id == ID_MAPPREV ? "interface/art/arrows_horz_left.png" : "interface/art/arrows_horz_right.png" ) );
+}
+
 static void ServerOptions_DrawPreview( void *self ) {
 	menubitmap_s	*b;
 	const char		*info;
@@ -1386,6 +1532,11 @@ static void ServerOptions_DrawPreview( void *self ) {
 	b = (menubitmap_s *)self;
 	focus = UI_DFocus( &s_serveroptions.menu, self );
 	pop = UI_AnimFrac( soMapTime, 0, 300 );
+
+	if ( s_serveroptions.menu.mobile ) {
+		ServerOptions_DrawPreviewMobile( b, focus, pop );
+		return;
+	}
 
 	edge[0] = 0.33f; edge[1] = 0.59f; edge[2] = 1.0f; edge[3] = 0.25f + 0.15f * focus;
 	UI_DRoundGlow( 48, 128, 640, 360, 26, edge );
@@ -1464,6 +1615,58 @@ ServerOptions_DrawFighters
 the human, then each bot with its level; the portraits rise in turn
 =================
 */
+// phone: 348 x 98 dp, the human and up to four bots in 52 dp portraits
+static void ServerOptions_DrawFightersMobile( menubitmap_s *b, float focus ) {
+	float			x, y, px;
+	int				i, count, shown;
+	char			model[64];
+	char			*slash;
+	uiRosterSlot_t	*slot;
+	uiBotDef_t		*def;
+	vec4_t			edge;
+
+	x = b->generic.x; y = b->generic.y;
+	UI_DGlass( x, y, b->width, b->height );
+	if ( focus > 0.0f ) {
+		edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.7f * focus;
+		UI_DRoundEdge( x + 4, y + 4, b->width - 8, b->height - 8, 8, edge );
+	}
+	count = UI_Bots_RosterCount();
+	UI_DProp( x + 14, y + 10, va( "FIGHTERS  %i OF 12", count + 1 ), 11, UI_LEFT, zeq_gold );
+	UI_DProp( x + b->width - 14, y + 10, "MANAGE  >", 11, UI_RIGHT, focus > 0.0f ? zeq_white : zeq_ki );
+
+	trap_Cvar_VariableStringBuffer( "model", model, sizeof( model ) );
+	slash = strchr( model, '/' );
+	if ( slash ) {
+		*slash = 0;
+	}
+	px = x + 14;
+	UI_DPortrait( px, y + 32, 52, UI_Bots_Portrait( model ), qfalse, 0.0f );
+	edge[0] = 0.33f; edge[1] = 0.59f; edge[2] = 1.0f; edge[3] = 1.0f;
+	UI_DRoundEdge( px - 3, y + 29, 58, 58, 10, edge );
+	shown = count < 4 ? count : 4;
+	for ( i = 0; i < shown; i++ ) {
+		slot = UI_Bots_RosterSlot( i );
+		def = UI_Bots_Def( slot->def );
+		px = x + 14 + ( i + 1 ) * 62;
+		UI_DPortrait( px, y + 32, 52, UI_Bots_Portrait( def->player ), qfalse, 0.0f );
+		UI_DPips( px + 8, y + 88, slot->skill, 3, 1.0f );
+	}
+	px = x + 14 + ( shown + 1 ) * 62;
+	if ( count > shown ) {
+		UI_DProp( px + 4, y + 48, va( "+%i", count - shown ), 20, UI_LEFT, zeq_white );
+	}
+	else if ( count < UI_MAX_ROSTER ) {
+		edge[0] = 0.024f; edge[1] = 0.03f; edge[2] = 0.12f; edge[3] = 0.5f;
+		UI_DRoundFill( px, y + 32, 52, 52, 9, edge );
+		edge[0] = 0.29f; edge[1] = 0.39f; edge[2] = 0.74f; edge[3] = 0.9f;
+		UI_DRoundEdge( px, y + 32, 52, 52, 9, edge );
+		edge[0] = 0.56f; edge[1] = 0.71f; edge[2] = 1.0f; edge[3] = 1.0f;
+		UI_DFill( px + 25, y + 49, 2, 18, edge );
+		UI_DFill( px + 17, y + 57, 18, 2, edge );
+	}
+}
+
 static void ServerOptions_DrawFighters( void *self ) {
 	menubitmap_s	*b;
 	float			focus;
@@ -1479,6 +1682,11 @@ static void ServerOptions_DrawFighters( void *self ) {
 
 	b = (menubitmap_s *)self;
 	focus = UI_DFocus( &s_serveroptions.menu, self );
+
+	if ( s_serveroptions.menu.mobile ) {
+		ServerOptions_DrawFightersMobile( b, focus );
+		return;
+	}
 
 	UI_DGlass( 712, 440, 520, 202 );
 	if ( focus > 0.0f ) {
@@ -1536,12 +1744,76 @@ static void ServerOptions_DrawFighters( void *self ) {
 ServerOptions_MenuDraw
 =================
 */
+static void ServerOptions_MenuDrawMobile( void ) {
+	char	title[64];
+	vec4_t	bar;
+	float	h;
+
+	UI_DMobileHeader( "MAIN MENU  >  PLAY  >", "CREATE MATCH" );
+	UI_DGlass( 386, 88, 432, 212 );
+	UI_DProp( 412, 100, "RULES", 11, UI_LEFT, zeq_gold );
+	// scroll bar of the rules when they do not all fit
+	if ( soNumRows > SOM_ROWS ) {
+		bar[0] = 0.47f; bar[1] = 0.63f; bar[2] = 1.0f; bar[3] = 0.2f;
+		UI_DFill( 810, 118, 3, SOM_ROWS * SOM_ROW_H, bar );
+		h = SOM_ROWS * SOM_ROW_H * SOM_ROWS / (float)soNumRows;
+		bar[3] = 0.8f;
+		UI_DFill( 810, 118 + ( SOM_ROWS * SOM_ROW_H - h ) * soScroll / (float)( soNumRows - SOM_ROWS ), 3, h, bar );
+	}
+	ServerOptions_MapTitle( s_serveroptions.mapnamebuffer, title, sizeof( title ) );
+	UI_DText( 392, 330, va( "%s  -  KO %s  -  %i fighters", title, s_serveroptions.fraglimit.field.buffer[0] ? s_serveroptions.fraglimit.field.buffer : "none",
+		UI_Bots_RosterCount() + 1 ), 14, UI_LEFT, zeq_text2 );
+	Menu_Draw( &s_serveroptions.menu );
+}
+
+/*
+=================
+ServerOptions_Step
+
+phone: the - and + of a number rule, no typing needed
+=================
+*/
+static qboolean ServerOptions_Step( menufield_s *f ) {
+	float	x, y, w, h;
+	int		value, max, i, dir;
+
+	UI_DCanvas( qtrue );
+	for ( dir = -1; dir <= 1; dir += 2 ) {
+		ServerOptions_StepperRect( f, dir > 0, &x, &y, &w, &h );
+		x -= 4; y -= 4; w += 8; h += 8;
+		UI_DToV( &x, &y, &w, &h );
+		if ( uis.cursorx < x || uis.cursorx > x + w || uis.cursory < y || uis.cursory > y + h ) {
+			continue;
+		}
+		max = 1;
+		for ( i = 0; i < f->field.maxchars; i++ ) {
+			max *= 10;
+		}
+		value = atoi( f->field.buffer ) + dir * soRowSteps[ServerOptions_RowOf( f )];
+		if ( value < 0 ) {
+			value = 0;
+		}
+		if ( value > max - 1 ) {
+			value = max - 1;
+		}
+		Com_sprintf( f->field.buffer, sizeof( f->field.buffer ), "%i", value );
+		f->field.cursor = strlen( f->field.buffer );
+		return qtrue;
+	}
+	return qfalse;
+}
+
 static void ServerOptions_MenuDraw( void ) {
 	static const char *hints[] = { "LR", "Map", "B", "Bots", "ENTER", "Select", "ESC", "Back" };
 
 	// the side strip is shared, set it again after coming back from the roster
 	uis.menuamount = -1;
 	uis.hideEarth = qtrue;
+
+	if ( s_serveroptions.menu.mobile ) {
+		ServerOptions_MenuDrawMobile();
+		return;
+	}
 
 	UI_DHeader( "MAIN MENU  >  PLAY  >", "CREATE MATCH" );
 	UI_DGlass( 712, 128, 520, s_serveroptions.rulesBottom - 128 );
@@ -1555,6 +1827,18 @@ static sfxHandle_t ServerOptions_MenuKey( int key ) {
 	void *item;
 
 	item = Menu_ItemAtCursor( &s_serveroptions.menu );
+
+	if ( s_serveroptions.menu.mobile ) {
+		if ( key == K_MWHEELUP || key == K_MWHEELDOWN ) {
+			soScroll += ( key == K_MWHEELUP ) ? -1 : 1;
+			ServerOptions_PlaceRows();
+			return menu_null_sound;
+		}
+		if ( key == K_MOUSE1 && item && ((menucommon_s *)item)->type == MTYPE_FIELD && ( ((menucommon_s *)item)->flags & QMF_HASMOUSEFOCUS ) &&
+			( ((menucommon_s *)item)->flags & QMF_NUMBERSONLY ) ) {
+			return ServerOptions_Step( (menufield_s *)item ) ? menu_move_sound : menu_null_sound;
+		}
+	}
 
 	// typing in a rule field
 	if ( item && ((menucommon_s *)item)->type == MTYPE_FIELD && key != K_ESCAPE && key != K_MOUSE2 &&
@@ -1611,9 +1895,19 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	s_serveroptions.menu.fullscreen = qtrue;
 	s_serveroptions.menu.draw = ServerOptions_MenuDraw;
 	s_serveroptions.menu.key = ServerOptions_MenuKey;
+	s_serveroptions.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( s_serveroptions.menu.mobile );
+	soScroll = 0;
 
-	// map preview and strip
-	ServerOptions_DItem( &s_serveroptions.preview, ID_PREVIEW, ServerOptions_DrawPreview, 48, 128, 640, 360 );
+	// map preview and strip (the phone has the card and its arrows)
+	if ( s_serveroptions.menu.mobile ) {
+		ServerOptions_DItem( &s_serveroptions.preview, ID_PREVIEW, ServerOptions_DrawPreview, 26, 88, 348, 168 );
+		ServerOptions_DItem( &s_serveroptions.mapPrev, ID_MAPPREV, ServerOptions_DrawArrow, 30, 146, 52, 52 );
+		ServerOptions_DItem( &s_serveroptions.mapNext, ID_MAPNEXT, ServerOptions_DrawArrow, 318, 146, 52, 52 );
+	}
+	else {
+		ServerOptions_DItem( &s_serveroptions.preview, ID_PREVIEW, ServerOptions_DrawPreview, 48, 128, 640, 360 );
+	}
 	for ( i = 0; i < SO_THUMBS; i++ ) {
 		ServerOptions_DItem( &s_serveroptions.thumbs[i], ID_THUMB0 + i, ServerOptions_DrawThumb, 48 + i * 164, 506, 148, 110 );
 	}
@@ -1621,8 +1915,11 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	// rules
 	ServerOptions_FieldRow( &s_serveroptions.fraglimit, "KO limit", 3 );
 	ServerOptions_FieldRow( &s_serveroptions.timelimit, "Time limit (min)", 3 );
+	soRowSteps[soNumRows - 1] = 5;
 	ServerOptions_FieldRow( &s_serveroptions.powerlevel, "Power level", 5 );
+	soRowSteps[soNumRows - 1] = 500;
 	ServerOptions_FieldRow( &s_serveroptions.powerlevelMaximum, "Maximum power level", 5 );
+	soRowSteps[soNumRows - 1] = 500;
 	ServerOptions_FieldRow( &s_serveroptions.breakLimitRate, "Charge speed", 3 );
 
 	s_serveroptions.pure.generic.type		= MTYPE_RADIOBUTTON;
@@ -1630,7 +1927,8 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	s_serveroptions.pure.generic.ownerdraw	= ServerOptions_DrawRadioRow;
 	ServerOptions_AddRow( &s_serveroptions.pure, "Pure server" );
 
-	if( s_serveroptions.multiplayer ) {
+	// a phone does not run a dedicated server
+	if( s_serveroptions.multiplayer && !s_serveroptions.menu.mobile ) {
 		s_serveroptions.dedicated.generic.type		= MTYPE_SPINCONTROL;
 		s_serveroptions.dedicated.generic.flags		= QMF_NODEFAULTINIT;
 		s_serveroptions.dedicated.generic.id		= ID_DEDICATED;
@@ -1639,7 +1937,8 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 		s_serveroptions.dedicated.itemnames			= dedicated_list;
 		s_serveroptions.dedicated.numitems			= 3;
 		ServerOptions_AddRow( &s_serveroptions.dedicated, "Dedicated" );
-
+	}
+	if( s_serveroptions.multiplayer ) {
 		s_serveroptions.hostname.generic.type		= MTYPE_FIELD;
 		s_serveroptions.hostname.generic.flags		= QMF_NODEFAULTINIT;
 		s_serveroptions.hostname.generic.ownerdraw	= ServerOptions_DrawFieldRow;
@@ -1650,8 +1949,15 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	s_serveroptions.rulesBottom = SO_ROW_Y + soNumRows * SO_ROW_H + 12;
 
 	// fighters and FIGHT!
-	ServerOptions_DItem( &s_serveroptions.fighterPanel, ID_FIGHTERPANEL, ServerOptions_DrawFighters, 712, 440, 520, 202 );
-	ServerOptions_DItem( &s_serveroptions.fightBtn, ID_GO, ServerOptions_DrawFight, 1060 + UI_DExtra(), 652, 172, 50 );
+	if ( s_serveroptions.menu.mobile ) {
+		ServerOptions_DItem( &s_serveroptions.fighterPanel, ID_FIGHTERPANEL, ServerOptions_DrawFighters, 26, 266, 348, 110 );
+		ServerOptions_DItem( &s_serveroptions.fightBtn, ID_GO, ServerOptions_DrawFight, 664, 312, 154, 52 );
+		UI_DBackItem( &s_serveroptions.menu );
+	}
+	else {
+		ServerOptions_DItem( &s_serveroptions.fighterPanel, ID_FIGHTERPANEL, ServerOptions_DrawFighters, 712, 440, 520, 202 );
+		ServerOptions_DItem( &s_serveroptions.fightBtn, ID_GO, ServerOptions_DrawFight, 1060 + UI_DExtra(), 652, 172, 50 );
+	}
 
 	// map picture, only its name is used now
 	s_serveroptions.mappic.generic.type		= MTYPE_BITMAP;
@@ -1660,6 +1966,10 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	UI_Bots_Load();
 
 	Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.preview );
+	if ( s_serveroptions.menu.mobile ) {
+		Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.mapPrev );
+		Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.mapNext );
+	}
 	for ( i = 0; i < SO_THUMBS; i++ ) {
 		Menu_AddItem( &s_serveroptions.menu, &s_serveroptions.thumbs[i] );
 	}
@@ -1672,12 +1982,13 @@ static void ServerOptions_MenuInit( qboolean multiplayer ) {
 	ServerOptions_SetMenuItems();
 	ServerOptions_SetMap( s_startserver.currentmap );
 
-	// fewer maps than thumbnails
+	// fewer maps than thumbnails; the phone has none
 	for ( i = 0; i < SO_THUMBS; i++ ) {
-		if ( i >= s_startserver.nummaps ) {
+		if ( i >= s_startserver.nummaps || s_serveroptions.menu.mobile ) {
 			s_serveroptions.thumbs[i].generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 		}
 	}
+	ServerOptions_PlaceRows();
 }
 
 /*

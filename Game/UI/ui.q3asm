@@ -22,6 +22,7 @@ ui_servers2
 ui_specifyserver
 ui_startserver
 ui_camera
+ui_touch
 ui_system
 bg_misc
 bg_lib

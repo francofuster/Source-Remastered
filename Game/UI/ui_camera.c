@@ -248,6 +248,19 @@ the right so the camera can be judged live
 static void Camera_MenuDraw( void ) {
 	static const char *hints[] = { "LR", "Adjust", "ESC", "Back" };
 
+	if ( s_camera.menu.mobile ) {
+		vec4_t shade;
+
+		// a darker band keeps the title clear of the HUD under it
+		shade[0] = 0.02f; shade[1] = 0.02f; shade[2] = 0.10f; shade[3] = 0.55f;
+		UI_DFill( -200 - UI_DExtra(), 0, 1244 + 2 * UI_DExtra(), 80, shade );
+		UI_DMobileHeader( "PAUSED  >", "CAMERA" );
+		UI_DOptionsDrawPhone( "The match behind shows the camera as you drag." );
+		UI_DOptionsDrawSections();
+		Menu_Draw( &s_camera.menu );
+		return;
+	}
+
 	UI_DGlass( 40, 96, 600, 300 );
 	UI_DProp( 64, 120, "CAMERA", 30, UI_LEFT|UI_DROPSHADOW, zeq_white );
 	UI_DOptionsDrawSections();
@@ -345,7 +358,14 @@ static void Camera_MenuInit( void )
 	// menu redesign: rows on the design canvas
 	s_camera.banner.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
 	s_camera.back.generic.flags |= QMF_HIDDEN|QMF_INACTIVE;
+	s_camera.menu.mobile = UI_MobileLayout();
+	UI_DCanvas( s_camera.menu.mobile );
+	if ( s_camera.menu.mobile ) {
+		UI_DBackItem( &s_camera.menu );
+	}
 	UI_DOptionsBegin( &s_camera.menu, 64, 172, 552, 32 );
+	// phone: a panel on the left, the match stays visible on the right
+	UI_DOptionsPhoneArea( 34, 400, 296 );
 	UI_DOptionsSection( "CAMERA" );
 	UI_DOptionsRow( &s_camera.rangeSlider, "Range", "Distance from your fighter.", qfalse );
 	UI_DOptionsRow( &s_camera.heightSlider, "Height", "Height above your fighter.", qfalse );

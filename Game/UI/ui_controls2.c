@@ -1986,6 +1986,11 @@ UI_ControlsMenu
 =================
 */
 void UI_ControlsMenu( void ) {
+	// a phone has no keys to bind: its page is the touch controls one
+	if ( UI_MobileLayout() ) {
+		UI_TouchControlsMenu();
+		return;
+	}
 	Controls_MenuInit();
 	UI_PushMenu( &s_controls.menu );
 	uis.menuamount = -1;

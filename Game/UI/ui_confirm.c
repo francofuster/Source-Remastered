@@ -56,6 +56,37 @@ typedef struct {
 
 static confirmMenu_t	s_confirm;
 
+// PC on the 1280x720 canvas, phone on the 844x390 one (dp)
+typedef struct {
+	int		glassX, glassY, glassW;
+	int		ballX, ballY, ballW, ballH;
+	int		textX, questionY, questionSize;
+	int		lineY, lineStep, lineSize;
+	int		buttonW, buttonH;
+	int		yesX, noX, buttonY, okX, okY;
+	int		confirmH, messageH;
+} confirmLayout_t;
+
+static const confirmLayout_t confirmLayouts[2] = {
+	{ 420, 240, 440,	806, 196, 74, 89,	640, 286, 32,	276, 26, 20,	160, 46,	472, 648, 368, 560, 400,	220, 240 },
+	{ 212, 96, 420,		596, 72, 44, 53,	422, 126, 24,	120, 22, 15,	170, 52,	246, 440, 214, 337, 236,	198, 212 }
+};
+
+#define CL	( confirmLayouts[s_confirm.menu.mobile ? 1 : 0] )
+
+// a tap outside the dialog answers no (phone layout)
+static qboolean ConfirmMenu_TapOutside( void ) {
+	float x, y, w, h;
+
+	if ( !s_confirm.menu.mobile || !UI_TouchMode() ) {
+		return qfalse;
+	}
+	UI_DCanvas( qtrue );
+	x = CL.glassX; y = CL.glassY; w = CL.glassW; h = s_confirm.lines ? CL.messageH : CL.confirmH;
+	UI_DToV( &x, &y, &w, &h );
+	return ( uis.cursorx < x || uis.cursorx > x + w || uis.cursory < y || uis.cursory > y + h );
+}
+
 
 /*
 =================
@@ -107,6 +138,12 @@ static sfxHandle_t ConfirmMenu_Key( int key ) {
 	case 'Y':
 		ConfirmMenu_Event( &s_confirm.yes, QM_ACTIVATED );
 		break;
+	case K_MOUSE1:
+		if ( ConfirmMenu_TapOutside() ) {
+			ConfirmMenu_Event( s_confirm.lines ? &s_confirm.yes : &s_confirm.no, QM_ACTIVATED );
+			return menu_out_sound;
+		}
+		break;
 	}
 
 	return Menu_DefaultKey( &s_confirm.menu, key );
@@ -128,7 +165,8 @@ static void ConfirmMenu_DrawButton( void *self ) {
 	menutext_s *t;
 
 	t = (menutext_s *)self;
-	UI_DKiButton( t->generic.x, t->generic.y, 160, 46, t->string, NULL, UI_DFocus( &s_confirm.menu, self ), qfalse, qfalse );
+	UI_DKiButton( t->generic.x, t->generic.y + ( UI_TouchPressed( self ) ? 2.0f : 0.0f ), CL.buttonW, CL.buttonH, t->string, NULL,
+		UI_DFocus( &s_confirm.menu, self ), qfalse, qfalse );
 }
 
 static void ConfirmMenu_PlaceButton( menutext_s *t, int x, int y ) {
@@ -137,7 +175,7 @@ static void ConfirmMenu_PlaceButton( menutext_s *t, int x, int y ) {
 	t->generic.x = x;
 	t->generic.y = y;
 	t->generic.ownerdraw = ConfirmMenu_DrawButton;
-	vx = x; vy = y; vw = 160; vh = 46;
+	vx = x; vy = y; vw = CL.buttonW; vh = CL.buttonH;
 	UI_DToV( &vx, &vy, &vw, &vh );
 	t->generic.left = vx;
 	t->generic.top = vy;
@@ -153,17 +191,17 @@ static void ConfirmMenu_DrawDialog( float h ) {
 	bias = ( uis.scale > 0.0f ) ? ( uis.bias / uis.scale ) : 0.0f;
 	shade[0] = 0.02f; shade[1] = 0.024f; shade[2] = 0.10f; shade[3] = 0.6f;
 	UI_FillRect( -bias - uis.drawOffsetX, 0, 640 + 2 * bias, 480, shade );
-	UI_DGlass( 420, 240, 440, h );
+	UI_DGlass( CL.glassX, CL.glassY, CL.glassW, h );
 	trap_R_SetColor( NULL );
-	UI_DPic( 806, 196 + 2.0f * sin( uis.realtime / 300.0f ), 74, 89, uis.dragonBall );
+	UI_DPic( CL.ballX, CL.ballY + 2.0f * sin( uis.realtime / 300.0f ), CL.ballW, CL.ballH, uis.dragonBall );
 }
 
 static void MessageMenu_Draw( void ) {
 	int i;
 
-	ConfirmMenu_DrawDialog( 240 );
+	ConfirmMenu_DrawDialog( CL.messageH );
 	for( i = 0; s_confirm.lines[i]; i++ ) {
-		UI_DText( 640, 276 + i * 26, s_confirm.lines[i], 20, UI_CENTER, i ? zeq_text2 : zeq_white );
+		UI_DText( CL.textX, CL.lineY + i * CL.lineStep, s_confirm.lines[i], CL.lineSize, UI_CENTER, i ? zeq_text2 : zeq_white );
 	}
 
 	Menu_Draw( &s_confirm.menu );
@@ -181,8 +219,8 @@ ConfirmMenu_Draw
 static void ConfirmMenu_Draw( void ) {
 	static const char *hints[] = { "Y", "Yes", "N", "No", "ESC", "Cancel" };
 
-	ConfirmMenu_DrawDialog( 220 );
-	UI_DProp( 640, 286, s_confirm.question, 32, UI_CENTER|UI_DROPSHADOW, zeq_white );
+	ConfirmMenu_DrawDialog( CL.confirmH );
+	UI_DProp( CL.textX, CL.questionY, s_confirm.question, CL.questionSize, UI_CENTER|UI_DROPSHADOW, zeq_white );
 	// over a match the HUD is in the bottom left corner: center them there
 	if ( s_confirm.menu.fullscreen ) {
 		UI_DHints( hints, 3 );
@@ -241,6 +279,8 @@ void UI_ConfirmMenu_Style( const char *question, int style, void (*draw)( void )
 	s_confirm.menu.draw       = ConfirmMenu_Draw;
 	s_confirm.menu.key        = ConfirmMenu_Key;
 	s_confirm.menu.wrapAround = qtrue;
+	s_confirm.menu.mobile     = UI_MobileLayout();
+	UI_DCanvas( s_confirm.menu.mobile );
 
 	trap_GetClientState( &cstate );
 	if ( cstate.connState >= CA_CONNECTED ) {
@@ -272,8 +312,8 @@ void UI_ConfirmMenu_Style( const char *question, int style, void (*draw)( void )
 
 	Menu_AddItem( &s_confirm.menu,	&s_confirm.yes );
 	Menu_AddItem( &s_confirm.menu,	&s_confirm.no );
-	ConfirmMenu_PlaceButton( &s_confirm.yes, 472, 368 );
-	ConfirmMenu_PlaceButton( &s_confirm.no, 648, 368 );
+	ConfirmMenu_PlaceButton( &s_confirm.yes, CL.yesX, CL.buttonY );
+	ConfirmMenu_PlaceButton( &s_confirm.no, CL.noX, CL.buttonY );
 
 	UI_PushMenu( &s_confirm.menu );
 
@@ -313,6 +353,8 @@ void UI_Message( const char **lines ) {
 	s_confirm.menu.draw       = MessageMenu_Draw;
 	s_confirm.menu.key        = ConfirmMenu_Key;
 	s_confirm.menu.wrapAround = qtrue;
+	s_confirm.menu.mobile     = UI_MobileLayout();
+	UI_DCanvas( s_confirm.menu.mobile );
 
 	trap_GetClientState( &cstate );
 	if ( cstate.connState >= CA_CONNECTED ) {
@@ -333,7 +375,7 @@ void UI_Message( const char **lines ) {
 	s_confirm.yes.style				= UI_LEFT;
 
 	Menu_AddItem( &s_confirm.menu,	&s_confirm.yes );
-	ConfirmMenu_PlaceButton( &s_confirm.yes, 560, 400 );
+	ConfirmMenu_PlaceButton( &s_confirm.yes, CL.okX, CL.okY );
 
 	UI_PushMenu( &s_confirm.menu );
 
