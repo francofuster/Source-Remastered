@@ -411,6 +411,7 @@ set(SRC_GL4ES
 )
 
 set(SRC_ENGINE_EXTRA
+  Engine/client/cl_touch.c
   Engine/client/snd_openal.c
   Engine/sdl/sdl_glimp.c
   Engine/sys/sys_unix.c
@@ -475,7 +476,7 @@ set_source_files_properties(${SRC_ENGINE_BOTLIB}
   PROPERTIES COMPILE_DEFINITIONS BOTLIB)
 target_include_directories(main PRIVATE
   ${TP}/SDL2/include ${TP}/gl4es/include Engine/zlib)
-target_compile_definitions(main PRIVATE ${ZEQ_DEFS} USE_CODEC_VORBIS USE_GL4ES)
+target_compile_definitions(main PRIVATE ${ZEQ_DEFS} USE_CODEC_VORBIS USE_GL4ES USE_TOUCH)
 target_compile_options(main PRIVATE ${ZEQ_OPTS} -ffast-math)
 target_link_libraries(main PRIVATE SDL2::SDL2 gl4es vorbis ogg log android m)
 

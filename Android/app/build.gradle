@@ -67,6 +67,9 @@ android {
 // trap_FS_GetFileList returns for folders, which the fighter list and the bots
 // rely on). zeq2data.id tells SetupActivity when the data changed.
 def zeqDataDir = file("../../../Build-Android/ZEQ2")
+// Files of the Android build only, versioned with the source: the touch
+// control images (tools/make_touch_art.py writes them)
+def zeqAndroidDataDir = file("../data")
 def zeqDataExcludes = [
     "empty.pk3", "zeq2.bmp", "**/*.psd", "**/Thumbs.db",
     "zeq2config*.cfg", "qconsole.log", "zeq2history", "crashlog.txt", "screenshots/**", "vm/**"
@@ -76,6 +79,7 @@ def packZeqData = tasks.register("packZeqData", Zip) {
     from(zeqDataDir) {
         exclude zeqDataExcludes
     }
+    from(zeqAndroidDataDir)
     archiveFileName = "zeq2data.zip"
     preserveFileTimestamps = false
     reproducibleFileOrder = true
@@ -93,7 +97,7 @@ def packZeqData = tasks.register("packZeqData", Zip) {
         }
         long bytes = 0
         int count = 0
-        project.fileTree(zeqDataDir) { exclude zeqDataExcludes }.each { f ->
+        (project.fileTree(zeqDataDir) { exclude zeqDataExcludes } + project.fileTree(zeqAndroidDataDir)).each { f ->
             bytes += f.length()
             count++
         }

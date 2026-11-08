@@ -39,8 +39,12 @@ public class SetupActivity extends Activity {
     private static final String DATA_ID = "zeq2data.id";
     private static final String MARKER = ".zeq2data.id";
 
+    /** Intent extra with the folder that holds ZEQ2/, for ZEQ2Activity. */
+    static final String EXTRA_DATA_ROOT = "dataRoot";
+
     private TextView status;
     private ProgressBar progress;
+    private File dataRoot;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,6 +56,7 @@ public class SetupActivity extends Activity {
             fail(getString(R.string.setup_missing));
             return;
         }
+        dataRoot = root;
         if (id[0].equals(readMarker(root))) {
             startGame();
             return;
@@ -63,10 +68,24 @@ public class SetupActivity extends Activity {
         new Thread(() -> unpack(root, id[0], total), "ZEQ2 setup").start();
     }
 
-    /** Same folder SDL_AndroidGetExternalStoragePath() gives the engine. */
+    /**
+     * The folder that holds ZEQ2/. The game is told this exact folder
+     * (fs_basepath and fs_homepath), so both always agree. Shared storage is
+     * preferred, since it can be browsed over USB, but right after a boot it
+     * may not be mounted yet: then the data goes to internal storage, and it
+     * stays there afterwards instead of being unpacked twice.
+     */
     private File dataRoot() {
         File external = getExternalFilesDir(null);
-        return external != null ? external : getFilesDir();
+        File internal = getFilesDir();
+
+        if (external != null && new File(external, "ZEQ2/" + MARKER).isFile()) {
+            return external;
+        }
+        if (new File(internal, "ZEQ2/" + MARKER).isFile()) {
+            return internal;
+        }
+        return external != null ? external : internal;
     }
 
     private void unpack(File root, String id, long total) {
@@ -123,6 +142,7 @@ public class SetupActivity extends Activity {
         if (extras != null) {
             game.putExtras(extras);
         }
+        game.putExtra(EXTRA_DATA_ROOT, dataRoot.getAbsolutePath());
         startActivity(game);
         finish();
         overridePendingTransition(0, 0);

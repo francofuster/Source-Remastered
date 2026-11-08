@@ -529,6 +529,29 @@ static void IN_GobbleMotionEvents( void )
 }
 
 #if SDL_MAJOR_VERSION >= 2
+#ifdef USE_TOUCH
+static float displayDPI = -1.0f;
+
+/*
+===============
+IN_DisplayDPI
+
+Asked once: on Android SDL reads it through JNI
+===============
+*/
+float IN_DisplayDPI( void )
+{
+	if( displayDPI < 0.0f )
+	{
+		float ddpi = 0.0f;
+
+		displayDPI = ( SDL_GetDisplayDPI( 0, &ddpi, NULL, NULL ) == 0 && ddpi > 0.0f ) ? ddpi : 0.0f;
+		Com_DPrintf( "Display density: %.0f dpi\n", displayDPI );
+	}
+	return displayDPI;
+}
+#endif
+
 /*
 ===============
 IN_HasInputFocus
@@ -1069,7 +1092,21 @@ static void IN_ProcessEvents( void )
 				}
 				break;
 
+#ifdef USE_TOUCH
+			case SDL_FINGERDOWN:
+			case SDL_FINGERMOTION:
+			case SDL_FINGERUP:
+				if( e.tfinger.touchId != SDL_MOUSE_TOUCHID )
+				{
+					CL_TouchEvent( e.type == SDL_FINGERDOWN ? TOUCH_DOWN : ( e.type == SDL_FINGERUP ? TOUCH_UP : TOUCH_MOVE ),
+						(long long)e.tfinger.fingerId, e.tfinger.x, e.tfinger.y );
+				}
+				break;
+#endif
+
 			case SDL_MOUSEMOTION:
+				if( e.motion.which == SDL_TOUCH_MOUSEID )
+					break;
 				if( mouseActive && ( e.motion.xrel || e.motion.yrel ) )
 					Com_QueueEvent( 0, SE_MOUSE, e.motion.xrel, e.motion.yrel, 0, NULL );
 				break;
@@ -1078,6 +1115,9 @@ static void IN_ProcessEvents( void )
 			case SDL_MOUSEBUTTONUP:
 				{
 					int b;
+
+					if( e.button.which == SDL_TOUCH_MOUSEID )
+						break;
 
 					switch( e.button.button )
 					{
@@ -1112,7 +1152,12 @@ static void IN_ProcessEvents( void )
 				{
 					case SDL_WINDOWEVENT_MINIMIZED:    Cvar_SetValue( "com_minimized", 1 ); break;
 					case SDL_WINDOWEVENT_RESTORED:     Cvar_SetValue( "com_minimized", 0 ); break;
-					case SDL_WINDOWEVENT_FOCUS_LOST:   Cvar_SetValue( "com_unfocused", 1 ); break;
+					case SDL_WINDOWEVENT_FOCUS_LOST:
+						Cvar_SetValue( "com_unfocused", 1 );
+#ifdef USE_TOUCH
+						CL_TouchReset( );
+#endif
+						break;
 					case SDL_WINDOWEVENT_FOCUS_GAINED: Cvar_SetValue( "com_unfocused", 0 ); break;
 					default: break;
 				}

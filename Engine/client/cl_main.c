@@ -2707,6 +2707,9 @@ void CL_InitRenderer( void ) {
 	cls.whiteShader = re.RegisterShader( "white" );
 	cls.consoleShader = re.RegisterShader( "console" );
 	cls.chatInputShader = re.RegisterShader("chatInput");
+#ifdef USE_TOUCH
+	CL_TouchRegisterMedia();
+#endif
 	g_console_field_width = cls.glconfig.vidWidth / SMALLCHAR_WIDTH - 2;
 	g_consoleField.widthInChars = g_console_field_width;
 }
@@ -2943,6 +2946,9 @@ void CL_Init( void ) {
 	cls.realtime = 0;
 
 	CL_InitInput ();
+#ifdef USE_TOUCH
+	CL_TouchInit ();
+#endif
 
 	//
 	// register our variables

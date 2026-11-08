@@ -600,6 +600,11 @@ usercmd_t CL_CreateCmd( void ) {
 	// get basic movement from joystick
 	CL_JoystickMove( &cmd );
 
+#ifdef USE_TOUCH
+	// on-screen controls: the same usercmd_t as the keys and the mouse
+	CL_TouchMove( &cmd );
+#endif
+
 	// check to make sure the angles haven't wrapped
 	if ( cl.viewangles[PITCH] - oldAngles[PITCH] > 90 ) {
 		cl.viewangles[PITCH] = oldAngles[PITCH] + 90;

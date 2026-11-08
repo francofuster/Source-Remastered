@@ -628,6 +628,10 @@ int main( int argc, char **argv )
 	// The back button reaches the game as SDLK_AC_BACK, that is ESCAPE,
 	// instead of closing the activity under the engine.
 	SDL_SetHint( SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1" );
+	// Fingers go to cl_touch.c only: no mouse made from touches, and
+	// no touches made from a real mouse
+	SDL_SetHint( SDL_HINT_TOUCH_MOUSE_EVENTS, "0" );
+	SDL_SetHint( SDL_HINT_MOUSE_TOUCH_EVENTS, "0" );
 #endif
 
 	// Set the initial time base

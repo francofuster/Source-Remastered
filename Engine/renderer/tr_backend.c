@@ -403,15 +403,32 @@ static void RB_Hyperspace( void ) {
 }
 
 
+/*
+=================
+RB_SetViewport
+
+Viewport and scissor together. gl4es remembers the last viewport and skips
+a call that matches it, but the real GLES one can be different: after the
+3D views of the menus, the next screen came out squeezed into the last of
+them. A throwaway value first makes gl4es always send the real one.
+=================
+*/
+static void RB_SetViewport( int x, int y, int w, int h ) {
+#ifdef USE_GL4ES
+	qglViewport( 0, 0, 1, 1 );
+	qglScissor( 0, 0, 1, 1 );
+#endif
+	qglViewport( x, y, w, h );
+	qglScissor( x, y, w, h );
+}
+
 static void SetViewportAndScissor( void ) {
 	qglMatrixMode(GL_PROJECTION);
 	qglLoadMatrixf( backEnd.viewParms.projectionMatrix );
 	qglMatrixMode(GL_MODELVIEW);
 
 	// set the window clipping
-	qglViewport( backEnd.viewParms.viewportX, backEnd.viewParms.viewportY, 
-		backEnd.viewParms.viewportWidth, backEnd.viewParms.viewportHeight );
-	qglScissor( backEnd.viewParms.viewportX, backEnd.viewParms.viewportY, 
+	RB_SetViewport( backEnd.viewParms.viewportX, backEnd.viewParms.viewportY,
 		backEnd.viewParms.viewportWidth, backEnd.viewParms.viewportHeight );
 
 	Matrix4Copy(backEnd.viewParms.projectionMatrix, glState.currentProjectionMatrix);
@@ -732,8 +749,7 @@ void	RB_SetGL2D (void) {
 	backEnd.projection2D = qtrue;
 
 	// set 2D virtual screen size
-	qglViewport( 0, 0, glConfig.vidWidth, glConfig.vidHeight );
-	qglScissor( 0, 0, glConfig.vidWidth, glConfig.vidHeight );
+	RB_SetViewport( 0, 0, glConfig.vidWidth, glConfig.vidHeight );
 	qglMatrixMode(GL_PROJECTION);
     qglLoadIdentity ();
 	qglOrtho (0, glConfig.vidWidth, glConfig.vidHeight, 0, 0, 1);

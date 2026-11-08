@@ -688,6 +688,9 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 			// always supply STEREO_CENTER as vieworg offset is now done by the engine.
 			CL_CGameRendering(stereoFrame);
 			SCR_DrawDemoRecording();
+#ifdef USE_TOUCH
+			CL_TouchDraw();
+#endif
 #ifdef USE_VOIP
 			SCR_DrawVoipMeter();
 #endif

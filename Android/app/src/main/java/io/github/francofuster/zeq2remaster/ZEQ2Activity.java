@@ -30,6 +30,13 @@ public class ZEQ2Activity extends SDLActivity {
         List<String> args = new ArrayList<>(Arrays.asList("+set", "logfile", "2"));
 
         Intent intent = getIntent();
+
+        // The folder SetupActivity unpacked the data into
+        String root = intent != null ? intent.getStringExtra(SetupActivity.EXTRA_DATA_ROOT) : null;
+        if (root != null) {
+            args.addAll(Arrays.asList("+set", "fs_basepath", root, "+set", "fs_homepath", root));
+        }
+
         String extra = intent != null ? intent.getStringExtra("args") : null;
         if (extra != null && !extra.trim().isEmpty()) {
             args.addAll(Arrays.asList(extra.trim().split("\\s+")));

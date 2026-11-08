@@ -487,6 +487,21 @@ void CL_ReadPackets (void);
 void CL_WritePacket( void );
 void IN_CenterView (void);
 
+#ifdef USE_TOUCH
+//
+// cl_touch.c
+//
+typedef enum { TOUCH_DOWN, TOUCH_MOVE, TOUCH_UP } touchEventType_t;
+
+void CL_TouchInit( void );
+void CL_TouchRegisterMedia( void );
+void CL_TouchEvent( touchEventType_t type, long long id, float x, float y );
+void CL_TouchMove( usercmd_t *cmd );
+void CL_TouchDraw( void );
+void CL_TouchReset( void );
+float IN_DisplayDPI( void );		// sdl_input.c, 0 when unknown
+#endif
+
 void CL_VerifyCode( void );
 
 float CL_KeyState (kbutton_t *key);
