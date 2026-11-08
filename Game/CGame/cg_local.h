@@ -1104,6 +1104,19 @@ extern	vmCvar_t		cg_footsteps;
 extern	vmCvar_t		cg_addMarks;
 extern	vmCvar_t		cg_brassTime;
 extern	vmCvar_t		cg_chatTime;
+// HUD at the top, the way the lock-on HUD sits, and its size. On a phone
+// the bottom left belongs to the touch stick.
+extern	vmCvar_t		cg_hudTop;
+extern	vmCvar_t		cg_hudScale;
+#ifdef __ANDROID__
+#define CG_HUDTOP_DEFAULT	"1"
+#define CG_HUDSCALE_DEFAULT	"1.25"
+#else
+#define CG_HUDTOP_DEFAULT	"0"
+#define CG_HUDSCALE_DEFAULT	"1"
+#endif
+float CG_HudScale( void );
+float CG_HudBelowTop( void );
 extern	vmCvar_t		cg_gun_frame;
 extern	vmCvar_t		cg_gun_x;
 extern	vmCvar_t		cg_gun_y;

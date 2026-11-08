@@ -28,6 +28,17 @@ LABELS = {
     'lock': 'LOCK',
     'aura': 'AURA',
     'skill': 'TÉCNICA',
+    # Contexts (phase F3): the same buttons change what they do
+    'combo': 'COMBO',
+    'break': 'ROMPER',
+    'launch': 'LANZAR',
+    'counter': 'CONTRA',
+    'dodge': 'ESQUIVA',
+    'chase': 'PERSEGUIR',
+    'back': 'DEVOLVER',
+    'brake': 'FRENAR',
+    'recover': 'RECUPERAR',
+    'push': 'EMPUJAR',
 }
 
 

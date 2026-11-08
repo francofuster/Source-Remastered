@@ -600,6 +600,11 @@ void CG_CheckChat(void){
 	float oldScreenXScale;
 	float oldScreenXBias;
 
+	if ( cg_hudTop.integer ) {
+		// the HUD is always at the top: the chat goes right under it
+		yStart = (int)CG_HudBelowTop();
+		yOffset = 40;
+	}
 	if(cg.time < cgs.chatTimer){
 		CG_BeginUniformHudScale( &oldScreenXScale, &oldScreenXBias );
 		for(index=0; index<MAX_CHAT_MESSAGES; ++index){
@@ -667,9 +672,44 @@ static float CG_WideCenterBias( void ) {
 	return ( (float)cgs.glconfig.vidWidth - ( 640.0f * cgs.screenYScale ) ) * 0.5f;
 }
 
+/*
+=================
+CG_HudScale
+
+Size of the HUD (cg_hudScale), applied by CG_BeginUniformHudScale.
+=================
+*/
+float CG_HudScale( void ) {
+	if ( cg_hudScale.value < 0.5f ) {
+		return 0.5f;
+	}
+	if ( cg_hudScale.value > 2.0f ) {
+		return 2.0f;
+	}
+	return cg_hudScale.value;
+}
+
+/*
+=================
+CG_HudBelowTop
+
+First free row under the top HUD, in HUD units
+=================
+*/
+float CG_HudBelowTop( void ) {
+	return 76.0f;
+}
+
+static float	cg_hudSavedYScale;
+static int		cg_hudScaleDepth;
+
 static void CG_BeginUniformHudScale( float *oldScreenXScale, float *oldScreenXBias ) {
 	*oldScreenXScale = cgs.screenXScale;
 	*oldScreenXBias = cgs.screenXBias;
+	if ( cg_hudScaleDepth++ == 0 ) {
+		cg_hudSavedYScale = cgs.screenYScale;
+		cgs.screenYScale *= CG_HudScale();
+	}
 	cgs.screenXScale = cgs.screenYScale;
 	cgs.screenXBias = 0.0f;
 }
@@ -677,6 +717,9 @@ static void CG_BeginUniformHudScale( float *oldScreenXScale, float *oldScreenXBi
 static void CG_EndUniformHudScale( float oldScreenXScale, float oldScreenXBias ) {
 	cgs.screenXScale = oldScreenXScale;
 	cgs.screenXBias = oldScreenXBias;
+	if ( cg_hudScaleDepth > 0 && --cg_hudScaleDepth == 0 ) {
+		cgs.screenYScale = cg_hudSavedYScale;
+	}
 }
 
 static void CG_BeginUniformCenteredScale( float *oldScreenXScale, float *oldScreenXBias ) {
@@ -944,6 +987,8 @@ static int				cg_hudLockTime;
 static playerState_t	cg_hudTargetPS;			// the last target, kept while its HUD leaves
 static qboolean			cg_hudHaveTarget;
 
+static void CG_DrawTierMarkers( playerState_t *ps, clientInfo_t *ci, float tier, int y, float alpha );
+
 static void CG_DrawStatusBar( void ) {
 	centity_t		*cent;
 	playerState_t	*ps;
@@ -993,17 +1038,47 @@ static void CG_DrawStatusBar( void ) {
 	if ( !locked && cg_hudLockBlend <= 0.0f ) {
 		cg_hudHaveTarget = qfalse;
 	}
+	if ( cg_hudTop.integer ) {
+		// HUD at the top all the time, like the lock-on one: only the HUD of
+		// the target comes and goes, on the right
+		CG_DrawHUD(ps,ps->clientNum,0,0,qfalse,1.0f);
+		if ( ease > 0.0f && cg_hudHaveTarget && cgs.clientinfo[cg_hudTargetPS.clientNum].infoValid ) {
+			offset = -(int)( ( 1.0f - ease ) * HUD_LOCK_SLIDE );
+			CG_DrawHUD(&cg_hudTargetPS,cg_hudTargetPS.clientNum,(int)( CG_WideVirtualWidth() / CG_HudScale() ) - 286,offset,qtrue,ease);
+		}
+		CG_DrawTierMarkers(ps,ci,tier,20,1.0f);
+		return;
+	}
 	// lock-on HUDs: down from above, back up when the lock-on ends
 	if ( ease > 0.0f && cg_hudHaveTarget && cgs.clientinfo[cg_hudTargetPS.clientNum].infoValid ) {
 		offset = -(int)( ( 1.0f - ease ) * HUD_LOCK_SLIDE );
 		CG_DrawHUD(ps,ps->clientNum,0,offset,qfalse,ease);
-		CG_DrawHUD(&cg_hudTargetPS,cg_hudTargetPS.clientNum,CG_WideVirtualWidth() - 286,offset,qtrue,ease);
+		CG_DrawHUD(&cg_hudTargetPS,cg_hudTargetPS.clientNum,(int)( CG_WideVirtualWidth() / CG_HudScale() ) - 286,offset,qtrue,ease);
 	}
 	// normal HUD: down and out while locked on, back up from below afterwards
 	if ( ease < 1.0f ) {
 		alpha = 1.0f - ease;
 		offset = (int)( ease * HUD_LOCK_SLIDE );
-		CG_DrawHUD(ps,ps->clientNum,0,408+offset,qfalse,alpha);
+		base = (int)( 480.0f / CG_HudScale() ) - 72;
+		CG_DrawHUD(ps,ps->clientNum,0,base+offset,qfalse,alpha);
+		CG_DrawTierMarkers(ps,ci,tier,base+20+offset,alpha);
+	}
+}
+
+/*
+=================
+CG_DrawTierMarkers
+
+Where the next tier starts and where the current one ends, on the power
+gauge of the HUD whose top is at y - 20.
+=================
+*/
+static void CG_DrawTierMarkers( playerState_t *ps, clientInfo_t *ci, float tier, int y, float alpha ) {
+	float			tierLast, tierNext;
+	tierConfig_cg	*activeTier;
+	vec4_t			markerColor;
+
+	{
 		markerColor[0] = markerColor[1] = markerColor[2] = 1.0f;
 		markerColor[3] = alpha;
 		trap_R_SetColor( markerColor );
@@ -1016,7 +1091,7 @@ static void CG_DrawStatusBar( void ) {
 			if(activeTier->sustainMaximum && activeTier->sustainMaximum < tierLast){tierLast = (float)activeTier->sustainMaximum;}
 			if(tierLast < 32767){
 				tierLast = tierLast / (float)ps->powerLevel[plMaximum];
-				CG_DrawPicHud((187*tierLast)+60,428+offset,13,38,cgs.media.markerDescendShader);
+				CG_DrawPicHud((187*tierLast)+60,y,13,38,cgs.media.markerDescendShader);
 			}
 		}
 		if(tier < ps->powerLevel[plTierTotal]){
@@ -1029,7 +1104,7 @@ static void CG_DrawStatusBar( void ) {
 			if(tierNext){
 				tierNext = tierNext / (float)ps->powerLevel[plMaximum];
 				if(tierNext < 1.0){
-					CG_DrawPicHud((187*tierNext)+60,428+offset,13,38,cgs.media.markerAscendShader);
+					CG_DrawPicHud((187*tierNext)+60,y,13,38,cgs.media.markerAscendShader);
 				}
 			}
 		}

@@ -639,6 +639,23 @@ void ClientThink_real( gentity_t *ent ) {
 	// health bars of the server, read by PM_BurnPowerLevel and the HUD
 	client->ps.stats[stHealthBars] = g_healthBars.integer < 1 ? 1 : ( g_healthBars.integer > 3 ? 3 : g_healthBars.integer );
 	oldLockedTarget = client->ps.lockedTarget;
+	// Pmove reads the lock-on through ps->lockedPlayer and ps->lockedPosition,
+	// which only EV_MELEE_CHECK used to set: between a new lock-on and that
+	// event they were NULL. The QVM read garbage at address 0 there, native
+	// code crashes. A beam struggle points lockedTarget at the missile, not
+	// at a client, and keeps its own pointer.
+	if ( client->ps.lockedTarget > 0 && client->ps.lockedTarget <= level.maxclients ) {
+		gentity_t	*foe;
+		foe = &g_entities[client->ps.lockedTarget - 1];
+		if ( foe->client && foe->client->pers.connected == CON_CONNECTED ) {
+			client->ps.lockedPlayer = &foe->client->ps;
+			client->ps.lockedPosition = &foe->r.currentOrigin;
+		}
+		else {
+			client->ps.lockedPlayer = NULL;
+			client->ps.lockedPosition = NULL;
+		}
+	}
 	Pmove(&pm);
 	// lock-on by pairs: a new lock on someone already in a pair is undone
 	if ( client->ps.lockedTarget > 0 && client->ps.lockedTarget <= MAX_CLIENTS && client->ps.lockedTarget != oldLockedTarget

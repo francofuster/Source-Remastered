@@ -2682,7 +2682,7 @@ void PM_CheckDrift(void){
 }
 void PM_EndDrift(void){
 	pm->ps->powerups[PW_DRIFTING] = 0;
-	if(pm->ps->lockedTarget > 0){pm->ps->lockedPlayer->powerups[PW_DRIFTING] = 0;}
+	if(pm->ps->lockedTarget > 0 && pm->ps->lockedPlayer){pm->ps->lockedPlayer->powerups[PW_DRIFTING] = 0;}
 }
 void PM_StopDrift(void){
 	if(pm->ps->powerups[PW_DRIFTING] == 1){PM_EndDrift();}
@@ -2765,6 +2765,9 @@ void PM_Melee(void){
 		PM_StopMelee();
 		return;
 	}
+	// the frame that takes a new lock-on (PM_CheckLockon) has no pointer to
+	// the opponent yet: the game and the prediction set it before the next Pmove
+	if(!pm->ps->lockedPlayer){return;}
 	damage = 0;
 	animation = pm->ps->bitFlags & usingMelee ? ANIM_FLY_IDLE : 0;
 	meleeCharge = pm->ps->timers[tmMeleeCharge];
@@ -3133,7 +3136,7 @@ void PM_Weapon(void){
 	if(pm->ps->persistant[PERS_TEAM] == TEAM_SPECTATOR){return;}
 	if(pm->ps->bitFlags & isStruggling || pm->ps->bitFlags & usingSoar
 		|| pm->ps->bitFlags & isPreparing || pm->ps->timers[tmTransform] > 1 || pm->ps->bitFlags & usingMelee
-		|| (pm->ps->lockedTarget && pm->ps->lockedPlayer->timers[tmKnockback] && VectorLength(pm->ps->velocity))){
+		|| (pm->ps->lockedTarget && pm->ps->lockedPlayer && pm->ps->lockedPlayer->timers[tmKnockback] && VectorLength(pm->ps->velocity))){
 		if(pm->ps->timers[tmTransform] > 1 || pm->ps->bitFlags & usingMelee){PM_WeaponRelease();}
 		return;
 	}
@@ -3142,7 +3145,7 @@ void PM_Weapon(void){
 		PM_WeaponRelease();
 		return;
 	}
-	if(pm->ps->lockedTarget && pm->ps->lockedPlayer->timers[tmKnockback] && VectorLength(pm->ps->velocity)){return;}
+	if(pm->ps->lockedTarget && pm->ps->lockedPlayer && pm->ps->lockedPlayer->timers[tmKnockback] && VectorLength(pm->ps->velocity)){return;}
 	if(pm->ps->pm_flags & PMF_ATTACK1_HELD){
 		if(!(pm->cmd.buttons & BUTTON_ATTACK)){pm->ps->pm_flags &= ~PMF_ATTACK1_HELD;}
 		else{return;}
@@ -3358,7 +3361,7 @@ PM_CheckLockon
 ================*/
 void PM_StopLockon(void){
 	if(pm->ps->lockedTarget>0){
-		pm->ps->lockedPlayer->bitFlags &= ~isTargeted;
+		if(pm->ps->lockedPlayer){pm->ps->lockedPlayer->bitFlags &= ~isTargeted;}
 		PM_AddEvent(EV_LOCKON_END);
 	}
 	pm->ps->lockedPosition = NULL;
@@ -3368,7 +3371,7 @@ void PM_CheckLockon(void){
 	int	lockBox;
 	trace_t	trace;
 	vec3_t minSize,maxSize,forward,up,end;
-	if(pm->ps->lockedTarget > 0){
+	if(pm->ps->lockedTarget > 0 && pm->ps->lockedPlayer){
 		pm->ps->lockedPlayerData[lkPowerCurrent] = pm->ps->lockedPlayer->powerLevel[plCurrent];
 		pm->ps->lockedPlayerData[lkPowerHealth] = pm->ps->lockedPlayer->powerLevel[plHealth];
 		pm->ps->lockedPlayerData[lkPowerMaximum] = pm->ps->lockedPlayer->powerLevel[plMaximum];
@@ -3597,7 +3600,7 @@ void PmoveSingle(pmove_t *pmove){
 	if(pm->cmd.buttons != 0 && pm->cmd.buttons != 2048){
 		//Com_Printf("%i\n",pm->cmd.buttons);
 	}
-	if(pm->ps->lockedTarget > 0){
+	if(pm->ps->lockedTarget > 0 && pm->ps->lockedPosition){
 		meleeRange = Distance(pm->ps->origin,*(pm->ps->lockedPosition)) <= 48 ? qtrue : qfalse;
 	}
 	if(!(pm->ps->bitFlags & isTransforming)){

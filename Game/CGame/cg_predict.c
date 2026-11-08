@@ -335,6 +335,51 @@ static void CG_TouchTriggerPrediction( void ) {
 
 /*
 =================
+CG_PredictLockedPointers
+
+With lock-on, Pmove reads ps->lockedPlayer and ps->lockedPosition, two
+pointers the server sets and that never travel in the snapshot: on the
+client they are NULL. The QVM read garbage at address 0 there; native code
+crashes. Point them at what the client knows of the opponent: where it
+is, who it is and its power levels. What Pmove writes into it is thrown
+away on the next prediction.
+=================
+*/
+static playerState_t	cg_predictLockedPS;
+static vec3_t			cg_predictLockedOrigin;
+
+static void CG_PredictLockedPointers( void ) {
+	playerState_t	*ps = &cg.predictedPlayerState;
+	centity_t		*foe;
+	int				num;
+
+	ps->lockedPlayer = NULL;
+	ps->lockedPosition = NULL;
+	if ( ps->lockedTarget <= 0 || ps->lockedTarget > MAX_CLIENTS ) {
+		return;
+	}
+	num = ps->lockedTarget - 1;
+	foe = &cg_entities[num];
+
+	memset( &cg_predictLockedPS, 0, sizeof( cg_predictLockedPS ) );
+	VectorCopy( foe->lerpOrigin, cg_predictLockedOrigin );
+	VectorCopy( foe->lerpOrigin, cg_predictLockedPS.origin );
+	VectorCopy( foe->currentState.pos.trDelta, cg_predictLockedPS.velocity );
+	cg_predictLockedPS.clientNum = num;
+	cg_predictLockedPS.powerLevel[plCurrent] = ps->lockedPlayerData[lkPowerCurrent];
+	cg_predictLockedPS.powerLevel[plHealth] = ps->lockedPlayerData[lkPowerHealth];
+	cg_predictLockedPS.powerLevel[plMaximum] = ps->lockedPlayerData[lkPowerMaximum];
+	cg_predictLockedPS.powerLevel[plFatigue] = ps->lockedPlayerData[lkPowerMaximum];
+	if ( foe->currentState.eFlags & EF_DEAD ) {
+		cg_predictLockedPS.bitFlags |= isDead;
+	}
+	ps->lockedPlayer = &cg_predictLockedPS;
+	ps->lockedPosition = &cg_predictLockedOrigin;
+}
+
+
+/*
+=================
 CG_PredictPlayerState
 
 Generates cg.predictedPlayerState for the current cg.time
@@ -496,6 +541,7 @@ void CG_PredictPlayerState( void ) {
 		// don't predict gauntlet firing, which is only supposed to happen
 		// when it actually inflicts damage
 		cg_pmove.gauntletHit = qfalse;
+		CG_PredictLockedPointers();
 		if ( cg_pmove.pmove_fixed ) {
 			cg_pmove.cmd.serverTime = ((cg_pmove.cmd.serverTime + pmove_msec.integer-1) / pmove_msec.integer) * pmove_msec.integer;
 		}

@@ -500,6 +500,15 @@ void CL_TouchMove( usercmd_t *cmd );
 void CL_TouchDraw( void );
 void CL_TouchReset( void );
 float IN_DisplayDPI( void );		// sdl_input.c, 0 when unknown
+
+//
+// cl_aimassist.c
+//
+void CL_AimAssistInit( void );
+float CL_AimAssistLookScale( void );
+qboolean CL_AimAssistFaceTarget( void );
+void CL_AimAssist( usercmd_t *cmd, float lookYaw, float lookPitch );
+void CL_AimAssistShot( usercmd_t *cmd );
 #endif
 
 void CL_VerifyCode( void );

@@ -37,7 +37,25 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
   - Teclado en pantalla para los campos de texto (nombre, IP).
   - Vibración al entrar en boost.
   - Ocultar los controles solos al usar un mando.
-  - Contextos, macros, auto-fijado y aim assist: son F3.
+  - Menús pensados para el dedo, sin cursor: propuesta en https://claude.ai/artifact/UbfGFz7USXg42NbkdaZbGH
+
+**F3, contextos y asistencias: hecha en el emulador.** Falta probarla en un móvil, con dos dedos a la vez.
+
+- **Contextos** (`cl_touch.c`, `Touch_UpdateContext` y `Touch_Label`): los botones cambian de texto según la situación, leída del `playerState` de la instantánea.
+  - Cuerpo a cuerpo: KI pasa a COMBO, FUERTE a LANZAR y Z a CONTRA.
+  - Rival lanzado: Z pasa a PERSEGUIR y parpadea; KI, FUERTE y GUARDIA se atenúan.
+  - También ESQUIVAR (un rival a menos de 200 unidades que se acerca rápido), ROMPER, ATRÁS, FRENAR, RECUPERAR y EMPUJAR (choque de rayos).
+- **Combo guiado** (perfil Asistido, `touch_profile 1`): en cuerpo a cuerpo, mantener KI encadena golpes, una ráfaga y un lanzamiento; un toque da un golpe. Mantener FUERTE y mover el stick elige hacia dónde se lanza. El perfil Clásico (`touch_profile 0`) deja solo la fricción.
+- **LOCK:** gira la vista hacia el rival visible más cercano a la mira (primero dentro de 22°; si no hay ninguno, en cualquier dirección) y fija en el comando siguiente. El juego traza el fijado antes de aplicar los ángulos del comando (`PM_CheckLockon` va antes que `PM_UpdateViewAngles`), por eso el botón sale un comando después del giro.
+- **Aim assist** (`Engine/client/cl_aimassist.c`, solo sin lock-on):
+  - Captura 22°; fricción a 11° (la cámara gira al 55 %); imán a 5° (28°/s); sigue al rival si se mueve.
+  - El disparo se corrige hasta 2,5° hacia el rival.
+  - Auto-fijado tras 400 ms atacando con el rival en el imán.
+  - Mide desde la vista real, `cl.viewangles` más `delta_angles`: el aparecer, `setviewpos` y el lock-on mueven `delta_angles`.
+  - El servidor puede prohibirlo con `sv_aimAssist 0`. Cvars `cl_aimAssist` y `cl_aa*`; `cl_aaDebug 1` traza al pulsar LOCK y `cl_aaDebug 2` en cada frame.
+- **HUD:** en Android va arriba y un 25 % más grande (`cg_hudTop 1`, `cg_hudScale 1.25`; en PC, 0 y 1), como el del lock-on. La barra de técnicas va debajo y el stick ya no lo tapa.
+- **Probado en el emulador:** LOCK con el rival a la espalda, acercarse, entrar en cuerpo a cuerpo, el combo guiado hasta lanzarlo, PERSEGUIR y la vuelta a los textos normales. Sin probar: dos dedos a la vez, ESQUIVAR, el choque de rayos y el auto-fijado al disparar.
+- **Pruebas por adb:** las teclas inyectadas no abren la consola de forma fiable, y el texto acaba en el chat. Para mandar comandos, arrancar con `+bind F6 exec t.cfg`, subir `t.cfg` con `adb push` a la carpeta de datos y pulsar `adb shell input keyevent F6`. Con `devmap`, `cl_aaDebug 2` da la posición del bot para un `setviewpos`.
 
 ## Estructura
 
@@ -85,6 +103,9 @@ La parte de PC sigue con SDL 1.2. Todo lo de SDL 2 está dentro de `#if SDL_MAJO
 - `Engine/sys/sys_unix.c`: rutas de Android y diálogos de error. SIGABRT, SIGBUS y SIGTRAP también se dejan a debuggerd.
 - `Engine/sys/con_passive.c`: la consola escribe en logcat, línea a línea y sin códigos de color.
 - `Engine/client/cl_touch.c` (con `USE_TOUCH`): los controles táctiles. `sdl_input.c` le pasa los dedos, `CL_CreateCmd` le pide el `usercmd_t` y `SCR_DrawScreenField` lo dibuja.
+- `Engine/client/cl_aimassist.c` (con `USE_TOUCH`): el aim assist. `CL_TouchMove` lo llama al final, y `CL_CreateCmd` llama a `CL_AimAssistShot` tras `CL_FinishMove`.
+- `Engine/server/sv_init.c`: `sv_aimAssist`, en la información del sistema.
+- `Game/CGame/cg_draw.c` y `cg_weapons.c`: `cg_hudTop` y `cg_hudScale`. En PC no cambian nada.
 - `Engine/renderer/tr_backend.c`, `RB_SetViewport`: gl4es recuerda el último viewport y se salta una llamada igual, pero el viewport real de GLES puede ser otro. Tras la vista 3D de un menú, la pantalla siguiente salía encogida en ese hueco. Ahora se envía antes un valor desechable para forzar la llamada real.
 - `Engine/renderer/tr_shade.c`, `RB_OutlinesPass`: GLES no tiene `glPolygonMode`, y gl4es convierte los triángulos en líneas que el culling no descarta, así que se veía la malla entera del personaje. Con gl4es, el contorno es una cáscara invertida: las caras traseras se desplazan hacia fuera por su normal, en el color del contorno, y solo asoma un borde en la silueta. El desplazamiento crece con la distancia, para que el borde mida en píxeles lo mismo que las líneas de PC.
 - `SetupActivity` le pasa al motor la carpeta de datos (`fs_basepath` y `fs_homepath`). Justo tras arrancar el móvil, Android aún puede no ofrecer el almacenamiento compartido; entonces los datos van a la memoria interna, y el motor los busca ahí.
@@ -106,13 +127,17 @@ Son fallos que el QVM toleraba y que en nativo rompen. **También existen en Rem
 - `Engine/renderer/tr_model.c` y `tr_md4.c`: un offset calculado a mano se truncaba a `int`.
 - Prototipos que faltaban: `trap_RealTime` en `bg_local.h`, las funciones de tiers y `G_CheckSkills` en `g_local.h`, `CG_DrawChat` en `cg_local.h` y las pistas de fondo en `ui_local.h`.
 
+**Punteros del lock-on.** `Pmove` lee `ps->lockedPlayer` y `ps->lockedPosition` en cuanto hay `lockedTarget`. El servidor solo los ponía en `EV_MELEE_CHECK`, cada 300 ms, y no viajan en la instantánea, así que en el cliente siempre eran NULL. El QVM leía basura en la dirección 0; en nativo, fijar a alguien cerraba el juego.
+- `Game/Game/g_active.c`, `ClientThink_real`: se apuntan al rival antes de cada `Pmove`. Un choque de rayos, que pone en `lockedTarget` el número del misil, conserva su puntero.
+- `Game/CGame/cg_predict.c`, `CG_PredictLockedPointers`: la predicción los apunta a una copia con lo que el cliente sabe del rival.
+- `Game/Game/bg_pmove.c`: el frame en que se toma el fijado aún no los tiene. `PmoveSingle`, `PM_CheckLockon`, `PM_StopLockon`, `PM_EndDrift`, `PM_Melee` y `PM_Weapon` lo comprueban antes de leerlos.
+
 La compilación de Android falla ante cualquier truncamiento de puntero, función sin declarar o variable leída sin inicializar (`-Werror=uninitialized`, `-Werror=sometimes-uninitialized`).
 
 ## Problemas conocidos
 
 - **Bloom (F4):** con gl4es deja la pantalla en blanco. Está apagado en `Build-Android/ZEQ2/default.cfg` (`r_bloom 0`), que es la única diferencia con el de Remastered.
 - **Sombra (F4):** la del jugador es una silueta negra opaca proyectada en el suelo.
-- **HUD (F4):** la barra de técnicas queda bajo el stick; la propuesta la sube arriba.
 - **Rendimiento:** no se ha medido en un móvil. Las 125 fps del emulador usan la GPU del PC.
 - **Memoria:** `com_hunkMegs` es 768 en `default.cfg`. En partida se usan 360 MB, pero no se ha probado en un móvil con poca RAM.
 - **Contexto EGL:** al volver a la app, SDL conserva el contexto. Si un móvil lo pierde, falta recargar las texturas (`vid_restart`).

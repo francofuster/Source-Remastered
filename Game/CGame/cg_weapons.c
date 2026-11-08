@@ -23,9 +23,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cg_weapons.c -- events and effects dealing with weapons
 #include "cg_local.h"
 
+static float cg_weaponsSavedYScale;
+
+// same size as the HUD (cg_hudScale)
 static void CG_BeginUniformHudScaleWeapons( float *oldScreenXScale, float *oldScreenXBias ) {
 	*oldScreenXScale = cgs.screenXScale;
 	*oldScreenXBias = cgs.screenXBias;
+	cg_weaponsSavedYScale = cgs.screenYScale;
+	cgs.screenYScale *= CG_HudScale();
 	cgs.screenXScale = cgs.screenYScale;
 	cgs.screenXBias = 0.0f;
 }
@@ -33,6 +38,7 @@ static void CG_BeginUniformHudScaleWeapons( float *oldScreenXScale, float *oldSc
 static void CG_EndUniformHudScaleWeapons( float oldScreenXScale, float oldScreenXBias ) {
 	cgs.screenXScale = oldScreenXScale;
 	cgs.screenXBias = oldScreenXBias;
+	cgs.screenYScale = cg_weaponsSavedYScale;
 }
 
 /*
@@ -1095,7 +1101,8 @@ static void CG_DrawWeaponSelectHorCenterBar( void ) {
 	}
 
 	x = 164 - count * 15;
-	y = 418;
+	// under the HUD when it sits at the top
+	y = cg_hudTop.integer ? (int)CG_HudBelowTop() + 4 : (int)( 480.0f / CG_HudScale() ) - 62;
 
 	for ( i = 1 ; i < 16 ; i++ ) {
 		qboolean usable;

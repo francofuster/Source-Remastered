@@ -11,7 +11,10 @@ modules know nothing about touch.
   - KI, FUERTE, Z, GUARDIA, LOCK, AURA, TECNICA, VUELO and pause
   - in menus a finger is an absolute cursor plus the left mouse button
 
-Contexts, macros, auto lock and aim assist belong to phase F3.
+Phase F3 adds the contexts: the same buttons do what the situation calls
+for (free, locked on, melee, opponent launched, launched yourself, beam
+struggle), with their labels, the guided combo, the launch direction on the
+stick, the Z hints and the aim assist (cl_aimassist.c).
 Layout and thresholds: the Android proposal, section "Joystick virtual".
 ===========================================================================
 */
@@ -40,6 +43,43 @@ Layout and thresholds: the Android proposal, section "Joystick virtual".
 #define SKILL_STEP				36.0f	// dp of vertical drag per technique
 #define LAND_TRACE				160.0f	// VUELO down this close to the ground lands
 
+// Guided combo (Asistido, in melee): holding KI rushes with W, then holds
+// FUERTE past 550 ms for the power launch, over and over. A tap still breaks.
+#define COMBO_HOLD_MS			220
+#define COMBO_RUSH_MS			900
+#define COMBO_LAUNCH_MS			650
+#define COMBO_CYCLE_MS			1650
+
+// Z hints, from bg_pmove.c (PM_LockedZanzoken)
+#define ZAN_DODGE_RANGE			200
+#define ZAN_CHASE_RANGE			4000
+#define ZAN_CHASE_MAX			3
+#define DODGE_CLOSING_SPEED		300.0f
+
+typedef enum {
+	CTX_FREE,
+	CTX_LOCKED,
+	CTX_MELEE,
+	CTX_FOE_LAUNCHED,	// the opponent flies from a knockback
+	CTX_KNOCKED,		// we fly from a knockback
+	CTX_STRUGGLE		// beam struggle
+} touchContext_t;
+
+typedef enum {
+	TL_NONE,
+	TL_KI, TL_STRONG, TL_Z, TL_GUARD, TL_LOCK, TL_AURA, TL_SKILL,
+	TL_COMBO, TL_BREAK, TL_LAUNCH, TL_COUNTER, TL_DODGE, TL_CHASE, TL_BACK,
+	TL_BRAKE, TL_RECOVER, TL_PUSH,
+	TL_COUNT
+} touchLabel_t;
+
+static const char *touchLabelImages[TL_COUNT] = {
+	NULL,
+	"ki", "strong", "z", "guard", "lock", "aura", "skill",
+	"combo", "break", "launch", "counter", "dodge", "chase", "back",
+	"brake", "recover", "push"
+};
+
 typedef enum {
 	TB_KI,
 	TB_STRONG,
@@ -51,11 +91,12 @@ typedef enum {
 	TB_FLYUP,
 	TB_FLYDOWN,
 	TB_PAUSE,
+	TB_PUSH,			// only in a beam struggle
 	TB_COUNT
 } touchButtonId_t;
 
 typedef struct {
-	const char	*image;		// touch/label_<image>, NULL for none
+	touchLabel_t	image;	// label in the free context, TL_NONE for none
 	int			bits;		// usercmd buttons while held
 	float		x, y;		// center in dp: x from the right edge, y from the bottom
 							// (from the top when fromTop, x ignored when centerX)
@@ -68,24 +109,24 @@ typedef struct {
 
 	// runtime
 	float		px, py, pr, phw, phh;	// in pixels
-	qhandle_t	label;
 	int			finger;		// index in tc.fingers, -1 when up
 	int			downTime;
 	qboolean	latched;	// pressed and released before the next usercmd
 } touchButton_t;
 
 static touchButton_t touchButtons[TB_COUNT] = {
-	//            image     bits                 x      y      r    hw    hh   top     cx     look
-	/* KI      */ { "ki",     BUTTON_ATTACK,      92,    92,   44,   0,    0,  qfalse, qfalse, qtrue,  { 1.00f, 0.62f, 0.15f } },
-	/* FUERTE  */ { "strong", BUTTON_ALT_ATTACK, 188,    72,   36,   0,    0,  qfalse, qfalse, qtrue,  { 1.00f, 0.32f, 0.26f } },
-	/* Z       */ { "z",      BUTTON_TELEPORT,   162,   164,   36,   0,    0,  qfalse, qfalse, qfalse, { 0.30f, 0.86f, 1.00f } },
-	/* GUARDIA */ { "guard",  BUTTON_BLOCK,       68,   192,   34,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.58f, 1.00f } },
-	/* LOCK    */ { "lock",   BUTTON_GESTURE,     58,   108,   28,   0,    0,  qtrue,  qfalse, qfalse, { 1.00f, 0.86f, 0.30f } },
-	/* AURA    */ { "aura",   BUTTON_POWERLEVEL, 268,   194,   28,   0,    0,  qfalse, qfalse, qfalse, { 0.75f, 0.85f, 1.00f } },
-	/* TECNICA */ { "skill",  0,                 160,   254,   27,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.95f, 0.55f } },
-	/* VUELO + */ { NULL,     0,                 268,   122,    0,  27,   28,  qfalse, qfalse, qfalse, { 1.00f, 1.00f, 1.00f } },
-	/* VUELO - */ { NULL,     0,                 268,    66,    0,  27,   28,  qfalse, qfalse, qfalse, { 1.00f, 1.00f, 1.00f } },
-	/* pause   */ { NULL,     0,                   0,    32,   20,   0,    0,  qtrue,  qtrue,  qfalse, { 1.00f, 1.00f, 1.00f } },
+	//            image      bits                 x      y      r    hw    hh   top     cx     look
+	/* KI      */ { TL_KI,     BUTTON_ATTACK,      92,    92,   44,   0,    0,  qfalse, qfalse, qtrue,  { 1.00f, 0.62f, 0.15f } },
+	/* FUERTE  */ { TL_STRONG, BUTTON_ALT_ATTACK, 188,    72,   36,   0,    0,  qfalse, qfalse, qtrue,  { 1.00f, 0.32f, 0.26f } },
+	/* Z       */ { TL_Z,      BUTTON_TELEPORT,   162,   164,   36,   0,    0,  qfalse, qfalse, qfalse, { 0.30f, 0.86f, 1.00f } },
+	/* GUARDIA */ { TL_GUARD,  BUTTON_BLOCK,       68,   192,   34,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.58f, 1.00f } },
+	/* LOCK    */ { TL_LOCK,   BUTTON_GESTURE,     58,   108,   28,   0,    0,  qtrue,  qfalse, qfalse, { 1.00f, 0.86f, 0.30f } },
+	/* AURA    */ { TL_AURA,   BUTTON_POWERLEVEL, 268,   194,   28,   0,    0,  qfalse, qfalse, qfalse, { 0.75f, 0.85f, 1.00f } },
+	/* TECNICA */ { TL_SKILL,  0,                 160,   254,   27,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.95f, 0.55f } },
+	/* VUELO + */ { TL_NONE,   0,                 268,   122,    0,  27,   28,  qfalse, qfalse, qfalse, { 1.00f, 1.00f, 1.00f } },
+	/* VUELO - */ { TL_NONE,   0,                 268,    66,    0,  27,   28,  qfalse, qfalse, qfalse, { 1.00f, 1.00f, 1.00f } },
+	/* pause   */ { TL_NONE,   0,                   0,    32,   20,   0,    0,  qtrue,  qtrue,  qfalse, { 1.00f, 1.00f, 1.00f } },
+	/* EMPUJAR */ { TL_PUSH,   BUTTON_BOOST,      132,   132,   84,   0,    0,  qfalse, qfalse, qfalse, { 1.00f, 0.78f, 0.25f } },
 };
 
 typedef enum {
@@ -125,7 +166,15 @@ static struct {
 	float			skillDrag;			// dp since the last technique step
 	qboolean		skillStepped;
 
+	float			stickNX, stickNY, stickMag;	// last stick direction and travel
+	touchContext_t	ctx;
+	qboolean		zHint;				// Z is worth pressing now
+	qboolean		chaseWindow;		// after a chase: up catches, FUERTE launches back
+	qboolean		lockPressed;
+	qboolean		lockSendNext;		// LOCK turned the view: the button goes next command
+
 	qhandle_t		disc, ring, glow, knob, stickBase, pill, arrowUp, arrowDown, pause;
+	qhandle_t		labels[TL_COUNT];
 } tc;
 
 enum { AURA_NONE, AURA_WAIT, AURA_CHARGE, AURA_TIER_UP, AURA_TIER_DOWN };
@@ -135,6 +184,144 @@ static cvar_t	*touch_alpha;
 static cvar_t	*touch_scale;
 static cvar_t	*touch_lookSpeed;
 static cvar_t	*touch_debug;
+static cvar_t	*touch_profile;		// registered by cl_aimassist.c
+
+/*
+=================
+Touch_LockedEntity
+
+The opponent we are locked on, from the last snapshot; NULL if not there.
+=================
+*/
+static entityState_t *Touch_LockedEntity( void ) {
+	int num = cl.snap.ps.lockedTarget - 1;
+	int i;
+
+	if ( num < 0 ) {
+		return NULL;
+	}
+	for ( i = 0; i < cl.snap.numEntities; i++ ) {
+		entityState_t *es = &cl.parseEntities[ ( cl.snap.parseEntitiesNum + i ) & ( MAX_PARSE_ENTITIES - 1 ) ];
+
+		if ( es->number == num ) {
+			return es;
+		}
+	}
+	return NULL;
+}
+
+/*
+=================
+Touch_UpdateContext
+
+What the situation is, from our playerState and the locked opponent. The
+client does not see the melee state of the opponent, so the Z hints are
+approximations of the windows PM_LockedZanzoken opens.
+=================
+*/
+static void Touch_UpdateContext( void ) {
+	playerState_t *ps = &cl.snap.ps;
+	entityState_t *foe;
+	qboolean rearmed;
+	vec3_t line;
+	float dist = 0.0f;
+
+	tc.ctx = CTX_FREE;
+	tc.zHint = qfalse;
+	tc.chaseWindow = qfalse;
+	if ( !cl.snap.valid ) {
+		return;
+	}
+
+	foe = Touch_LockedEntity();
+	if ( foe ) {
+		VectorSubtract( foe->pos.trBase, ps->origin, line );
+		dist = VectorLength( line );
+	}
+	rearmed = ps->timers[tmZanzokenRearm] <= 0;
+	tc.chaseWindow = ps->timers[tmZanzokenChase] > 0;
+
+	if ( ps->bitFlags & isStruggling ) {
+		tc.ctx = CTX_STRUGGLE;
+	} else if ( ps->timers[tmKnockback] > 0 ) {
+		tc.ctx = CTX_KNOCKED;
+	} else if ( ps->bitFlags & usingMelee ) {
+		int state = ps->stats[stMeleeState];
+
+		tc.ctx = CTX_MELEE;
+		// being hit, not hitting back: a counter takes us behind it
+		tc.zHint = rearmed && ( state == stMeleeStartHit || state == stMeleeIdle || state == stMeleeStartDodge );
+	} else if ( foe && ( foe->legsAnim & ~ANIM_TOGGLEBIT ) == ANIM_KNOCKBACK ) {
+		tc.ctx = CTX_FOE_LAUNCHED;
+		tc.zHint = ( ps->stats[stZanzokenChain] & ZC_CHASES ) < ZAN_CHASE_MAX && dist <= ZAN_CHASE_RANGE;
+	} else if ( ps->lockedTarget > 0 ) {
+		tc.ctx = CTX_LOCKED;
+		// it rushes at us: Z dodges behind it
+		if ( foe && rearmed && !ps->timers[tmFreeze] && dist > 0.0f && dist <= ZAN_DODGE_RANGE ) {
+			VectorNormalize( line );
+			tc.zHint = -DotProduct( foe->pos.trDelta, line ) > DODGE_CLOSING_SPEED;
+		}
+	}
+}
+
+/*
+=================
+Touch_Visible
+
+Buttons that exist in the current context.
+=================
+*/
+static qboolean Touch_Visible( int button ) {
+	if ( tc.ctx == CTX_STRUGGLE ) {
+		return button == TB_PUSH || button == TB_PAUSE;
+	}
+	return button != TB_PUSH;
+}
+
+/*
+=================
+Touch_Label
+
+What a button says in the current context; *dim when it does nothing there.
+=================
+*/
+static touchLabel_t Touch_Label( int button, qboolean *dim ) {
+	qboolean assisted = touch_profile && touch_profile->integer;
+
+	*dim = qfalse;
+	switch ( button ) {
+	case TB_KI:
+		switch ( tc.ctx ) {
+		case CTX_MELEE:			return assisted ? TL_COMBO : TL_BREAK;
+		case CTX_KNOCKED:		return TL_BRAKE;
+		case CTX_FOE_LAUNCHED:	*dim = qtrue; return TL_KI;
+		default:				return TL_KI;
+		}
+	case TB_STRONG:
+		if ( tc.chaseWindow ) {
+			return TL_BACK;
+		}
+		switch ( tc.ctx ) {
+		case CTX_MELEE:			return TL_LAUNCH;
+		case CTX_KNOCKED:		return TL_RECOVER;
+		case CTX_FOE_LAUNCHED:	*dim = qtrue; return TL_STRONG;
+		default:				return TL_STRONG;
+		}
+	case TB_Z:
+		switch ( tc.ctx ) {
+		case CTX_MELEE:			return TL_COUNTER;
+		case CTX_KNOCKED:		return TL_COUNTER;
+		case CTX_FOE_LAUNCHED:	return TL_CHASE;
+		case CTX_LOCKED:		return tc.zHint ? TL_DODGE : TL_Z;
+		default:				return TL_Z;
+		}
+	case TB_GUARD:
+		*dim = tc.ctx == CTX_KNOCKED || tc.ctx == CTX_FOE_LAUNCHED;
+		return TL_GUARD;
+	default:
+		return touchButtons[button].image;
+	}
+}
 
 /*
 =================
@@ -186,6 +373,9 @@ static int Touch_HitButton( float x, float y ) {
 		float dx = x - b->px;
 		float dy = y - b->py;
 
+		if ( !Touch_Visible( i ) ) {
+			continue;
+		}
 		if ( b->pr > 0.0f ) {
 			// Generous: thumbs land a little off
 			float d = sqrt( dx * dx + dy * dy ) / ( b->pr * 1.2f );
@@ -225,6 +415,9 @@ static void Touch_ButtonDown( int button, int finger ) {
 		tc.skillDrag = 0.0f;
 		tc.skillStepped = qfalse;
 		break;
+	case TB_LOCK:
+		tc.lockPressed = qtrue;
+		break;
 	default:
 		break;
 	}
@@ -236,6 +429,12 @@ static void Touch_ButtonUp( int button ) {
 	// A tap shorter than one frame still reaches one usercmd
 	if ( b->bits || button == TB_FLYUP ) {
 		b->latched = qtrue;
+	}
+
+	// The guided combo ran: letting go must not also break
+	if ( button == TB_KI && tc.ctx == CTX_MELEE && touch_profile && touch_profile->integer &&
+		cls.realtime - b->downTime >= COMBO_HOLD_MS ) {
+		b->latched = qfalse;
 	}
 
 	switch ( button ) {
@@ -574,12 +773,15 @@ static void Touch_StickMove( usercmd_t *cmd ) {
 		}
 	}
 
+	tc.stickMag = mag;
 	if ( mag < STICK_DEAD ) {
 		return;
 	}
 
 	nx = sx / mag;
 	ny = sy / mag;
+	tc.stickNX = nx;
+	tc.stickNY = ny;
 
 	// With lock-on, melee and the F chords read only the sign of each axis.
 	// A thumb never moves straight: drop the minor axis unless it is clear.
@@ -619,11 +821,15 @@ Called by CL_CreateCmd after the keyboard, the mouse and the joystick.
 */
 void CL_TouchMove( usercmd_t *cmd ) {
 	touchButton_t *b;
+	float lookYaw = 0.0f, lookPitch = 0.0f;
+	qboolean assisted;
 	int i;
 
 	if ( !touch_enable ) {
 		return;
 	}
+	Touch_UpdateContext();
+	assisted = touch_profile && touch_profile->integer;
 
 	if ( !Touch_GameActive() ) {
 		// A menu or the console took over: the game must not see held buttons
@@ -646,22 +852,86 @@ void CL_TouchMove( usercmd_t *cmd ) {
 
 	Touch_Layout();
 
-	// Camera: drag right to turn right, drag up to look up
+	// Camera: drag right to turn right, drag up to look up. The aim assist
+	// slows it down near an opponent (friction).
 	if ( tc.lookX || tc.lookY ) {
-		cl.viewangles[YAW] -= tc.lookX * touch_lookSpeed->value;
-		cl.viewangles[PITCH] += tc.lookY * touch_lookSpeed->value;
+		float scale = touch_lookSpeed->value * CL_AimAssistLookScale();
+
+		lookYaw = -tc.lookX * scale;
+		lookPitch = tc.lookY * scale;
+		cl.viewangles[YAW] += lookYaw;
+		cl.viewangles[PITCH] += lookPitch;
 		tc.lookX = tc.lookY = 0.0f;
 	}
 
+	tc.stickMag = 0.0f;
 	if ( tc.stickFinger >= 0 ) {
 		Touch_StickMove( cmd );
 	}
 
 	for ( i = 0; i < TB_COUNT; i++ ) {
 		b = &touchButtons[i];
+		if ( i == TB_KI || !Touch_Visible( i ) ) {
+			continue;
+		}
 		if ( b->bits && ( b->finger >= 0 || b->latched ) ) {
 			cmd->buttons |= b->bits;
 		}
+	}
+
+	// KI: in melee with the Asistido profile, holding it plays the guided
+	// combo (rush with W, then FUERTE past 550 ms for the power launch);
+	// a tap still breaks. Everywhere else it is MOUSE1.
+	b = &touchButtons[TB_KI];
+	if ( tc.ctx != CTX_STRUGGLE ) {
+		if ( b->finger >= 0 ) {
+			int held = cls.realtime - b->downTime;
+
+			if ( tc.ctx == CTX_MELEE && assisted ) {
+				if ( held >= COMBO_HOLD_MS ) {
+					int phase = ( held - COMBO_HOLD_MS ) % COMBO_CYCLE_MS;
+
+					if ( phase < COMBO_RUSH_MS ) {
+						cmd->forwardmove = 127;
+					} else if ( phase < COMBO_RUSH_MS + COMBO_LAUNCH_MS ) {
+						cmd->buttons |= BUTTON_ALT_ATTACK;
+					}
+				}
+			} else {
+				cmd->buttons |= BUTTON_ATTACK;
+			}
+		} else if ( b->latched ) {
+			cmd->buttons |= BUTTON_ATTACK;
+		}
+	}
+
+	// FUERTE held in melee: the stick picks where the power launch sends it,
+	// the R, C, D and A of PC (PM_Melee reads upmove, then rightmove)
+	if ( tc.ctx == CTX_MELEE && touchButtons[TB_STRONG].finger >= 0 && tc.stickMag >= STICK_DEAD ) {
+		cmd->forwardmove = 0;
+		cmd->rightmove = 0;
+		if ( fabs( tc.stickNY ) >= fabs( tc.stickNX ) ) {
+			cmd->upmove = tc.stickNY > 0.0f ? 127 : -127;
+		} else {
+			cmd->rightmove = tc.stickNX > 0.0f ? 127 : -127;
+		}
+	}
+
+	// LOCK: face the opponent nearest to the view first, so the lock-on of
+	// the game picks that one. The game traces the lock-on before it applies
+	// the angles of the command (PM_CheckLockon runs before
+	// PM_UpdateViewAngles), so the button goes one command after the turn:
+	// up in this one, down in the next, even if the finger already left.
+	if ( tc.lockSendNext ) {
+		cmd->buttons |= BUTTON_GESTURE;
+		tc.lockSendNext = qfalse;
+	}
+	if ( tc.lockPressed ) {
+		if ( cl.snap.valid && cl.snap.ps.lockedTarget <= 0 && CL_AimAssistFaceTarget() ) {
+			cmd->buttons &= ~BUTTON_GESTURE;
+			tc.lockSendNext = qtrue;
+		}
+		tc.lockPressed = qfalse;
 	}
 
 	// VUELO up: a tap jumps, holding flies up
@@ -705,6 +975,8 @@ void CL_TouchMove( usercmd_t *cmd ) {
 	for ( i = 0; i < TB_COUNT; i++ ) {
 		touchButtons[i].latched = qfalse;
 	}
+
+	CL_AimAssist( cmd, lookYaw, lookPitch );
 }
 
 /*
@@ -746,9 +1018,9 @@ void CL_TouchRegisterMedia( void ) {
 	tc.arrowDown = re.RegisterShaderNoMip( "touch/arrow_down" );
 	tc.pause = re.RegisterShaderNoMip( "touch/pause" );
 
-	for ( i = 0; i < TB_COUNT; i++ ) {
-		touchButtons[i].label = touchButtons[i].image ?
-			re.RegisterShaderNoMip( va( "touch/label_%s", touchButtons[i].image ) ) : 0;
+	for ( i = 0; i < TL_COUNT; i++ ) {
+		tc.labels[i] = touchLabelImages[i] ?
+			re.RegisterShaderNoMip( va( "touch/label_%s", touchLabelImages[i] ) ) : 0;
 	}
 	tc.mediaRegistered = qtrue;
 }
@@ -768,6 +1040,7 @@ void CL_TouchDraw( void ) {
 		return;
 	}
 	Touch_Layout();
+	Touch_UpdateContext();
 	alpha = Com_Clamp( 0.1f, 1.0f, touch_alpha->value );
 
 	// Stick: the base where the thumb landed, or a faint hint of where it goes
@@ -795,7 +1068,7 @@ void CL_TouchDraw( void ) {
 	}
 
 	// VUELO: one capsule, two halves
-	{
+	if ( Touch_Visible( TB_FLYUP ) ) {
 		touchButton_t *up = &touchButtons[TB_FLYUP];
 		touchButton_t *down = &touchButtons[TB_FLYDOWN];
 		float cx = up->px;
@@ -818,26 +1091,36 @@ void CL_TouchDraw( void ) {
 	for ( i = 0; i < TB_COUNT; i++ ) {
 		touchButton_t *b = &touchButtons[i];
 		qboolean held = b->finger >= 0;
-		float size;
+		qboolean dim;
+		touchLabel_t label;
+		float size, a;
 
-		if ( b->pr <= 0.0f ) {
+		if ( b->pr <= 0.0f || !Touch_Visible( i ) ) {
 			continue;
 		}
 		size = b->pr * 2;
+		label = Touch_Label( i, &dim );
+		a = dim ? alpha * 0.4f : alpha;
 
-		if ( held ) {
-			Touch_DrawPic( b->px, b->py, size * 1.5f, size * 1.5f, b->tint, alpha * 0.7f, tc.glow );
+		// Z glows while its window is open (counter, dodge, chase)
+		if ( i == TB_Z && tc.zHint && !held ) {
+			float pulse = 0.55f + 0.45f * sin( cls.realtime * 0.012f );
+
+			Touch_DrawPic( b->px, b->py, size * 1.7f, size * 1.7f, b->tint, alpha * pulse, tc.glow );
 		}
-		Touch_DrawPic( b->px, b->py, size, size, NULL, alpha * ( held ? 1.0f : 0.85f ), tc.disc );
-		Touch_DrawPic( b->px, b->py, size, size, b->tint, alpha * ( held ? 1.0f : 0.8f ), tc.ring );
+		if ( held ) {
+			Touch_DrawPic( b->px, b->py, size * 1.5f, size * 1.5f, b->tint, a * 0.7f, tc.glow );
+		}
+		Touch_DrawPic( b->px, b->py, size, size, NULL, a * ( held ? 1.0f : 0.85f ), tc.disc );
+		Touch_DrawPic( b->px, b->py, size, size, b->tint, a * ( held ? 1.0f : 0.8f ), tc.ring );
 
 		if ( i == TB_PAUSE ) {
-			Touch_DrawPic( b->px, b->py, size * 0.7f, size * 0.7f, NULL, alpha, tc.pause );
-		} else if ( b->label ) {
+			Touch_DrawPic( b->px, b->py, size * 0.7f, size * 0.7f, NULL, a, tc.pause );
+		} else if ( label != TL_NONE ) {
 			// Labels are 2:1 images; short ones fill more of the button
 			float lw = size * 0.92f;
 
-			Touch_DrawPic( b->px, b->py, lw, lw * 0.5f, NULL, alpha * 1.1f, b->label );
+			Touch_DrawPic( b->px, b->py, lw, lw * 0.5f, NULL, a * 1.1f, tc.labels[label] );
 		}
 	}
 
@@ -865,6 +1148,9 @@ void CL_TouchInit( void ) {
 	touch_scale = Cvar_Get( "touch_scale", "1", CVAR_ARCHIVE );
 	touch_lookSpeed = Cvar_Get( "touch_lookSpeed", "0.3", CVAR_ARCHIVE );
 	touch_debug = Cvar_Get( "touch_debug", "0", 0 );
+
+	CL_AimAssistInit();
+	touch_profile = Cvar_Get( "touch_profile", "1", CVAR_ARCHIVE );
 
 	Com_Memset( &tc, 0, sizeof( tc ) );
 	tc.stickFinger = -1;

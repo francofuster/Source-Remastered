@@ -411,6 +411,7 @@ set(SRC_GL4ES
 )
 
 set(SRC_ENGINE_EXTRA
+  Engine/client/cl_aimassist.c
   Engine/client/cl_touch.c
   Engine/client/snd_openal.c
   Engine/sdl/sdl_glimp.c
