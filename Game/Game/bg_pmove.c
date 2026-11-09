@@ -1405,7 +1405,9 @@ float PM_CmdScale(usercmd_t *cmd){
 	totalSpeed = (pm->ps->powerLevel[plFatigue] / 72.81) + pm->ps->stats[stSpeed];
 	if(pm->ps->powerups[PW_DRIFTING] > 0){
 		totalSpeed = 500;
-		if(pm->ps->lockedPlayer->timers[tmMeleeIdle] > 1500 && pm->ps->timers[tmMeleeIdle] > 1500){totalSpeed = 1500;}
+		// a drift can outlive the lock-on (the prediction and an unlock leave
+		// no opponent): native code crashed reading it
+		if(pm->ps->lockedPlayer && pm->ps->lockedPlayer->timers[tmMeleeIdle] > 1500 && pm->ps->timers[tmMeleeIdle] > 1500){totalSpeed = 1500;}
 	}
 	if(pm->ps->timers[tmMeleeIdle] < 0){totalSpeed = 4000;}
 	scale = (float)totalSpeed * max / (127.0 * total );
@@ -3363,6 +3365,9 @@ void PM_StopLockon(void){
 	if(pm->ps->lockedTarget>0){
 		if(pm->ps->lockedPlayer){pm->ps->lockedPlayer->bitFlags &= ~isTargeted;}
 		PM_AddEvent(EV_LOCKON_END);
+		// the melee drift (both fighters) ends with the lock-on: it kept
+		// pushing the fighter on, at drift speed, after the unlock
+		PM_EndDrift();
 	}
 	// all of the lock-on goes: a lockedPlayer left over from it passed the
 	// checks of the next lock-on, whose lockedPosition was still NULL, and
