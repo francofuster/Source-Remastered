@@ -22,23 +22,23 @@ FALLBACK_FONT = r'C:\Windows\Fonts\segoeuib.ttf'
 # Labels from the proposal (button -> text)
 LABELS = {
     'ki': 'KI',
-    'strong': 'FUERTE',
+    'strong': 'STRONG',
     'z': 'Z',
-    'guard': 'GUARDIA',
+    'guard': 'GUARD',
     'lock': 'LOCK',
     'aura': 'AURA',
-    'skill': 'TÉCNICA',
+    'skill': 'SKILL',
     # Contexts (phase F3): the same buttons change what they do
     'combo': 'COMBO',
-    'break': 'ROMPER',
-    'launch': 'LANZAR',
-    'counter': 'CONTRA',
-    'dodge': 'ESQUIVA',
-    'chase': 'PERSEGUIR',
-    'back': 'DEVOLVER',
-    'brake': 'FRENAR',
-    'recover': 'RECUPERAR',
-    'push': 'EMPUJAR',
+    'break': 'BREAK',
+    'launch': 'LAUNCH',
+    'counter': 'COUNTER',
+    'dodge': 'DODGE',
+    'chase': 'CHASE',
+    'back': 'RETURN',
+    'brake': 'BRAKE',
+    'recover': 'RECOVER',
+    'push': 'PUSH',
 }
 
 

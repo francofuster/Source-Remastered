@@ -4,6 +4,15 @@ plugins {
     id "com.android.application"
 }
 
+// Release signing key: keystore.properties next to settings.gradle, never in
+// git (storeFile, storePassword, keyAlias, keyPassword). Without it a release
+// build is signed with the debug key, only good for testing.
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file("keystore.properties")
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
 android {
     namespace "io.github.francofuster.zeq2remaster"
     compileSdk 36
@@ -13,8 +22,8 @@ android {
         applicationId "io.github.francofuster.zeq2remaster"
         minSdk 24
         targetSdk 36
-        versionCode 2
-        versionName "0.2-f1"
+        versionCode project.property("zeqVersionCode").toInteger()
+        versionName project.property("zeqVersionName").toString()
 
         ndk {
             abiFilters.addAll(project.property("zeqAbis").toString().split(","))
@@ -32,6 +41,27 @@ android {
         cmake {
             path file("../../CMakeLists.txt")
             version "3.31.6"
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile rootProject.file(keystoreProps["storeFile"])
+                storePassword keystoreProps["storePassword"]
+                keyAlias keystoreProps["keyAlias"]
+                keyPassword keystoreProps["keyPassword"]
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Native code optimized (CMake Release), no debugger; the Java is
+            // small and kept as it is
+            signingConfig keystorePropsFile.exists() ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled false
+            debuggable false
         }
     }
 

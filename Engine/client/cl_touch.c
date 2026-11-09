@@ -120,7 +120,7 @@ static touchButton_t touchButtons[TB_COUNT] = {
 	/* FUERTE  */ { TL_STRONG, BUTTON_ALT_ATTACK, 188,    72,   36,   0,    0,  qfalse, qfalse, qtrue,  { 1.00f, 0.32f, 0.26f } },
 	/* Z       */ { TL_Z,      BUTTON_TELEPORT,   162,   164,   36,   0,    0,  qfalse, qfalse, qfalse, { 0.30f, 0.86f, 1.00f } },
 	/* GUARDIA */ { TL_GUARD,  BUTTON_BLOCK,       68,   192,   34,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.58f, 1.00f } },
-	/* LOCK    */ { TL_LOCK,   BUTTON_GESTURE,     58,   108,   28,   0,    0,  qtrue,  qfalse, qfalse, { 1.00f, 0.86f, 0.30f } },
+	/* LOCK    */ { TL_LOCK,   BUTTON_GESTURE,     58,   130,   28,   0,    0,  qtrue,  qfalse, qfalse, { 1.00f, 0.86f, 0.30f } },
 	/* AURA    */ { TL_AURA,   BUTTON_POWERLEVEL, 268,   194,   28,   0,    0,  qfalse, qfalse, qfalse, { 0.75f, 0.85f, 1.00f } },
 	/* TECNICA */ { TL_SKILL,  0,                 160,   254,   27,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.95f, 0.55f } },
 	/* VUELO + */ { TL_NONE,   0,                 268,   122,    0,  27,   28,  qfalse, qfalse, qfalse, { 1.00f, 1.00f, 1.00f } },
@@ -274,6 +274,10 @@ Buttons that exist in the current context.
 static qboolean Touch_Visible( int button ) {
 	if ( tc.ctx == CTX_STRUGGLE ) {
 		return button == TB_PUSH || button == TB_PAUSE;
+	}
+	// GUARD only with a lock-on, where blocking matters
+	if ( button == TB_GUARD ) {
+		return cl.snap.valid && cl.snap.ps.lockedTarget > 0;
 	}
 	return button != TB_PUSH;
 }
@@ -955,20 +959,31 @@ void CL_TouchMove( usercmd_t *cmd ) {
 		}
 	}
 
-	// AURA: the F chords. Hold to charge (F + D), swipe up or down to change tier (F + W, F + S)
+	// AURA: the F chords. Hold to charge (F + D); with the stick pushed forward
+	// it transforms (F + W) and pulled back it reverts (F + S); a swipe up or
+	// down on AURA does the same without the stick
 	b = &touchButtons[TB_AURA];
 	if ( b->finger >= 0 ) {
+		int stick = 0;
+
+		if ( tc.stickFinger >= 0 && tc.stickMag >= STICK_WALK && fabs( tc.stickNY ) >= fabs( tc.stickNX ) ) {
+			stick = tc.stickNY > 0.0f ? 1 : -1;
+		}
 		if ( tc.auraMode == AURA_WAIT && cls.realtime - b->downTime >= AURA_CHARGE_MS ) {
 			tc.auraMode = AURA_CHARGE;
 		}
 		cmd->buttons |= BUTTON_POWERLEVEL;
 		cmd->forwardmove = 0;
 		cmd->rightmove = 0;
-		switch ( tc.auraMode ) {
-		case AURA_CHARGE:		cmd->rightmove = 127; break;
-		case AURA_TIER_UP:		cmd->forwardmove = 127; break;
-		case AURA_TIER_DOWN:	cmd->forwardmove = -127; break;
-		default:				break;
+		if ( stick ) {
+			cmd->forwardmove = stick > 0 ? 127 : -127;
+		} else {
+			switch ( tc.auraMode ) {
+			case AURA_CHARGE:		cmd->rightmove = 127; break;
+			case AURA_TIER_UP:		cmd->forwardmove = 127; break;
+			case AURA_TIER_DOWN:	cmd->forwardmove = -127; break;
+			default:				break;
+			}
 		}
 	}
 

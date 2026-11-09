@@ -88,7 +88,7 @@ static const tcButton_t tcButtons[] = {
 	{ 188,  72, 36, qfalse, qfalse, "",		{ 1.00f, 0.32f, 0.26f } },
 	{ 162, 164, 36, qfalse, qfalse, "Z",	{ 0.30f, 0.86f, 1.00f } },
 	{  68, 192, 34, qfalse, qfalse, "",		{ 0.45f, 0.58f, 1.00f } },
-	{  58, 108, 28, qtrue,  qfalse, "",		{ 1.00f, 0.86f, 0.30f } },
+	{  58, 130, 28, qtrue,  qfalse, "",		{ 1.00f, 0.86f, 0.30f } },
 	{ 268, 194, 28, qfalse, qfalse, "",		{ 0.75f, 0.85f, 1.00f } },
 	{ 160, 254, 27, qfalse, qfalse, "",		{ 0.45f, 0.95f, 0.55f } },
 	{   0,  32, 20, qtrue,  qtrue,  "",		{ 1.00f, 1.00f, 1.00f } }

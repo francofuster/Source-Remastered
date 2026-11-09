@@ -1398,7 +1398,8 @@ static void G_HoldUserMissile( gentity_t *self, gentity_t *other ) {
 	int		hitTime;
 
 	if(other->s.eType == ET_PLAYER){
-		if(self->s.eType == ET_MISSILE){
+		// a beam head has no client either: its own angles
+		if(self->s.eType == ET_MISSILE || !self->client){
 			VectorCopy(self->s.angles,dir);
 		}else{
 			VectorCopy(self->client->ps.viewangles,dir);
@@ -1520,7 +1521,12 @@ void G_LocationImpact(vec3_t point, gentity_t* targ, gentity_t* attacker) {
 	int clientRotation;
 	int attackRotation;	// Degrees rotation around client.
 	int impactRotation;	// used to check back of head vs. face
-	VectorSubtract(targ->r.currentOrigin, point, attackPath); 
+	// a blast that hits the map or another missile has no client to turn
+	// (the QVM read and wrote near address 0 there, native code crashed)
+	if ( !targ || !targ->client ) {
+		return;
+	}
+	VectorSubtract(targ->r.currentOrigin, point, attackPath);
 	vectoangles(attackPath, attackAngle);
 	clientRotation = targ->client->ps.viewangles[YAW];
 	attackRotation = attackAngle[YAW];
@@ -1628,15 +1634,16 @@ void G_ImpactUserWeapon(gentity_t *self,trace_t *trace){
 	}
 	else if(self->s.eType == ET_BEAMHEAD){
 		if(other->s.eType == ET_BEAMHEAD){
-			if(!(self->client->ps.bitFlags & isStruggling)){
+			// Beams have no client: this read and set a flag near address 0 in
+			// the QVM, so it started once and crashed native code. The beam
+			// itself knows it is already in a struggle.
+			if(!self->strugglingAttack){
 				G_AddEvent(self,EV_POWER_STRUGGLE_START, DirToByte( trace->plane.normal));
 				other->enemy = self;
-				other->client->ps.bitFlags |= isStruggling;
 				self->strugglingAttack = qtrue;
 				self->s.dashDir[2] = 1.0f;
 				self->think = Think_NormalMissileStruggle;
 				self->nextthink = level.time;
-				self->client->ps.bitFlags |= isStruggling;
 				self->enemy = other;
 				self->enemy->strugglingAttack = qtrue;
 				self->enemy->s.dashDir[2] = 1.0f;
@@ -1699,11 +1706,17 @@ void G_DetachUserWeapon (gentity_t *self) {
 void G_RemoveUserWeapon (gentity_t *self) {
 	gentity_t *other;
 	other = self->enemy;
-	other->client->ps.bitFlags &= ~isStruggling;
-	self->client->ps.bitFlags &= ~isStruggling;
-	if(other->client->ps.lockedTarget >= MAX_CLIENTS){
-		other->client->ps.lockedPosition = NULL;
-		other->client->ps.lockedTarget = 0;
+	// an attack removed before it met anyone has no enemy, and a missile has
+	// no client: the QVM wrote near address 0 there, native code crashed
+	if(other && other->client){
+		other->client->ps.bitFlags &= ~isStruggling;
+		if(other->client->ps.lockedTarget >= MAX_CLIENTS){
+			other->client->ps.lockedPosition = NULL;
+			other->client->ps.lockedTarget = 0;
+		}
+	}
+	if(self->client){
+		self->client->ps.bitFlags &= ~isStruggling;
 	}
 	if (self->guided) {
 		g_entities[ self->s.clientNum ].client->ps.weaponstate = WEAPON_READY;

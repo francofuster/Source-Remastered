@@ -747,8 +747,9 @@ static void ServerOptions_Start( void ) {
 
 	timelimit	 = atoi( s_serveroptions.timelimit.field.buffer );
 	fraglimit	 = atoi( s_serveroptions.fraglimit.field.buffer );
-	powerlevel	 = atoi( s_serveroptions.powerlevel.field.buffer );
-	powerlevelMaximum = atoi( s_serveroptions.powerlevelMaximum.field.buffer );
+	// a power level is a short in the game: 32767 at most
+	powerlevel	 = Com_Clamp( 1, 32767, atoi( s_serveroptions.powerlevel.field.buffer ) );
+	powerlevelMaximum = Com_Clamp( 1, 32767, atoi( s_serveroptions.powerlevelMaximum.field.buffer ) );
 	breakLimitRate	 = atoi( s_serveroptions.breakLimitRate.field.buffer );
 	flaglimit	 = atoi( s_serveroptions.flaglimit.field.buffer );
 	dedicated	 = s_serveroptions.dedicated.curvalue;
@@ -1789,9 +1790,13 @@ static qboolean ServerOptions_Step( menufield_s *f ) {
 		for ( i = 0; i < f->field.maxchars; i++ ) {
 			max *= 10;
 		}
+		// power levels are shorts in the game: 1 to 32767
+		if ( f == &s_serveroptions.powerlevel || f == &s_serveroptions.powerlevelMaximum ) {
+			max = 32768;
+		}
 		value = atoi( f->field.buffer ) + dir * soRowSteps[ServerOptions_RowOf( f )];
-		if ( value < 0 ) {
-			value = 0;
+		if ( value < ( max == 32768 ? 1 : 0 ) ) {
+			value = ( max == 32768 ? 1 : 0 );
 		}
 		if ( value > max - 1 ) {
 			value = max - 1;

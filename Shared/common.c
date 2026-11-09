@@ -39,7 +39,14 @@ int demo_protocols[] =
 #define MIN_DEDICATED_COMHUNKMEGS 1
 #define MIN_COMHUNKMEGS		256
 #define DEF_COMHUNKMEGS		512
+#ifdef __ANDROID__
+// Large map textures (lastStand has 1600 x 1600 ones) are decoded into a
+// 10 MB zone block: with 24 MB the zone fragmented and a map could fail to
+// load. A phone has the memory; it is also the least a saved config can set.
+#define DEF_COMZONEMEGS		64
+#else
 #define DEF_COMZONEMEGS		24
+#endif
 #define DEF_COMHUNKMEGS_S	XSTRING(DEF_COMHUNKMEGS)
 #define DEF_COMZONEMEGS_S	XSTRING(DEF_COMZONEMEGS)
 

@@ -8,3 +8,8 @@ Game/CGame/cg_lockcam.c.backup4
 Game/CGame/cg_lockcam.c.backup3
 Game/CGame/cg_lockcam.c.backup2
 Game/CGame/cg_lockcam.c.backup
+
+# Android release signing key (Build-Android.ps1 -Release)
+Android/keystore.properties
+*.jks
+*.keystore

@@ -1,6 +1,6 @@
-# ZEQ2 Remaster para Android
+# ZEQ2-Lite Mobile (ZEQ2 Remaster para Android)
 
-Rama `android` de Source-Remastered. Los datos del juego para Android están en `..\Build-Android\ZEQ2`, y el APK en `..\Build-Android\ZEQ2-debug.apk`.
+Rama `android` de Source-Remastered. Los datos del juego para Android están en `..\Build-Android\ZEQ2`; el APK de pruebas en `..\Build-Android\ZEQ2-debug.apk` y el de release en `..\Build-Android\ZEQ2-<versión>.apk`. En el móvil la app se llama **ZEQ2-Lite Mobile**.
 
 Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 
@@ -55,7 +55,7 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 - **Probado en el emulador:** LOCK con el rival a la espalda, acercarse, entrar en cuerpo a cuerpo, el combo guiado hasta lanzarlo, PERSEGUIR y la vuelta a los textos normales. Sin probar: dos dedos a la vez, ESQUIVAR, el choque de rayos y el auto-fijado al disparar.
 - **Pruebas por adb:** las teclas inyectadas no abren la consola de forma fiable, y el texto acaba en el chat. Para mandar comandos, arrancar con `+bind F6 exec t.cfg`, subir `t.cfg` con `adb push` a la carpeta de datos y pulsar `adb shell input keyevent F6`. Con `devmap`, `cl_aaDebug 2` da la posición del bot para un `setviewpos`.
 
-**F4, render móvil: hecha en el emulador.** Falta el hito en un móvil de gama media: 60 fps, y 30 como mínimo, en `lastStand` con dos luchadores y auras (`cg_drawFPS 1` muestra las fps). En el emulador no sirve medir: usa la GPU del PC.
+**F4, render móvil: hecha.** Hito cumplido en un Moto G06 (Helio G85, Mali-G52, 1640 × 720, Android 15): 60 fps estables en `lastStand` (16,6 ms por frame, percentil 90 en 16,7 ms), también con bots peleando, medido con `dumpsys SurfaceFlinger --latency`.
 
 - **Resolución interna:** el juego dibuja a `r_androidHeight` píxeles de alto (720 por defecto; 0 = la del móvil) y el sistema lo escala a la pantalla, sin coste. En un móvil de 2400 × 1080 son 1600 × 720, menos de la mitad de píxeles.
   - `ZEQ2Surface` crea la superficie ya reducida (`setFixedSize` al medir la vista) y sigue dividiendo los toques por el tamaño de la vista, no por el del búfer.
@@ -67,7 +67,7 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 - **Sombras:** las de los luchadores (`cg_shadows 3`) son siluetas negras proyectadas en el suelo. Es el mismo shader que en PC (`projectionShadow` en `scripts/common.shader`, negro con `blendfunc filter`), así que no es un fallo de gl4es; se dejan como en PC.
 - **Si va lento en el móvil**, por orden: bajar `r_androidHeight` (600 o 540), `r_dynamiclight 0` (cada luz de un ataque vuelve a dibujar lo que ilumina), `cg_particlesQuality 0` (sin restos en las explosiones) y `cg_shadows 1` (una mancha en vez de la silueta).
 
-**Menús táctiles: hecha en el emulador.** Propuesta visual: https://claude.ai/artifact/UbfGFz7USXg42NbkdaZbGH. Falta probarla en un móvil.
+**Menús táctiles: hecha.** Probada en el emulador y en el Moto G06. Propuesta visual: https://claude.ai/artifact/UbfGFz7USXg42NbkdaZbGH.
 
 - **Cómo se elige el diseño:** `ui_layout` (0 según la pantalla, 1 PC, 2 móvil). En 0 es móvil si el motor tiene capa táctil y la pantalla mide menos de 600 dp de alto (`in_screenDp`, que escribe el motor); una tableta se queda con el de PC. Cada pantalla lo lee al abrirse. Con el de PC, el juego se ve y se maneja como antes.
 - **Lienzo móvil:** las pantallas convertidas se dibujan sobre 844 × 390 (un píxel de diseño es más o menos un dp) en vez de 1280 × 720. Cada una tiene su tabla de posiciones para PC y para móvil, y marca su menú con `menu.mobile`; `UI_DFit` usa el lienzo del menú activo. Al pulsar algo, el lienzo vuelve al de PC antes de abrir otra pantalla, para que una no convertida no herede el móvil.
@@ -92,6 +92,29 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
   - La actividad usa `windowSoftInputMode="adjustNothing"`: el teclado se superpone y no redimensiona el juego.
 - **Sin convertir:** la conexión y la carga (solo texto; Atrás cancela), los créditos y las pantallas antiguas que ya no se usan. Siguen con el lienzo de PC y se pueden tocar.
 - **Pendiente:** probar en un móvil (tamaños reales, el teclado), la lista de órdenes del navegador (hoy un toque pasa al siguiente) y las direcciones recientes de ADDRESS.
+
+**F5, paquete: hecha.** Falta el hito: una instalación limpia en tres móviles distintos (hecho en uno, el Moto G06).
+
+- **Primera ejecución** (`SetupActivity`):
+  - Antes de descomprimir comprueba el espacio libre: lo que falta de los datos más 64 MB. Si no hay, dice cuántos MB hacen falta y cuántos hay.
+  - El progreso se ve en MB.
+  - Si la carpeta de `Android/data` no se puede escribir, descomprime en el almacenamiento interno. Pasa cuando una desinstalación deja la carpeta vieja, con el usuario de la instalación anterior (lo vimos en el emulador con `adb uninstall`).
+  - Guarda la lista de lo que descomprime (`.zeq2data.files`). La siguiente actualización borra lo que ya no trae, sin tocar lo que escribe el juego.
+  - En el Moto G06 descomprimir los 325 MB tarda unos 21 s; una actualización con los mismos datos no descomprime nada.
+- **Versión:** `zeqVersionCode` y `zeqVersionName` en `Android/gradle.properties`. El código tiene que subir con cada APK que se reparta, o Android no lo instala encima.
+- **Release:** `.\Build-Android.ps1 -Release` compila el nativo optimizado (RelWithDebInfo), sin depurador, y deja `..\Build-Android\ZEQ2-<versión>.apk`.
+- **Firma:** la clave de release está en `Android/zeq2-release.jks` y sus datos en `Android/keystore.properties`; los dos quedan fuera de git. **Hay que guardar copia de ambos:** sin esa clave no se puede publicar una actualización que se instale encima. Sin `keystore.properties`, el release sale con la clave de depuración y `-debugkey` en el nombre.
+- **Nombre e icono:** «ZEQ2-Lite Mobile». El icono sale de `Android/tools/zeq2icon.png` con `Android/tools/make_icon.py`: adaptativo en Android 8+ (cada launcher lo recorta con su forma) y cuadrado en los anteriores.
+- **Instalar en un móvil por Wi-Fi:** activar la depuración inalámbrica, `adb pair <ip:puerto> <código>` con el diálogo «Vincular con código» abierto, y luego `adb connect <ip:puerto>`. Con varios dispositivos conectados: `.\Build-Android.ps1 -Install -Device <serie>`.
+- **Una APK firmada con otra clave** (las de depuración de antes) no se instala encima: hay que desinstalar, y eso borra los datos descomprimidos y la configuración.
+
+**Cambios tras probar en el móvil:**
+- LOCK más abajo, para no taparse con el HUD del rival.
+- Los textos de los botones, en inglés: STRONG, GUARD, SKILL, COMBO, LAUNCH, COUNTER, CHASE, DODGE, RETURN, BRAKE, RECOVER, PUSH.
+- GUARD solo aparece con un rival fijado.
+- AURA con el stick: mantener AURA y empujar el stick hacia delante transforma (F + W); hacia atrás, destransforma (F + S). Sin stick carga, y deslizar sobre AURA sigue funcionando.
+- Crear partida: el poder (y el poder máximo) no pasa de 32767, el máximo del juego.
+- Memoria: en una instalación limpia `lastStand` no cargaba («Z_Malloc: failed on allocation of 10240040 bytes from the main zone»): sus texturas de 1600 × 1600 piden un bloque de 10 MB. En Android `com_zoneMegs` vale 64 (`Shared/common.c` y `default.cfg`).
 
 ## Estructura
 
@@ -122,6 +145,8 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 .\Build-Android.ps1 -Install -Run                # instalar, abrir y seguir el log
 .\Build-Android.ps1 -NoBuild -Run -Map desert    # entrar directo en un mapa
 .\Build-Android.ps1 -Clean -Install              # desinstalar antes: borra datos y configuración
+.\Build-Android.ps1 -Release                     # APK de release firmada: ..\Build-Android\ZEQ2-<versión>.apk
+.\Build-Android.ps1 -Install -Device <serie>     # con varios dispositivos (adb devices)
 ```
 
 En el móvil, los datos quedan en `Android/data/io.github.francofuster.zeq2remaster/files/ZEQ2`. El motor usa esa carpeta como `fs_basepath` y como `fs_homepath`, así que la configuración y `qconsole.log` también van ahí. Se pueden ver por USB.
@@ -181,6 +206,5 @@ La compilación de Android falla ante cualquier truncamiento de puntero, funció
 - **Rendimiento:** no se ha medido en un móvil. Las 125 fps del emulador usan la GPU del PC.
 - **Memoria:** `com_hunkMegs` es 768 en `default.cfg`. En partida se usan 360 MB, pero no se ha probado en un móvil con poca RAM.
 - **Contexto EGL:** al volver a la app, SDL conserva el contexto. Si un móvil lo pierde, falta recargar las texturas (`vid_restart`).
-- **Datos antiguos:** si una versión nueva quita archivos de los datos, los antiguos se quedan en el móvil.
 - **Sonido (también en PC):** `players/vegeta*/default.grfx` pide `skills/energyBeam/beamCharging.ogg`, pero el archivo se llama `beamCharge.ogg`.
-- **Firma:** el APK está firmado con la clave de depuración.
+- **Ataques de ki (también en PC):** `g_usermissile.c` leía y escribía el cliente de entidades que no lo tienen (un ataque que choca con el mapa, que se borra sin haber tocado a nadie, o dos rayos que chocan). El QVM escribía en memoria baja de la VM sin cerrarse; en nativo cerraba el juego al pelear contra bots. Corregido en la rama `android`.

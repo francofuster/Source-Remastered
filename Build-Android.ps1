@@ -10,8 +10,15 @@
     .\Build-Android.ps1 -Run               Starts the game and follows the engine log
     .\Build-Android.ps1 -Run -Map desert   Starts straight into a map
     .\Build-Android.ps1 -Clean -Install    Uninstalls first: also deletes the unpacked data and config
+    .\Build-Android.ps1 -Release           Release APK (optimized, no debugger): ..\Build-Android\ZEQ2-<version>.apk
+    .\Build-Android.ps1 -Device <serial>   Picks the device when adb sees more than one (adb devices)
 
     The options can be combined: .\Build-Android.ps1 -Install -Run
+
+    A release is signed with the key named in Android\keystore.properties
+    (storeFile, storePassword, keyAlias, keyPassword; never commit it). Without
+    that file it gets the debug key and "-debugkey" in its name: fine to
+    test, but players could not update it to a properly signed APK.
 #>
 param(
     [switch]$Emulator,
@@ -19,6 +26,8 @@ param(
     [switch]$Run,
     [switch]$Clean,
     [switch]$NoBuild,
+    [switch]$Release,
+    [string]$Device,
     [string]$Map
 )
 
@@ -31,6 +40,14 @@ $output   = Join-Path (Split-Path $source -Parent) 'Build-Android'
 $sdk      = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { 'D:\Android' }
 $adb      = Join-Path $sdk 'platform-tools\adb.exe'
 $apk      = Join-Path $output 'ZEQ2-debug.apk'
+$adbArgs  = if ($Device) { @('-s', $Device) } else { @() }
+
+if ($Release) {
+    $props = Get-Content (Join-Path $source 'Android\gradle.properties')
+    $version = (($props | Where-Object { $_ -match '^zeqVersionName=' }) -replace '^zeqVersionName=', '').Trim()
+    $signed = Test-Path (Join-Path $source 'Android\keystore.properties')
+    $apk = Join-Path $output ( 'ZEQ2-' + $version + $( if ($signed) { '' } else { '-debugkey' } ) + '.apk' )
+}
 
 function Adb {
     # adb reports progress on stderr. Windows PowerShell turns that into an
@@ -38,7 +55,7 @@ function Adb {
     $old = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & $adb @args 2>&1 | ForEach-Object { "$_" }
+        & $adb @adbArgs @args 2>&1 | ForEach-Object { "$_" }
     } finally {
         $ErrorActionPreference = $old
     }
@@ -48,7 +65,7 @@ function Adb {
 if (-not $NoBuild) {
     if (-not $env:JAVA_HOME) { $env:JAVA_HOME = 'C:\Program Files\Java\jdk-27' }
 
-    $gradleArgs = @(':app:assembleDebug', '--console=plain')
+    $gradleArgs = @( $( if ($Release) { ':app:assembleRelease' } else { ':app:assembleDebug' } ), '--console=plain')
     if ($Emulator) { $gradleArgs += '-PzeqAbis=arm64-v8a,x86_64' }
 
     Push-Location (Join-Path $source 'Android')
@@ -60,13 +77,20 @@ if (-not $NoBuild) {
     }
 
     New-Item -ItemType Directory -Force $output | Out-Null
-    Copy-Item (Join-Path $source 'Android\app\build\outputs\apk\debug\app-debug.apk') $apk -Force
+    if ($Release) {
+        Copy-Item (Join-Path $source 'Android\app\build\outputs\apk\release\app-release.apk') $apk -Force
+        if (-not $signed) {
+            Write-Warning 'No Android\keystore.properties: signed with the debug key, for testing only.'
+        }
+    } else {
+        Copy-Item (Join-Path $source 'Android\app\build\outputs\apk\debug\app-debug.apk') $apk -Force
+    }
     Write-Host "APK: $apk"
 }
 
 if ($Clean) {
     # Ignore the error when it was not installed
-    & $adb uninstall $package 2>&1 | ForEach-Object { "$_" }
+    & $adb @adbArgs uninstall $package 2>&1 | ForEach-Object { "$_" }
 }
 
 if ($Install) {
@@ -82,5 +106,5 @@ if ($Run) {
         Adb shell am start -n $launcher
     }
     # ZEQ2 is the engine console. The others show why a start fails.
-    & $adb logcat -v brief -s ZEQ2:V SDL:V 'SDL/APP:V' libc:F DEBUG:V AndroidRuntime:E
+    & $adb @adbArgs logcat -v brief -s ZEQ2:V SDL:V 'SDL/APP:V' libc:F DEBUG:V AndroidRuntime:E
 }

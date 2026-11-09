@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="setup_unpacking">Preparando los datos del juego. Solo ocurre la primera vez.</string>
-    <string name="setup_failed">No se pudieron preparar los datos del juego: %1$s\nComprueba que haya al menos 400 MB libres y vuelve a abrir el juego.</string>
+    <string name="setup_failed">No se pudieron preparar los datos del juego: %1$s\nComprueba el espacio libre y vuelve a abrir el juego.</string>
     <string name="setup_missing">Este APK no trae los datos del juego.</string>
+    <string name="setup_progress">%1$s de %2$s MB</string>
+    <string name="setup_space">Los datos del juego necesitan %1$s MB libres y hay %2$s MB. Libera espacio y vuelve a abrir el juego.</string>
 </resources>
