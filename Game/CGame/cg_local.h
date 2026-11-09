@@ -1110,7 +1110,7 @@ extern	vmCvar_t		cg_hudTop;
 extern	vmCvar_t		cg_hudScale;
 #ifdef __ANDROID__
 #define CG_HUDTOP_DEFAULT	"1"
-#define CG_HUDSCALE_DEFAULT	"1.25"
+#define CG_HUDSCALE_DEFAULT	"1.45"
 #else
 #define CG_HUDTOP_DEFAULT	"0"
 #define CG_HUDSCALE_DEFAULT	"1"

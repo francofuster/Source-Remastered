@@ -83,14 +83,14 @@ typedef struct {
 	float		tint[3];
 } tcButton_t;
 
+// without a lock-on: LOCK sits where GUARD shows up once locked, and the
+// second attack is KI slid left
 static const tcButton_t tcButtons[] = {
 	{  92,  92, 44, qfalse, qfalse, "KI",	{ 1.00f, 0.62f, 0.15f } },
-	{ 188,  72, 36, qfalse, qfalse, "",		{ 1.00f, 0.32f, 0.26f } },
-	{ 162, 164, 36, qfalse, qfalse, "Z",	{ 0.30f, 0.86f, 1.00f } },
-	{  68, 192, 34, qfalse, qfalse, "",		{ 0.45f, 0.58f, 1.00f } },
-	{  58, 130, 28, qtrue,  qfalse, "",		{ 1.00f, 0.86f, 0.30f } },
+	{ 188,  72, 36, qfalse, qfalse, "Z",	{ 0.30f, 0.86f, 1.00f } },
+	{  68, 192, 28, qfalse, qfalse, "",		{ 1.00f, 0.86f, 0.30f } },
 	{ 268, 194, 28, qfalse, qfalse, "",		{ 0.75f, 0.85f, 1.00f } },
-	{ 160, 254, 27, qfalse, qfalse, "",		{ 0.45f, 0.95f, 0.55f } },
+	{ 162, 164, 27, qfalse, qfalse, "",		{ 0.45f, 0.95f, 0.55f } },
 	{   0,  32, 20, qtrue,  qtrue,  "",		{ 1.00f, 1.00f, 1.00f } }
 };
 
@@ -212,7 +212,8 @@ static void TouchControls_DrawPreview( void ) {
 	color[0] = color[1] = color[2] = 1.0f; color[3] = 0.7f * alpha;
 	UI_DRoundEdge( x - r, y, 2 * r, ( 122 - 66 + 56 ) * scale * s, r, color );
 
-	UI_DText( 516, 264, "Size and opacity change it as you drag.", 12, UI_LEFT, zeq_text3 );
+	UI_DText( 516, 264, "KI slid left: second attack.", 12, UI_LEFT, zeq_text3 );
+	UI_DText( 516, 280, "AURA slid left: lower ki.", 12, UI_LEFT, zeq_text3 );
 }
 
 static void TouchControls_Draw( void ) {

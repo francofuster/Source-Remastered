@@ -24,10 +24,12 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 - **Menús:** el dedo es un cursor absoluto más el botón izquierdo. Se tocó, con éxito, PLAY → CREATE → FIGHT!, la pausa y RESUME.
 - **Controles en partida** (`Engine/client/cl_touch.c`, medidas de la propuesta):
   - **Stick flotante** en la mitad izquierda. Por debajo del 50 % camina; más allá del 120 % durante 120 ms activa el boost. Con lock-on usa 8 sectores.
-  - **Cámara:** se gira arrastrando en la mitad derecha, o arrastrando fuera de KI o FUERTE sin soltar el botón.
-  - **Botones:** KI, FUERTE, Z, GUARDIA y LOCK.
-  - **AURA:** mantener carga ki; deslizar arriba o abajo cambia de tier.
-  - **VUELO:** un toque en ▲ salta, mantener ▲ sube y ▼ baja (aterriza cerca del suelo).
+  - **Cámara:** se gira arrastrando en la mitad derecha, o arrastrando fuera de KI sin soltar el botón.
+  - **Botones:** KI, Z, GUARDIA, LOCK, AURA, TÉCNICA y VUELO. FUERTE ya no es un botón: es KI deslizado a la izquierda.
+  - **KI:** al tocarlo espera hasta 200 ms sin mandar nada. Si en ese tiempo se desliza 16 dp a la izquierda, es el segundo ataque (MOUSE2, FUERTE, o LANZAR, RECUPERAR o VOLVER según el momento); si no, es KI. Esperar hace falta porque un ataque que no se carga sale en cuanto se aprieta su botón. Un toque corto sigue siendo KI. Bajo la palabra KI se ve la del segundo ataque con una flecha ◀; al deslizar, el botón dice esa palabra y toma el rojo de FUERTE.
+  - **Sitios:** Z donde estaba FUERTE, TÉCNICA donde estaba Z. Sin lock-on, LOCK está donde aparece GUARDIA; con lock-on, GUARDIA ocupa ese sitio y LOCK sube, debajo del HUD del rival.
+  - **AURA:** es F + WASD bajo un pulgar. Mantener carga ki (F + D); deslizar a la izquierda y mantener baja el ki (F + A), y al volver al centro carga otra vez; deslizar arriba o abajo cambia de tier (F + W, F + S). Mientras se mantiene, alrededor aparecen TRANSFORM, LOWER KI y REVERT, y se ilumina el que está en uso; el aro se vuelve dorado al cargar y verde agua al bajar.
+  - **VUELO:** en el suelo, un toque en ▲ salta y mantenerlo despega; en el aire ▲ solo sube (la R de PC). ▼ baja y aterriza cerca del suelo.
   - **TÉCNICA:** un toque pasa a la técnica siguiente; deslizar arriba o abajo recorre la lista.
   - **Pausa.**
 - **Probado en el emulador, con un solo dedo:** stick, cámara, KI, AURA, VUELO, TÉCNICA, la pausa y los menús. Las combinaciones a la vez (stick y botón) necesitan un móvil.
@@ -51,7 +53,7 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
   - Auto-fijado tras 400 ms atacando con el rival en el imán.
   - Mide desde la vista real, `cl.viewangles` más `delta_angles`: el aparecer, `setviewpos` y el lock-on mueven `delta_angles`.
   - El servidor puede prohibirlo con `sv_aimAssist 0`. Cvars `cl_aimAssist` y `cl_aa*`; `cl_aaDebug 1` traza al pulsar LOCK y `cl_aaDebug 2` en cada frame.
-- **HUD:** en Android va arriba y un 25 % más grande (`cg_hudTop 1`, `cg_hudScale 1.25`; en PC, 0 y 1), como el del lock-on. La barra de técnicas va debajo y el stick ya no lo tapa.
+- **HUD:** en Android va arriba y un 45 % más grande (`cg_hudTop 1`, `cg_hudScale 1.45`; en PC, 0 y 1), como el del lock-on. El del rival usa la misma escala. Las instalaciones que guardaron 1,25 pasan a 1,45 una sola vez (`cg_hudScaleVersion`). La barra de técnicas va debajo y el stick ya no lo tapa.
 - **Probado en el emulador:** LOCK con el rival a la espalda, acercarse, entrar en cuerpo a cuerpo, el combo guiado hasta lanzarlo, PERSEGUIR y la vuelta a los textos normales. Sin probar: dos dedos a la vez, ESQUIVAR, el choque de rayos y el auto-fijado al disparar.
 - **Pruebas por adb:** las teclas inyectadas no abren la consola de forma fiable, y el texto acaba en el chat. Para mandar comandos, arrancar con `+bind F6 exec t.cfg`, subir `t.cfg` con `adb push` a la carpeta de datos y pulsar `adb shell input keyevent F6`. Con `devmap`, `cl_aaDebug 2` da la posición del bot para un `setviewpos`.
 
@@ -115,6 +117,16 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 - AURA con el stick: mantener AURA y empujar el stick hacia delante transforma (F + W); hacia atrás, destransforma (F + S). Sin stick carga, y deslizar sobre AURA sigue funcionando.
 - Crear partida: el poder (y el poder máximo) no pasa de 32767, el máximo del juego.
 - Memoria: en una instalación limpia `lastStand` no cargaba («Z_Malloc: failed on allocation of 10240040 bytes from the main zone»): sus texturas de 1600 × 1600 piden un bloque de 10 MB. En Android `com_zoneMegs` vale 64 (`Shared/common.c` y `default.cfg`).
+
+**1.4-alpha2 (después de 1.4-alpha1):**
+- **Cierre al fijar otra vez (también latente en PC):** `PM_StopLockon` borraba `lockedTarget` y `lockedPosition` pero dejaba `lockedPlayer` apuntando al rival anterior. Al fijar de nuevo, `PM_CheckLockon` ponía el nuevo `lockedTarget` y, en ese mismo frame, `PM_Melee` pasaba el control con ese puntero viejo y leía `lockedPosition`, que seguía en NULL. Fijar, soltar y fijar cerraba el juego siempre. Ahora soltar y fijar borran los tres; `PM_Melee` exige los dos punteros, la vista de lock-on mira el puntero y no `*ps->lockedPosition`, y el bloqueo de un ataque (`g_usermissile.c`) tampoco deja un `lockedPlayer` viejo.
+- HUD más grande (1,45), también el del rival.
+- KI deslizado a la izquierda dispara el segundo ataque; FUERTE deja de ser un botón. Z pasa a su sitio, TÉCNICA al de Z, y LOCK al de GUARDIA mientras no hay lock-on.
+- Pantalla de carga: el panel de consejos es más grande en el móvil y los consejos hablan de los controles táctiles; sin el marco azul alrededor del icono del jugador.
+- VUELO ▲ en el aire: al soltarlo enviaba un salto, que en el aire es el Espacio de PC (planear), y el luchador daba un tirón hacia delante. Ahora en el aire solo sube, y soltarlo salta solo tras un toque corto.
+- Bajar el ki (F + A) sin otro botón: mantener AURA y deslizar a la izquierda. Propuesta: https://claude.ai/artifact/2Mh63vvNbfd8ey5oUkem1W.
+- Deslizar AURA arriba o abajo casi nunca transformaba. El servidor mira las teclas de tier cada 300 ms (`PM_CheckTransform` → `EV_TIERCHECK` → `checkTier`), y un deslizamiento rápido las mandaba menos tiempo. Uno lento, además, ya había pasado a cargar y se ignoraba. Ahora cuenta a cualquier velocidad, también después de empezar a cargar, y el F + W o F + S se sigue mandando 450 ms aunque se suelte AURA (como los bots, `BOTLITE_TIER_HOLD_MS`). AURA con el stick también lo mantiene 450 ms como mínimo.
+- Menú principal en el móvil: la placa del nombre mantiene la proporción de su imagen y ya no lleva «Change fighter».
 
 ## Estructura
 

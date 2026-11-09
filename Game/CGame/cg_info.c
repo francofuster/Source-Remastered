@@ -45,6 +45,21 @@ static vec4_t	ld_text3	= { 0.68f, 0.71f, 0.85f, 1.00f };
 static vec4_t	ld_gold		= { 0.95f, 0.70f, 0.24f, 1.00f };
 static vec4_t	ld_ki		= { 0.33f, 0.59f, 1.00f, 1.00f };
 
+#ifdef __ANDROID__
+// the touch controls (Engine/client/cl_touch.c)
+static const char *loadingTips[] = {
+	"Tap LOCK to face the nearest rival and lock on. With a lock-on, GUARD blocks.",
+	"Hold AURA to charge ki. Slide AURA up to transform and down to go back.",
+	"Hold AURA and slide it left to lower your ki: fatigue recovers much faster.",
+	"Slide KI to the left to fire your second attack.",
+	"Z dodges, counters and chases. It glows when the moment is right.",
+	"Tap SKILL for your next technique, or slide on it to go through the list.",
+	"Drag on the right half of the screen to look around.",
+	"Push the stick past its ring for a moment to boost.",
+	"Hold the up arrow to fly. On the ground, a tap jumps.",
+	"Options > Touch controls: button size, opacity, look speed and aim assist."
+};
+#else
 static const char *loadingTips[] = {
 	"Press G to lock on to the nearest opponent and keep them in view.",
 	"Hold F and W to power up to your next transformation.",
@@ -52,6 +67,7 @@ static const char *loadingTips[] = {
 	"Press R to fly up and C to fly down.",
 	"Hold F1 to see the scores of the match."
 };
+#endif
 
 /*
 =======================================================================
@@ -413,9 +429,6 @@ static void LD_DrawFighters( float x, float y ) {
 
 		trap_R_SetColor( NULL );
 		LD_Pic( x, y, 44, 44, trap_R_RegisterShaderNoMip( va( "players/%s/icon_default.png", model ) ) );
-		if ( i == cg.clientNum ) {
-			LD_Frame( x - 2, y - 2, 48, 48, ld_ki );
-		}
 		LD_Text( x + 54, y + 2, name, 18, UI_LEFT|UI_DROPSHADOW, ld_white );
 		LD_Text( x + 54, y + 23, va( "%s  -  %s", model, ( i == cg.clientNum ) ? "you" : ( bot ? "bot" : "fighter" ) ), 15, UI_LEFT, ld_text3 );
 		x += 74 + LD_TextWidth( name, 18 ) + 30;
@@ -466,11 +479,20 @@ void CG_DrawInformation( void ) {
 
 	// tip of the day
 	tip = ( atoi( Info_ValueForKey( CG_ConfigString( CS_SYSTEMINFO ), "sv_serverid" ) ) & 0x7fffffff ) % ( sizeof( loadingTips ) / sizeof( loadingTips[0] ) );
+#ifdef __ANDROID__
+	// a phone shows the canvas at about its real size: bigger panel and text
+	LD_Glass( 700 + ld_extra, 30, 540, 176 );
+	trap_R_SetColor( NULL );
+	LD_Pic( 728 + ld_extra, 60, 40, 48, trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" ) );
+	LD_Prop( 790 + ld_extra, 56, "TIP", 20, UI_LEFT, ld_gold );
+	LD_WrappedText( 790 + ld_extra, 86, loadingTips[tip], 27, 420, ld_white );
+#else
 	LD_Glass( 860 + ld_extra, 30, 380, 118 );
 	trap_R_SetColor( NULL );
 	LD_Pic( 884 + ld_extra, 54, 30, 36, trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" ) );
 	LD_Prop( 928 + ld_extra, 52, "TIP", 15, UI_LEFT, ld_gold );
 	LD_WrappedText( 928 + ld_extra, 72, loadingTips[tip], 19, 290, ld_white );
+#endif
 
 	// map name and rules
 	LD_Prop( 60 - ld_extra, 420, "LOADING", 15, UI_LEFT, ld_gold );

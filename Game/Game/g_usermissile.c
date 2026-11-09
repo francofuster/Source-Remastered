@@ -1573,6 +1573,7 @@ void G_ImpactUserWeapon(gentity_t *self,trace_t *trace){
 				if(!other->client->ps.lockedTarget){
 					other->client->ps.lockedTarget = self->s.number;
 					other->client->ps.lockedPosition = &self->r.currentOrigin;
+					other->client->ps.lockedPlayer = NULL;	// a blast, not a player
 				}
 				return;
 			}
@@ -1711,6 +1712,7 @@ void G_RemoveUserWeapon (gentity_t *self) {
 	if(other && other->client){
 		other->client->ps.bitFlags &= ~isStruggling;
 		if(other->client->ps.lockedTarget >= MAX_CLIENTS){
+			other->client->ps.lockedPlayer = NULL;
 			other->client->ps.lockedPosition = NULL;
 			other->client->ps.lockedTarget = 0;
 		}

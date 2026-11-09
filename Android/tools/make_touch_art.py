@@ -41,6 +41,13 @@ LABELS = {
     'push': 'PUSH',
 }
 
+# AURA guide (left of its arrows): flick up, slide left and hold, flick down
+GUIDES = {
+    'transform': 'TRANSFORM',
+    'lower': 'LOWER KI',
+    'revert': 'REVERT',
+}
+
 
 def canvas(w, h):
     return Image.new('RGBA', (w * SS, h * SS), (0, 0, 0, 0))
@@ -134,15 +141,17 @@ def pill():
     finish(img, w, h, 'pill')
 
 
-def arrow(up, name):
+def arrow(direction, name):
     n = 128
     img = canvas(n, n)
     d = ImageDraw.Draw(img)
     s = n * SS
-    if up:
+    if direction == 'up':
         pts = [(s * 0.5, s * 0.22), (s * 0.82, s * 0.72), (s * 0.18, s * 0.72)]
-    else:
+    elif direction == 'down':
         pts = [(s * 0.5, s * 0.78), (s * 0.82, s * 0.28), (s * 0.18, s * 0.28)]
+    else:
+        pts = [(s * 0.22, s * 0.5), (s * 0.72, s * 0.18), (s * 0.72, s * 0.82)]
     d.polygon(pts, fill=(255, 255, 255, 255))
     finish(img, n, n, name)
 
@@ -188,6 +197,28 @@ def label(key, text):
     finish(img, w, h, 'label_' + key)
 
 
+def guide(key, text):
+    """Words of the AURA guide: one height for all, right aligned on a
+    384x96 image, so they end where their arrow starts (cl_touch.c)."""
+    w, h = 384, 96
+    img = canvas(w, h)
+    d = ImageDraw.Draw(img)
+    size = 60 * SS
+    font = load_font(size)
+    while True:
+        box = d.textbbox((0, 0), text, font=font, stroke_width=5 * SS)
+        if box[2] - box[0] <= w * SS * 0.97 or size < 20 * SS:
+            break
+        size -= 2 * SS
+        font = load_font(size)
+    th = box[3] - box[1]
+    x = w * SS * 0.985 - box[2]
+    y = (h * SS - th) / 2 - box[1]
+    d.text((x, y), text, font=font, fill=(255, 255, 255, 255),
+           stroke_width=4 * SS, stroke_fill=(0, 0, 0, 160))
+    finish(img, w, h, 'guide_' + key)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     disc()
@@ -196,11 +227,15 @@ def main():
     knob()
     stickbase()
     pill()
-    arrow(True, 'arrow_up')
-    arrow(False, 'arrow_down')
+    arrow('up', 'arrow_up')
+    arrow('down', 'arrow_down')
+    arrow('left', 'arrow_left')
     pause()
     for key, text in LABELS.items():
         label(key, text)
+    # Around AURA while it is held: what each slide does
+    for key, text in GUIDES.items():
+        guide(key, text)
     print('touch art written to', os.path.normpath(OUT))
 
 

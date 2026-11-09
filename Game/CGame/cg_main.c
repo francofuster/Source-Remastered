@@ -392,6 +392,20 @@ void CG_RegisterCvars( void ) {
 			cv->defaultString, cv->cvarFlags );
 	}
 
+#ifdef __ANDROID__
+	// 1.4-alpha1 saved the phone HUD at 1.25, and it is bigger now: move that
+	// old default once, so a size set by hand later stays
+	trap_Cvar_Register( NULL, "cg_hudScaleVersion", "0", CVAR_ARCHIVE );
+	trap_Cvar_VariableStringBuffer( "cg_hudScaleVersion", var, sizeof( var ) );
+	if ( atoi( var ) < 2 ) {
+		if ( !Q_stricmp( cg_hudScale.string, "1.25" ) ) {
+			trap_Cvar_Set( "cg_hudScale", CG_HUDSCALE_DEFAULT );
+			trap_Cvar_Update( &cg_hudScale );
+		}
+		trap_Cvar_Set( "cg_hudScaleVersion", "2" );
+	}
+#endif
+
 	// see if we are also running the server on this machine
 	trap_Cvar_VariableStringBuffer( "sv_running", var, sizeof( var ) );
 	cgs.localServer = atoi( var );

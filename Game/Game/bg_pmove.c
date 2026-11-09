@@ -2735,7 +2735,7 @@ void PM_Melee(void){
 			PM_StopMelee();
 			return;
 		}
-		if(pm->ps->lockedPlayer){
+		if(pm->ps->lockedPlayer && pm->ps->lockedPosition){
 			if(pm->ps->lockedPlayer->bitFlags & usingZanzoken){
 				PM_StopMelee();
 				return;
@@ -2767,7 +2767,7 @@ void PM_Melee(void){
 	}
 	// the frame that takes a new lock-on (PM_CheckLockon) has no pointer to
 	// the opponent yet: the game and the prediction set it before the next Pmove
-	if(!pm->ps->lockedPlayer){return;}
+	if(!pm->ps->lockedPlayer || !pm->ps->lockedPosition){return;}
 	damage = 0;
 	animation = pm->ps->bitFlags & usingMelee ? ANIM_FLY_IDLE : 0;
 	meleeCharge = pm->ps->timers[tmMeleeCharge];
@@ -3364,6 +3364,11 @@ void PM_StopLockon(void){
 		if(pm->ps->lockedPlayer){pm->ps->lockedPlayer->bitFlags &= ~isTargeted;}
 		PM_AddEvent(EV_LOCKON_END);
 	}
+	// all of the lock-on goes: a lockedPlayer left over from it passed the
+	// checks of the next lock-on, whose lockedPosition was still NULL, and
+	// PM_Melee read it in that same frame (native code crashed on a lock
+	// after an unlock)
+	pm->ps->lockedPlayer = NULL;
 	pm->ps->lockedPosition = NULL;
 	pm->ps->lockedTarget = 0;
 }
@@ -3400,6 +3405,10 @@ void PM_CheckLockon(void){
 		}
 		if((trace.entityNum >= MAX_CLIENTS)){return;}
 		PM_AddEvent(EV_LOCKON_START);
+		// the pointers to the new opponent come from the game (and the
+		// prediction) before the next Pmove; none of an old one may stay
+		pm->ps->lockedPlayer = NULL;
+		pm->ps->lockedPosition = NULL;
 		pm->ps->lockedTarget = trace.entityNum+1;
 	}
 	else{
@@ -3456,7 +3465,9 @@ void PM_UpdateViewAngles(playerState_t *ps, const usercmd_t *cmd){
 	if(ps->pm_type == PM_INTERMISSION || ps->pm_type == PM_SPINTERMISSION) {
 		return;		// no view changes at all
 	}
-	if((pm->ps->lockedTarget > 0) && !(pm->ps->bitFlags & usingAlter) && *ps->lockedPosition){
+	// the pointer itself: "*ps->lockedPosition" is an array, which a compiler
+	// may take as never NULL and read anyway
+	if((pm->ps->lockedTarget > 0) && !(pm->ps->bitFlags & usingAlter) && ps->lockedPosition){
 		vec3_t dir;
 		vec3_t angles;
 		// a locked-on zanzoken took it out of sight: it does not know where it

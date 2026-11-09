@@ -193,22 +193,26 @@ static void MainMenu_DrawName( void *self ) {
 MainMenu_DrawNameButton
 
 phone: the plate is a button to FIGHTER (a text field could not open the
-keyboard), the name on the right and the hint on the left
+keyboard) with the name on the right. The plate keeps the proportions of
+its picture (212 x 34); the button around it is taller, for the finger
 =================
 */
 static void MainMenu_DrawNameButton( void *self ) {
 	menubitmap_s	*b;
 	float			focus;
+	float			w, h, y;
 	vec4_t			edge;
 
 	b = (menubitmap_s *)self;
 	focus = UI_DFocus( &s_main.menu, self );
-	UI_DNamePlate( b->generic.x - 10, b->generic.y, b->width + 14, b->height );
+	w = b->width + 14;
+	h = w * 34.0f / 212.0f;
+	y = b->generic.y + ( b->height - h ) * 0.5f;
+	UI_DNamePlate( b->generic.x - 10, y, w, h );
 	if ( focus > 0.0f ) {
 		edge[0] = 0.47f; edge[1] = 0.63f; edge[2] = 1.0f; edge[3] = 0.5f + 0.4f * focus;
-		UI_DFrame( b->generic.x, b->generic.y + 1, b->width, b->height - 2, edge );
+		UI_DFrame( b->generic.x, y + 1, b->width, h - 2, edge );
 	}
-	UI_DText( b->generic.x + 16, b->generic.y + b->height * 0.5f - 7, "Change fighter >", 13, UI_LEFT, zeq_text3 );
 	UI_DText( b->generic.x + b->width - 14, b->generic.y + b->height * 0.5f - 11, s_main.name.field.buffer, 21, UI_RIGHT|UI_DROPSHADOW, zeq_white );
 }
 

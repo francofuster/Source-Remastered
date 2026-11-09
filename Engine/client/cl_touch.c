@@ -39,8 +39,17 @@ Layout and thresholds: the Android proposal, section "Joystick virtual".
 
 #define JUMP_TAP_MS				180		// VUELO up: shorter is a jump, longer flies up
 #define AURA_SWIPE				28.0f	// dp
+#define AURA_BACK				14.0f	// dp: back this close to the start, lowering stops
 #define AURA_CHARGE_MS			150
+// The server only looks at the tier keys every 300 ms (PM_CheckTransform,
+// EV_TIERCHECK): a flick is shorter, so its F + W or F + S lasts this long
+#define AURA_TIER_HOLD_MS		450
 #define SKILL_STEP				36.0f	// dp of vertical drag per technique
+// KI also fires the second attack (FUERTE, MOUSE2): slid left this far in
+// its first moments. Until it knows, KI sends nothing, since an attack that
+// needs no charge fires the moment its button goes down.
+#define KI_SLIDE				16.0f	// dp
+#define KI_DECIDE_MS			200
 #define LAND_TRACE				160.0f	// VUELO down this close to the ground lands
 
 // Guided combo (Asistido, in melee): holding KI rushes with W, then holds
@@ -117,12 +126,12 @@ typedef struct {
 static touchButton_t touchButtons[TB_COUNT] = {
 	//            image      bits                 x      y      r    hw    hh   top     cx     look
 	/* KI      */ { TL_KI,     BUTTON_ATTACK,      92,    92,   44,   0,    0,  qfalse, qfalse, qtrue,  { 1.00f, 0.62f, 0.15f } },
-	/* FUERTE  */ { TL_STRONG, BUTTON_ALT_ATTACK, 188,    72,   36,   0,    0,  qfalse, qfalse, qtrue,  { 1.00f, 0.32f, 0.26f } },
-	/* Z       */ { TL_Z,      BUTTON_TELEPORT,   162,   164,   36,   0,    0,  qfalse, qfalse, qfalse, { 0.30f, 0.86f, 1.00f } },
+	/* FUERTE  */ { TL_STRONG, BUTTON_ALT_ATTACK, 188,    72,   36,   0,    0,  qfalse, qfalse, qtrue,  { 1.00f, 0.32f, 0.26f } },	// never shown: KI slid left
+	/* Z       */ { TL_Z,      BUTTON_TELEPORT,   188,    72,   36,   0,    0,  qfalse, qfalse, qfalse, { 0.30f, 0.86f, 1.00f } },
 	/* GUARDIA */ { TL_GUARD,  BUTTON_BLOCK,       68,   192,   34,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.58f, 1.00f } },
-	/* LOCK    */ { TL_LOCK,   BUTTON_GESTURE,     58,   130,   28,   0,    0,  qtrue,  qfalse, qfalse, { 1.00f, 0.86f, 0.30f } },
+	/* LOCK    */ { TL_LOCK,   BUTTON_GESTURE,     58,   130,   28,   0,    0,  qtrue,  qfalse, qfalse, { 1.00f, 0.86f, 0.30f } },	// locked on; else where GUARDIA goes
 	/* AURA    */ { TL_AURA,   BUTTON_POWERLEVEL, 268,   194,   28,   0,    0,  qfalse, qfalse, qfalse, { 0.75f, 0.85f, 1.00f } },
-	/* TECNICA */ { TL_SKILL,  0,                 160,   254,   27,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.95f, 0.55f } },
+	/* TECNICA */ { TL_SKILL,  0,                 162,   164,   27,   0,    0,  qfalse, qfalse, qfalse, { 0.45f, 0.95f, 0.55f } },
 	/* VUELO + */ { TL_NONE,   0,                 268,   122,    0,  27,   28,  qfalse, qfalse, qfalse, { 1.00f, 1.00f, 1.00f } },
 	/* VUELO - */ { TL_NONE,   0,                 268,    66,    0,  27,   28,  qfalse, qfalse, qfalse, { 1.00f, 1.00f, 1.00f } },
 	/* pause   */ { TL_NONE,   0,                   0,    32,   20,   0,    0,  qtrue,  qtrue,  qfalse, { 1.00f, 1.00f, 1.00f } },
@@ -163,6 +172,11 @@ static struct {
 	float			lookX, lookY;		// dp waiting for the next usercmd
 
 	int				auraMode;			// AURA_*
+	int				kiMode;				// KI_*
+	qboolean		kiAltLatched;		// the KI tap that was let go was the second attack
+	int				auraStick;			// AURA with the stick: 1 forward, -1 back
+	int				tierDir;			// F + W (1) or F + S (-1) still being sent
+	int				tierUntil;			// ... until this time, even after AURA is up
 	float			skillDrag;			// dp since the last technique step
 	qboolean		skillStepped;
 
@@ -173,11 +187,17 @@ static struct {
 	qboolean		lockPressed;
 	qboolean		lockSendNext;		// LOCK turned the view: the button goes next command
 
-	qhandle_t		disc, ring, glow, knob, stickBase, pill, arrowUp, arrowDown, pause;
+	qhandle_t		disc, ring, glow, knob, stickBase, pill, arrowUp, arrowDown, arrowLeft, pause;
 	qhandle_t		labels[TL_COUNT];
+	qhandle_t		guideTransform, guideLower, guideRevert;
 } tc;
 
-enum { AURA_NONE, AURA_WAIT, AURA_CHARGE, AURA_TIER_UP, AURA_TIER_DOWN };
+// AURA is F + WASD under one thumb: hold charges (D), a slide left kept
+// there lowers the ki (A), a flick up or down changes the tier (W, S)
+enum { AURA_NONE, AURA_WAIT, AURA_CHARGE, AURA_LOWER, AURA_TIER_UP, AURA_TIER_DOWN };
+
+// KI: waiting to see whether it slides, the first attack, the second one
+enum { KI_WAIT, KI_PRIMARY, KI_ALT };
 
 static cvar_t	*touch_enable;
 static cvar_t	*touch_alpha;
@@ -275,6 +295,10 @@ static qboolean Touch_Visible( int button ) {
 	if ( tc.ctx == CTX_STRUGGLE ) {
 		return button == TB_PUSH || button == TB_PAUSE;
 	}
+	// FUERTE lives in KI: slide it left
+	if ( button == TB_STRONG ) {
+		return qfalse;
+	}
 	// GUARD only with a lock-on, where blocking matters
 	if ( button == TB_GUARD ) {
 		return cl.snap.valid && cl.snap.ps.lockedTarget > 0;
@@ -295,6 +319,9 @@ static touchLabel_t Touch_Label( int button, qboolean *dim ) {
 	*dim = qfalse;
 	switch ( button ) {
 	case TB_KI:
+		if ( touchButtons[TB_KI].finger >= 0 && tc.kiMode == KI_ALT ) {
+			return Touch_Label( TB_STRONG, dim );
+		}
 		switch ( tc.ctx ) {
 		case CTX_MELEE:			return assisted ? TL_COMBO : TL_BREAK;
 		case CTX_KNOCKED:		return TL_BRAKE;
@@ -360,6 +387,13 @@ static void Touch_Layout( void ) {
 		b->phw = b->halfW * dp;
 		b->phh = b->halfH * dp;
 	}
+
+	// LOCK takes the place of GUARD until there is a lock-on; then GUARD is
+	// there and LOCK goes up, clear of the HUD of the rival
+	if ( !cl.snap.valid || cl.snap.ps.lockedTarget <= 0 ) {
+		touchButtons[TB_LOCK].px = touchButtons[TB_GUARD].px;
+		touchButtons[TB_LOCK].py = touchButtons[TB_GUARD].py;
+	}
 }
 
 /*
@@ -414,6 +448,10 @@ static void Touch_ButtonDown( int button, int finger ) {
 		break;
 	case TB_AURA:
 		tc.auraMode = AURA_WAIT;
+		tc.tierDir = 0;
+		break;
+	case TB_KI:
+		tc.kiMode = KI_WAIT;
 		break;
 	case TB_SKILL:
 		tc.skillDrag = 0.0f;
@@ -430,15 +468,20 @@ static void Touch_ButtonDown( int button, int finger ) {
 static void Touch_ButtonUp( int button ) {
 	touchButton_t *b = &touchButtons[button];
 
-	// A tap shorter than one frame still reaches one usercmd
-	if ( b->bits || button == TB_FLYUP ) {
+	// A tap shorter than one frame still reaches one usercmd. VUELO up only
+	// latches a tap: after a hold, a latched jump in the air was a soar
+	if ( b->bits || ( button == TB_FLYUP && cls.realtime - b->downTime < JUMP_TAP_MS ) ) {
 		b->latched = qtrue;
 	}
 
 	// The guided combo ran: letting go must not also break
-	if ( button == TB_KI && tc.ctx == CTX_MELEE && touch_profile && touch_profile->integer &&
+	if ( button == TB_KI && tc.kiMode != KI_ALT && tc.ctx == CTX_MELEE && touch_profile && touch_profile->integer &&
 		cls.realtime - b->downTime >= COMBO_HOLD_MS ) {
 		b->latched = qfalse;
+	}
+	if ( button == TB_KI ) {
+		// let go before it knew: a tap of the first attack
+		tc.kiAltLatched = tc.kiMode == KI_ALT;
 	}
 
 	switch ( button ) {
@@ -513,6 +556,7 @@ void CL_TouchReset( void ) {
 	tc.boost = qfalse;
 	tc.lookX = tc.lookY = 0.0f;
 	tc.auraMode = AURA_NONE;
+	tc.tierDir = 0;
 }
 
 /*
@@ -625,6 +669,18 @@ static void Touch_FingerMove( touchFinger_t *f ) {
 	case TF_BUTTON: {
 		touchButton_t *b = &touchButtons[f->button];
 
+		// KI slid left in its first moments is the second attack; a move
+		// any other way makes it the first one at once
+		if ( f->button == TB_KI && tc.kiMode == KI_WAIT ) {
+			float sx = ( f->x - f->x0 ) / tc.dp;
+			float sy = ( f->y - f->y0 ) / tc.dp;
+
+			if ( sx < -KI_SLIDE && fabs( sx ) >= fabs( sy ) ) {
+				tc.kiMode = KI_ALT;
+			} else if ( sqrt( sx * sx + sy * sy ) > KI_SLIDE ) {
+				tc.kiMode = KI_PRIMARY;
+			}
+		}
 		if ( b->dragLook ) {
 			if ( !f->looking ) {
 				float ox = f->x - b->px;
@@ -637,13 +693,24 @@ static void Touch_FingerMove( touchFinger_t *f ) {
 				tc.lookX += dx;
 				tc.lookY += dy;
 			}
-		} else if ( f->button == TB_AURA && tc.auraMode == AURA_WAIT ) {
-			float swipe = ( f->y - f->y0 ) / tc.dp;
+		} else if ( f->button == TB_AURA ) {
+			float sx = ( f->x - f->x0 ) / tc.dp;
+			float sy = ( f->y - f->y0 ) / tc.dp;
 
-			if ( swipe < -AURA_SWIPE ) {
-				tc.auraMode = AURA_TIER_UP;
-			} else if ( swipe > AURA_SWIPE ) {
-				tc.auraMode = AURA_TIER_DOWN;
+			if ( tc.auraMode == AURA_LOWER ) {
+				// back near where it went down: charge again
+				if ( sx > -AURA_BACK ) {
+					tc.auraMode = AURA_CHARGE;
+				}
+			} else if ( tc.auraMode == AURA_WAIT || tc.auraMode == AURA_CHARGE ) {
+				// a slide counts at any speed, also once the charge started
+				if ( sx < -AURA_SWIPE && fabs( sx ) >= fabs( sy ) ) {
+					tc.auraMode = AURA_LOWER;
+				} else if ( fabs( sy ) > AURA_SWIPE && fabs( sy ) > fabs( sx ) ) {
+					tc.auraMode = sy < 0.0f ? AURA_TIER_UP : AURA_TIER_DOWN;
+					tc.tierDir = sy < 0.0f ? 1 : -1;
+					tc.tierUntil = cls.realtime + AURA_TIER_HOLD_MS;
+				}
 			}
 		} else if ( f->button == TB_SKILL ) {
 			// Slide up or down on TECNICA to step through the techniques
@@ -826,8 +893,8 @@ Called by CL_CreateCmd after the keyboard, the mouse and the joystick.
 void CL_TouchMove( usercmd_t *cmd ) {
 	touchButton_t *b;
 	float lookYaw = 0.0f, lookPitch = 0.0f;
-	qboolean assisted;
-	int i;
+	qboolean assisted, flying;
+	int i, prevStick;
 
 	if ( !touch_enable ) {
 		return;
@@ -885,13 +952,21 @@ void CL_TouchMove( usercmd_t *cmd ) {
 
 	// KI: in melee with the Asistido profile, holding it plays the guided
 	// combo (rush with W, then FUERTE past 550 ms for the power launch);
-	// a tap still breaks. Everywhere else it is MOUSE1.
+	// a tap still breaks. Everywhere else it is MOUSE1. Slid left it is
+	// FUERTE (MOUSE2); while that is still open it sends nothing.
 	b = &touchButtons[TB_KI];
 	if ( tc.ctx != CTX_STRUGGLE ) {
 		if ( b->finger >= 0 ) {
 			int held = cls.realtime - b->downTime;
 
-			if ( tc.ctx == CTX_MELEE && assisted ) {
+			if ( tc.kiMode == KI_WAIT && held >= KI_DECIDE_MS ) {
+				tc.kiMode = KI_PRIMARY;
+			}
+			if ( tc.kiMode == KI_ALT ) {
+				cmd->buttons |= BUTTON_ALT_ATTACK;
+			} else if ( tc.kiMode == KI_WAIT ) {
+				// not yet
+			} else if ( tc.ctx == CTX_MELEE && assisted ) {
 				if ( held >= COMBO_HOLD_MS ) {
 					int phase = ( held - COMBO_HOLD_MS ) % COMBO_CYCLE_MS;
 
@@ -905,13 +980,13 @@ void CL_TouchMove( usercmd_t *cmd ) {
 				cmd->buttons |= BUTTON_ATTACK;
 			}
 		} else if ( b->latched ) {
-			cmd->buttons |= BUTTON_ATTACK;
+			cmd->buttons |= tc.kiAltLatched ? BUTTON_ALT_ATTACK : BUTTON_ATTACK;
 		}
 	}
 
 	// FUERTE held in melee: the stick picks where the power launch sends it,
 	// the R, C, D and A of PC (PM_Melee reads upmove, then rightmove)
-	if ( tc.ctx == CTX_MELEE && touchButtons[TB_STRONG].finger >= 0 && tc.stickMag >= STICK_DEAD ) {
+	if ( tc.ctx == CTX_MELEE && touchButtons[TB_KI].finger >= 0 && tc.kiMode == KI_ALT && tc.stickMag >= STICK_DEAD ) {
 		cmd->forwardmove = 0;
 		cmd->rightmove = 0;
 		if ( fabs( tc.stickNY ) >= fabs( tc.stickNX ) ) {
@@ -938,16 +1013,23 @@ void CL_TouchMove( usercmd_t *cmd ) {
 		tc.lockPressed = qfalse;
 	}
 
-	// VUELO up: a tap jumps, holding flies up
+	// VUELO up: on the ground a tap jumps and holding takes off; in the air it
+	// only climbs (R on PC). BUTTON_JUMP in the air is Space, the soar: even
+	// one usercmd of it stopped the fighter and threw him forward
 	b = &touchButtons[TB_FLYUP];
+	flying = cl.snap.valid && ( cl.snap.ps.bitFlags & usingFlight );
 	if ( b->finger >= 0 ) {
-		if ( cls.realtime - b->downTime < JUMP_TAP_MS ) {
+		if ( !flying && cls.realtime - b->downTime < JUMP_TAP_MS ) {
 			cmd->buttons |= BUTTON_JUMP;
 		} else {
 			cmd->upmove = 127;
 		}
 	} else if ( b->latched ) {
-		cmd->buttons |= BUTTON_JUMP;
+		if ( flying ) {
+			cmd->upmove = 127;
+		} else {
+			cmd->buttons |= BUTTON_JUMP;
+		}
 	}
 
 	// VUELO down: descend; close to the ground also lands (F + C on PC)
@@ -959,10 +1041,16 @@ void CL_TouchMove( usercmd_t *cmd ) {
 		}
 	}
 
-	// AURA: the F chords. Hold to charge (F + D); with the stick pushed forward
-	// it transforms (F + W) and pulled back it reverts (F + S); a swipe up or
-	// down on AURA does the same without the stick
+	// AURA: the F chords. Hold to charge (F + D), slide left and keep it there
+	// to lower the ki (F + A); with the stick pushed forward it transforms
+	// (F + W) and pulled back it reverts (F + S); a flick up or down on AURA
+	// does the same without the stick
 	b = &touchButtons[TB_AURA];
+	prevStick = tc.auraStick;
+	tc.auraStick = 0;
+	if ( tc.tierDir && cls.realtime >= tc.tierUntil ) {
+		tc.tierDir = 0;
+	}
 	if ( b->finger >= 0 ) {
 		int stick = 0;
 
@@ -975,8 +1063,17 @@ void CL_TouchMove( usercmd_t *cmd ) {
 		cmd->buttons |= BUTTON_POWERLEVEL;
 		cmd->forwardmove = 0;
 		cmd->rightmove = 0;
-		if ( stick ) {
+		if ( tc.auraMode == AURA_LOWER ) {
+			cmd->rightmove = -127;
+		} else if ( stick ) {
+			tc.auraStick = stick;
+			if ( stick != prevStick ) {
+				tc.tierDir = stick;
+				tc.tierUntil = cls.realtime + AURA_TIER_HOLD_MS;
+			}
 			cmd->forwardmove = stick > 0 ? 127 : -127;
+		} else if ( tc.tierDir ) {
+			cmd->forwardmove = tc.tierDir * 127;
 		} else {
 			switch ( tc.auraMode ) {
 			case AURA_CHARGE:		cmd->rightmove = 127; break;
@@ -985,6 +1082,11 @@ void CL_TouchMove( usercmd_t *cmd ) {
 			default:				break;
 			}
 		}
+	} else if ( tc.tierDir ) {
+		// AURA is up but the flick has not reached a tier check yet
+		cmd->buttons |= BUTTON_POWERLEVEL;
+		cmd->forwardmove = tc.tierDir * 127;
+		cmd->rightmove = 0;
 	}
 
 	for ( i = 0; i < TB_COUNT; i++ ) {
@@ -1031,6 +1133,10 @@ void CL_TouchRegisterMedia( void ) {
 	tc.pill = re.RegisterShaderNoMip( "touch/pill" );
 	tc.arrowUp = re.RegisterShaderNoMip( "touch/arrow_up" );
 	tc.arrowDown = re.RegisterShaderNoMip( "touch/arrow_down" );
+	tc.arrowLeft = re.RegisterShaderNoMip( "touch/arrow_left" );
+	tc.guideTransform = re.RegisterShaderNoMip( "touch/guide_transform" );
+	tc.guideLower = re.RegisterShaderNoMip( "touch/guide_lower" );
+	tc.guideRevert = re.RegisterShaderNoMip( "touch/guide_revert" );
 	tc.pause = re.RegisterShaderNoMip( "touch/pause" );
 
 	for ( i = 0; i < TL_COUNT; i++ ) {
@@ -1038,6 +1144,41 @@ void CL_TouchRegisterMedia( void ) {
 			re.RegisterShaderNoMip( va( "touch/label_%s", touchLabelImages[i] ) ) : 0;
 	}
 	tc.mediaRegistered = qtrue;
+}
+
+/*
+=================
+Touch_AuraGuide
+
+While AURA is held, its gestures around it: TRANSFORM above, LOWER to the
+left, REVERT below (the flight pill starts 16 dp under AURA, so the arrows
+are small). The one in use lights up; the words sit left of their arrows,
+where the screen is free.
+=================
+*/
+static const float auraLowerTint[3] = { 0.45f, 0.86f, 0.77f };
+static const float auraChargeTint[3] = { 1.00f, 0.82f, 0.40f };
+
+static void Touch_AuraGuide( touchButton_t *b, float alpha ) {
+	float as = 12.0f * tc.dp;			// arrow size
+	float gap = b->pr + 9.0f * tc.dp;	// from the center to an arrow
+	float lw = 72.0f * tc.dp;			// words: 4:1 images, right aligned
+	float lh = lw * 0.25f;
+	float wx = b->px - as * 0.5f - 4.0f * tc.dp - lw * 0.5f;
+	float dim = alpha * 0.55f;
+	qboolean up = tc.auraMode == AURA_TIER_UP || tc.auraStick > 0;
+	qboolean down = tc.auraMode == AURA_TIER_DOWN || tc.auraStick < 0;
+	qboolean lower = tc.auraMode == AURA_LOWER;
+	const float *tierTint = touchButtons[TB_AURA].tint;
+
+	Touch_DrawPic( b->px, b->py - gap, as, as, up ? tierTint : NULL, up ? alpha : dim, tc.arrowUp );
+	Touch_DrawPic( wx, b->py - gap, lw, lh, up ? tierTint : NULL, up ? alpha : dim, tc.guideTransform );
+
+	Touch_DrawPic( b->px - gap, b->py, as, as, lower ? auraLowerTint : NULL, lower ? alpha : dim, tc.arrowLeft );
+	Touch_DrawPic( wx - gap, b->py, lw, lh, lower ? auraLowerTint : NULL, lower ? alpha : dim, tc.guideLower );
+
+	Touch_DrawPic( b->px, b->py + gap, as, as, down ? tierTint : NULL, down ? alpha : dim, tc.arrowDown );
+	Touch_DrawPic( wx, b->py + gap, lw, lh, down ? tierTint : NULL, down ? alpha : dim, tc.guideRevert );
 }
 
 /*
@@ -1108,6 +1249,7 @@ void CL_TouchDraw( void ) {
 		qboolean held = b->finger >= 0;
 		qboolean dim;
 		touchLabel_t label;
+		const float *tint;
 		float size, a;
 
 		if ( b->pr <= 0.0f || !Touch_Visible( i ) ) {
@@ -1116,6 +1258,19 @@ void CL_TouchDraw( void ) {
 		size = b->pr * 2;
 		label = Touch_Label( i, &dim );
 		a = dim ? alpha * 0.4f : alpha;
+		tint = b->tint;
+		if ( i == TB_KI && held && tc.kiMode == KI_ALT ) {
+			tint = touchButtons[TB_STRONG].tint;
+		}
+		if ( i == TB_AURA && held ) {
+			// gold while it charges, teal while the ki goes down
+			if ( tc.auraMode == AURA_CHARGE && !tc.auraStick ) {
+				tint = auraChargeTint;
+			} else if ( tc.auraMode == AURA_LOWER ) {
+				tint = auraLowerTint;
+			}
+			Touch_AuraGuide( b, alpha );
+		}
 
 		// Z glows while its window is open (counter, dodge, chase)
 		if ( i == TB_Z && tc.zHint && !held ) {
@@ -1124,18 +1279,32 @@ void CL_TouchDraw( void ) {
 			Touch_DrawPic( b->px, b->py, size * 1.7f, size * 1.7f, b->tint, alpha * pulse, tc.glow );
 		}
 		if ( held ) {
-			Touch_DrawPic( b->px, b->py, size * 1.5f, size * 1.5f, b->tint, a * 0.7f, tc.glow );
+			Touch_DrawPic( b->px, b->py, size * 1.5f, size * 1.5f, tint, a * 0.7f, tc.glow );
 		}
 		Touch_DrawPic( b->px, b->py, size, size, NULL, a * ( held ? 1.0f : 0.85f ), tc.disc );
-		Touch_DrawPic( b->px, b->py, size, size, b->tint, a * ( held ? 1.0f : 0.8f ), tc.ring );
+		Touch_DrawPic( b->px, b->py, size, size, tint, a * ( held ? 1.0f : 0.8f ), tc.ring );
 
 		if ( i == TB_PAUSE ) {
 			Touch_DrawPic( b->px, b->py, size * 0.7f, size * 0.7f, NULL, a, tc.pause );
 		} else if ( label != TL_NONE ) {
 			// Labels are 2:1 images; short ones fill more of the button
 			float lw = size * 0.92f;
+			float ly = b->py;
 
-			Touch_DrawPic( b->px, b->py, lw, lw * 0.5f, NULL, a * 1.1f, tc.labels[label] );
+			// KI holds the second attack too: its word under the label,
+			// with the arrow of the slide
+			if ( i == TB_KI && !( held && tc.kiMode == KI_ALT ) ) {
+				qboolean altDim;
+				touchLabel_t alt = Touch_Label( TB_STRONG, &altDim );
+				float hw = size * 0.5f;
+				float hy = b->py + b->pr * 0.55f;
+				float ha = ( dim || altDim ) ? alpha * 0.3f : alpha * 0.8f;
+
+				ly -= b->pr * 0.14f;
+				Touch_DrawPic( b->px - size * 0.25f, hy, size * 0.1f, size * 0.1f, NULL, ha, tc.arrowLeft );
+				Touch_DrawPic( b->px + size * 0.06f, hy, hw, hw * 0.5f, NULL, ha, tc.labels[alt] );
+			}
+			Touch_DrawPic( b->px, ly, lw, lw * 0.5f, NULL, a * 1.1f, tc.labels[label] );
 		}
 	}
 
