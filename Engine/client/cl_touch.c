@@ -186,6 +186,7 @@ static struct {
 	qboolean		chaseWindow;		// after a chase: up catches, FUERTE launches back
 	qboolean		lockPressed;
 	qboolean		lockSendNext;		// LOCK turned the view: the button goes next command
+	int				debugKnock;			// touch_debug: sign of the last knockback timer
 
 	qhandle_t		disc, ring, glow, knob, stickBase, pill, arrowUp, arrowDown, arrowLeft, pause;
 	qhandle_t		labels[TL_COUNT];
@@ -196,8 +197,9 @@ static struct {
 // there lowers the ki (A), a flick up or down changes the tier (W, S)
 enum { AURA_NONE, AURA_WAIT, AURA_CHARGE, AURA_LOWER, AURA_TIER_UP, AURA_TIER_DOWN };
 
-// KI: waiting to see whether it slides, the first attack, the second one
-enum { KI_WAIT, KI_PRIMARY, KI_ALT };
+// KI: waiting to see whether it slides, the first attack, the second one,
+// and RECOVER (pressed while knocked back: MOUSE2 until the knockback ends)
+enum { KI_WAIT, KI_PRIMARY, KI_ALT, KI_RECOVER };
 
 static cvar_t	*touch_enable;
 static cvar_t	*touch_alpha;
@@ -319,12 +321,14 @@ static touchLabel_t Touch_Label( int button, qboolean *dim ) {
 	*dim = qfalse;
 	switch ( button ) {
 	case TB_KI:
+		if ( tc.ctx == CTX_KNOCKED || ( touchButtons[TB_KI].finger >= 0 && tc.kiMode == KI_RECOVER ) ) {
+			return TL_RECOVER;
+		}
 		if ( touchButtons[TB_KI].finger >= 0 && tc.kiMode == KI_ALT ) {
 			return Touch_Label( TB_STRONG, dim );
 		}
 		switch ( tc.ctx ) {
 		case CTX_MELEE:			return assisted ? TL_COMBO : TL_BREAK;
-		case CTX_KNOCKED:		return TL_BRAKE;
 		case CTX_FOE_LAUNCHED:	*dim = qtrue; return TL_KI;
 		default:				return TL_KI;
 		}
@@ -451,7 +455,7 @@ static void Touch_ButtonDown( int button, int finger ) {
 		tc.tierDir = 0;
 		break;
 	case TB_KI:
-		tc.kiMode = KI_WAIT;
+		tc.kiMode = tc.ctx == CTX_KNOCKED ? KI_RECOVER : KI_WAIT;
 		break;
 	case TB_SKILL:
 		tc.skillDrag = 0.0f;
@@ -481,7 +485,10 @@ static void Touch_ButtonUp( int button ) {
 	}
 	if ( button == TB_KI ) {
 		// let go before it knew: a tap of the first attack
-		tc.kiAltLatched = tc.kiMode == KI_ALT;
+		tc.kiAltLatched = tc.kiMode == KI_ALT || tc.kiMode == KI_RECOVER;
+		if ( tc.kiMode == KI_RECOVER && tc.ctx != CTX_KNOCKED ) {
+			b->latched = qfalse;
+		}
 	}
 
 	switch ( button ) {
@@ -955,6 +962,22 @@ void CL_TouchMove( usercmd_t *cmd ) {
 	// a tap still breaks. Everywhere else it is MOUSE1. Slid left it is
 	// FUERTE (MOUSE2); while that is still open it sends nothing.
 	b = &touchButtons[TB_KI];
+	// knocked back, KI recovers, also when it was held before the hit
+	if ( b->finger >= 0 && tc.ctx == CTX_KNOCKED ) {
+		tc.kiMode = KI_RECOVER;
+	}
+	// touch_debug: how each knockback ends, recovered (the timer jumps to
+	// -500) or by itself (0)
+	if ( touch_debug->integer && cl.snap.valid ) {
+		int knock = cl.snap.ps.timers[tmKnockback];
+		int sign = knock > 0 ? 1 : ( knock < 0 ? -1 : 0 );
+
+		if ( sign != tc.debugKnock ) {
+			Com_Printf( "touch: knockback %d -> %d (timer %d), KI %s\n", tc.debugKnock, sign, knock,
+				b->finger >= 0 ? ( tc.kiMode == KI_RECOVER ? "recovering" : "held" ) : "up" );
+			tc.debugKnock = sign;
+		}
+	}
 	if ( tc.ctx != CTX_STRUGGLE ) {
 		if ( b->finger >= 0 ) {
 			int held = cls.realtime - b->downTime;
@@ -962,7 +985,12 @@ void CL_TouchMove( usercmd_t *cmd ) {
 			if ( tc.kiMode == KI_WAIT && held >= KI_DECIDE_MS ) {
 				tc.kiMode = KI_PRIMARY;
 			}
-			if ( tc.kiMode == KI_ALT ) {
+			if ( tc.kiMode == KI_RECOVER ) {
+				// recovered: held on, it fires nothing until it is let go
+				if ( tc.ctx == CTX_KNOCKED ) {
+					cmd->buttons |= BUTTON_ALT_ATTACK;
+				}
+			} else if ( tc.kiMode == KI_ALT ) {
 				cmd->buttons |= BUTTON_ALT_ATTACK;
 			} else if ( tc.kiMode == KI_WAIT ) {
 				// not yet
@@ -1293,7 +1321,7 @@ void CL_TouchDraw( void ) {
 
 			// KI holds the second attack too: its word under the label,
 			// with the arrow of the slide
-			if ( i == TB_KI && !( held && tc.kiMode == KI_ALT ) ) {
+			if ( i == TB_KI && label != TL_RECOVER && !( held && tc.kiMode == KI_ALT ) ) {
 				qboolean altDim;
 				touchLabel_t alt = Touch_Label( TB_STRONG, &altDim );
 				float hw = size * 0.5f;

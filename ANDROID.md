@@ -112,13 +112,14 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 
 **Cambios tras probar en el móvil:**
 - LOCK más abajo, para no taparse con el HUD del rival.
-- Los textos de los botones, en inglés: STRONG, GUARD, SKILL, COMBO, LAUNCH, COUNTER, CHASE, DODGE, RETURN, BRAKE, RECOVER, PUSH.
+- Los textos de los botones, en inglés: STRONG, GUARD, SKILL, COMBO, LAUNCH, COUNTER, CHASE, DODGE, RETURN, RECOVER, PUSH.
 - GUARD solo aparece con un rival fijado.
 - AURA con el stick: mantener AURA y empujar el stick hacia delante transforma (F + W); hacia atrás, destransforma (F + S). Sin stick carga, y deslizar sobre AURA sigue funcionando.
 - Crear partida: el poder (y el poder máximo) no pasa de 32767, el máximo del juego.
 - Memoria: en una instalación limpia `lastStand` no cargaba («Z_Malloc: failed on allocation of 10240040 bytes from the main zone»): sus texturas de 1600 × 1600 piden un bloque de 10 MB. En Android `com_zoneMegs` vale 64 (`Shared/common.c` y `default.cfg`).
 
 **1.4-alpha2 (después de 1.4-alpha1):**
+- Con knockback, KI solo recupera (RECUPERAR, MOUSE2) y lo hace al tocarlo, sin esperar un deslizamiento; mantenido sirve en cuanto el juego deja (pasado el primer segundo del knockback, `tmKnockback` < 4000). FRENAR (MOUSE1) solo reducía a la mitad la velocidad del vuelo y casi no se notaba: se quitó. Si KI ya estaba apretado cuando llega el golpe, también pasa a recuperar. Con `touch_debug 1` la consola dice cómo termina cada knockback: `1 -> -1` es una recuperación (el temporizador salta a -500), `1 -> 0` es que terminó solo.
 - **Cierre al fijar otra vez (también latente en PC):** `PM_StopLockon` borraba `lockedTarget` y `lockedPosition` pero dejaba `lockedPlayer` apuntando al rival anterior. Al fijar de nuevo, `PM_CheckLockon` ponía el nuevo `lockedTarget` y, en ese mismo frame, `PM_Melee` pasaba el control con ese puntero viejo y leía `lockedPosition`, que seguía en NULL. Fijar, soltar y fijar cerraba el juego siempre. Ahora soltar y fijar borran los tres; `PM_Melee` exige los dos punteros, la vista de lock-on mira el puntero y no `*ps->lockedPosition`, y el bloqueo de un ataque (`g_usermissile.c`) tampoco deja un `lockedPlayer` viejo.
 - HUD más grande (1,45), también el del rival.
 - KI deslizado a la izquierda dispara el segundo ataque; FUERTE deja de ser un botón. Z pasa a su sitio, TÉCNICA al de Z, y LOCK al de GUARDIA mientras no hay lock-on.
