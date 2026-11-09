@@ -187,6 +187,7 @@ static struct {
 	qboolean		lockPressed;
 	qboolean		lockSendNext;		// LOCK turned the view: the button goes next command
 	int				debugKnock;			// touch_debug: sign of the last knockback timer
+	qboolean		classic;			// a classic server: no locked-on zanzoken there
 
 	qhandle_t		disc, ring, glow, knob, stickBase, pill, arrowUp, arrowDown, arrowLeft, pause;
 	qhandle_t		labels[TL_COUNT];
@@ -251,6 +252,11 @@ static void Touch_UpdateContext( void ) {
 	tc.ctx = CTX_FREE;
 	tc.zHint = qfalse;
 	tc.chaseWindow = qfalse;
+	// a server without the Remastered fight system (BG_REMASTERED_SERVER): Z
+	// is only the classic zanzoken there, which does nothing in melee or
+	// while knocked back, and there is no dodge, counter or chase to hint
+	tc.classic = cls.state >= CA_PRIMED &&
+		!BG_REMASTERED_SERVER( cl.gameState.stringData + cl.gameState.stringOffsets[CS_SERVERINFO] );
 	if ( !cl.snap.valid ) {
 		return;
 	}
@@ -283,6 +289,10 @@ static void Touch_UpdateContext( void ) {
 			VectorNormalize( line );
 			tc.zHint = -DotProduct( foe->pos.trDelta, line ) > DODGE_CLOSING_SPEED;
 		}
+	}
+	if ( tc.classic ) {
+		tc.zHint = qfalse;
+		tc.chaseWindow = qfalse;
 	}
 }
 
@@ -343,6 +353,10 @@ static touchLabel_t Touch_Label( int button, qboolean *dim ) {
 		default:				return TL_STRONG;
 		}
 	case TB_Z:
+		if ( tc.classic ) {
+			*dim = tc.ctx == CTX_MELEE || tc.ctx == CTX_KNOCKED;
+			return TL_Z;
+		}
 		switch ( tc.ctx ) {
 		case CTX_MELEE:			return TL_COUNTER;
 		case CTX_KNOCKED:		return TL_COUNTER;

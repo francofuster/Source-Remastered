@@ -729,6 +729,38 @@ static void CG_BeginUniformCenteredScale( float *oldScreenXScale, float *oldScre
 	cgs.screenXBias = CG_WideCenterBias();
 }
 
+/*
+=================
+CG_DrawClassicNotice
+
+On a classic server (no Remastered fight system), for a few seconds after the
+game shows: what Z does not do there. Centered, not stretched on wide screens.
+=================
+*/
+#define CLASSIC_NOTICE_MS	5000
+static void CG_DrawClassicNotice( void ) {
+	const char	*text = "Classic server: Z does not dodge, counter or chase";
+	float		*color;
+	float		oldScreenXScale, oldScreenXBias;
+
+	if ( !cg.classicNoticeTime ) {
+		return;
+	}
+	color = CG_FadeColor( cg.classicNoticeTime, CLASSIC_NOTICE_MS, 600 );
+	if ( !color ) {
+		cg.classicNoticeTime = 0;
+		return;
+	}
+	// text ignores screenXBias (CG_AdjustFrom640): center it on the real width
+	oldScreenXScale = cgs.screenXScale;
+	oldScreenXBias = cgs.screenXBias;
+	cgs.screenXScale = cgs.screenYScale;
+	CG_DrawStringExt( -1, (int)( ( CG_WideVirtualWidth() - CG_DrawStrlen( text ) * 11 ) * 0.5f ), 150, text, color,
+		qtrue, qtrue, 11, 22, 0 );
+	cgs.screenXScale = oldScreenXScale;
+	cgs.screenXBias = oldScreenXBias;
+}
+
 static void CG_DrawPicHud( float x, float y, float width, float height, qhandle_t hShader ) {
 	float oldScreenXScale;
 	float oldScreenXBias;
@@ -2688,6 +2720,7 @@ static void CG_Draw2D( void ) {
 			ci = &cgs.clientinfo[cg.snap->ps.clientNum];
 			ps = &cg.snap->ps;
 			CG_DrawStatusBar();
+			CG_DrawClassicNotice();
 			CG_DrawAmmoWarning();  
 			CG_DrawCrosshair();
 			CG_DrawCrosshairNames();

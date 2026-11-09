@@ -3625,14 +3625,16 @@ void PmoveSingle(pmove_t *pmove){
 		PM_CheckCrash();
 		PM_CheckStatus();
 		PM_CheckStruggling();
-		if(pm->ps->timers[tmKnockback] > 0 && !(pm->ps->bitFlags & (isUnconcious | isDead | isCrashed)) && (pm->cmd.buttons & BUTTON_TELEPORT)){
+		if(pm->ps->timers[tmKnockback] > 0 && !(pm->ps->bitFlags & (isUnconcious | isDead | isCrashed)) && (pm->cmd.buttons & BUTTON_TELEPORT)
+			&& !pm->noLockedZanzoken){
 		PM_LockedZanzoken();
 	}
 	if(!pm->ps->timers[tmKnockback] && !(pm->ps->bitFlags & isUnconcious) && !(pm->ps->bitFlags & isDead) && !(pm->ps->bitFlags & isCrashed)){
 			PM_CheckBoost();
 			PM_CheckPowerLevel();
 			PM_CheckLockon();
-			if(PM_LockedZanzoken()){
+			// a classic server has no locked-on zanzoken: predicting it made the view jump back
+			if(!pm->noLockedZanzoken && PM_LockedZanzoken()){
 				pm->ps->timers[tmZanzoken] = 0;		// the classic one waits for the key to be released
 			}
 			else{

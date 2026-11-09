@@ -428,6 +428,7 @@ void CG_PredictPlayerState( void ) {
 		cg_pmove.tracemask &= ~CONTENTS_BODY;
 	}
 	cg_pmove.noFootsteps = ( cgs.dmflags & DF_NO_FOOTSTEPS ) > 0;
+	cg_pmove.noLockedZanzoken = cgs.classicServer;
 	oldPlayerState = cg.predictedPlayerState;
 	current = trap_GetCurrentCmdNumber();
 	// if we don't have the commands right after the snapshot, we

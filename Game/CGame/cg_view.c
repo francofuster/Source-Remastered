@@ -2552,6 +2552,20 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
 		return;
 	}
 
+	// a classic server: say once what Z does not do there
+	if ( cg.classicNotice ) {
+		cg.classicNotice = qfalse;
+		cg.classicNoticeTime = cg.time;
+	}
+	// cg_debugPower: the power levels this client receives, once a second
+	if ( cg_debugPower.integer && cg.time - cg.debugPowerTime >= 1000 ) {
+		cg.debugPowerTime = cg.time;
+		CG_Printf( "power: current %i health %i fatigue %i maximum %i limit %i bars %i tier %i classic %i\n",
+			cg.snap->ps.powerLevel[plCurrent], cg.snap->ps.powerLevel[plHealth], cg.snap->ps.powerLevel[plFatigue],
+			cg.snap->ps.powerLevel[plMaximum], cg.snap->ps.powerLevel[plLimit], cg.snap->ps.stats[stHealthBars],
+			cg.snap->ps.powerLevel[plTierCurrent], cgs.classicServer );
+	}
+
 	// let the client system know what our weapon and zoom settings are
 	trap_SetUserCmdValue( cg.weaponSelect, cg.zoomSensitivity );
 

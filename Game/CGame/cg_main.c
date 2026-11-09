@@ -117,6 +117,7 @@ vmCvar_t	cg_brassTime;
 vmCvar_t	cg_chatTime;
 vmCvar_t	cg_hudTop;
 vmCvar_t	cg_hudScale;
+vmCvar_t	cg_debugPower;
 vmCvar_t	cg_viewsize;
 vmCvar_t	cg_drawGun;
 vmCvar_t	cg_gun_frame;
@@ -260,6 +261,7 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_chatTime, "cg_chatTime", "3500", CVAR_ARCHIVE },
 	{ &cg_hudTop, "cg_hudTop", CG_HUDTOP_DEFAULT, CVAR_ARCHIVE },
 	{ &cg_hudScale, "cg_hudScale", CG_HUDSCALE_DEFAULT, CVAR_ARCHIVE },
+	{ &cg_debugPower, "cg_debugPower", "0", 0 },
 	{ &cg_addMarks, "cg_marks", "1", CVAR_ARCHIVE },
 	{ &cg_railTrailTime, "cg_railTrailTime", "400", CVAR_ARCHIVE  },
 	{ &cg_gun_x, "cg_gunX", "0", CVAR_CHEAT },

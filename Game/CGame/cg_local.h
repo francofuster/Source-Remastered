@@ -799,6 +799,10 @@ typedef struct {
 
 	// END ADDING
 
+	qboolean	classicNotice;		// say it once the game shows: this is a classic server
+	int			classicNoticeTime;	// when that notice started (CG_DrawClassicNotice)
+	int			debugPowerTime;		// cg_debugPower: last print
+
 } cg_t;
 
 
@@ -944,6 +948,9 @@ typedef struct {
 	int				processedSnapshotNum;// the number of snapshots cgame has requested
 
 	qboolean		localServer;		// detected on startup by checking sv_running
+	qboolean		classicServer;		// no Remastered fight system there (BG_REMASTERED_SERVER)
+	qboolean		classicPowerChecked;	// the layout of its power levels was looked at
+	qboolean		classicPowerOld;		// the 2011 release layout: no pools, all after plHealth two lower
 	qboolean		clientPaused;
 
 	// parsed from serverinfo
@@ -1108,6 +1115,7 @@ extern	vmCvar_t		cg_chatTime;
 // the bottom left belongs to the touch stick.
 extern	vmCvar_t		cg_hudTop;
 extern	vmCvar_t		cg_hudScale;
+extern	vmCvar_t		cg_debugPower;
 #ifdef __ANDROID__
 #define CG_HUDTOP_DEFAULT	"1"
 #define CG_HUDSCALE_DEFAULT	"1.45"

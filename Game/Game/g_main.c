@@ -196,6 +196,9 @@ static cvarTable_t		gameCvarTable[] = {
 	{ &g_breakLimitRate, "g_breakLimitRate", "1.0", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue  },
 	{ &g_botlite_targetBots, "g_botlite_targetBots", "1", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
 	{ &g_botStamina, "g_botStamina", "0", CVAR_ARCHIVE | CVAR_SERVERINFO, 0, qtrue },
+	// tells clients this server has the Remastered fight system (the locked-on
+	// zanzoken): without it they use their classic mode (BG_REMASTERED_SERVER)
+	{ NULL, "g_fightSystem", "1", CVAR_SERVERINFO | CVAR_ROM, 0, qfalse },
 	// health bars (1 to 3): 3 = green, magenta and red bars and fights last 3 times longer, 1 = classic
 	{ &g_healthBars, "g_healthBars", "3", CVAR_ARCHIVE, 0, qtrue },
 	// locked-on zanzoken counter: the camera cuts at once, the body shows up

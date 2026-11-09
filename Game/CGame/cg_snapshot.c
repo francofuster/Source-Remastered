@@ -265,6 +265,49 @@ times if the client system fails to return a
 valid snapshot.
 ========================
 */
+/*
+========================
+CG_ClassicPowerLevels
+
+The ZEQ2-Lite release that classic servers run (2011) has no plHealthPool
+and plMaximumPool: its power levels after plHealth sit two places lower.
+Read as ours, plMaximum got its limit and plLimit a per-frame counter (0),
+and the HUD drew the health almost gone. Our layout always sends a limit
+(g_powerlevelMaximum), so a zero there on a classic server, with a maximum,
+means the old layout: the values move back to their places.
+========================
+*/
+static void CG_ClassicPowerLevels( playerState_t *ps ) {
+	int		*pl;
+	int		oldMaximum, oldLimit;
+	int		i;
+
+	if ( !cgs.classicServer ) {
+		return;
+	}
+	pl = ps->powerLevel;
+	if ( !cgs.classicPowerChecked ) {
+		if ( pl[plMaximum] <= 0 && pl[plLimit] <= 0 ) {
+			return;		// not spawned yet: nothing to tell from
+		}
+		cgs.classicPowerChecked = qtrue;
+		cgs.classicPowerOld = pl[plLimit] == 0;
+		CG_Printf( "classic server: %s power level layout\n", cgs.classicPowerOld ? "2011" : "current" );
+	}
+	if ( !cgs.classicPowerOld ) {
+		return;
+	}
+	oldMaximum = pl[plHealthPool];		// old plMaximum
+	oldLimit = pl[plMaximum];			// old plLimit
+	for ( i = MAX_POWERSTATS - 1; i >= plUseCurrent; i-- ) {
+		pl[i] = pl[i - 2];
+	}
+	pl[plLimit] = oldLimit;
+	pl[plMaximumPool] = 0;
+	pl[plMaximum] = oldMaximum;
+	pl[plHealthPool] = 0;
+}
+
 static snapshot_t *CG_ReadNextSnapshot( void ) {
 	qboolean	r;
 	snapshot_t	*dest;
@@ -293,6 +336,7 @@ static snapshot_t *CG_ReadNextSnapshot( void ) {
 
 		// if it succeeded, return
 		if ( r ) {
+			CG_ClassicPowerLevels( &dest->ps );
 			return dest;
 		}
 		// If there are additional snapshots, continue trying to

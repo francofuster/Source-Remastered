@@ -201,6 +201,7 @@ typedef struct {
 	int			tracemask;			// collide against these types of surfaces
 	int			debugLevel;			// if set, diagnostic output will be printed
 	int			zanzokenDelay;		// ms unseen after a locked-on counter (g_zanzokenAppearDelay)
+	qboolean	noLockedZanzoken;	// the prediction on a classic server: Z is only the classic zanzoken
 	qboolean	noFootsteps;		// if the game is setup for no footsteps by the server
 	qboolean	gauntletHit;		// true if a gauntlet attack would actually hit something
 	int			framecount;
@@ -265,6 +266,12 @@ typedef enum {
 // body shows up eventParm times this many ms later (cgame hides it meanwhile;
 // 1 for a dodge or a chase, there at once)
 #define ZANZOKEN_VANISH_STEP	10
+
+// A server with the Remastered fight system (the locked-on zanzoken: dodge,
+// counter, chase) says so in its serverinfo: g_fightSystem from 1.4-alpha2 on,
+// and Remastered 1.2 to 1.4 already had g_botStamina. A server with neither
+// runs the classic ZEQ2-Lite game.
+#define BG_REMASTERED_SERVER( info )	( Info_ValueForKey( ( info ), "g_fightSystem" )[0] || Info_ValueForKey( ( info ), "g_botStamina" )[0] )
 typedef enum {
 	stZanzokenCost,
 	stEnergyAttackCost,
