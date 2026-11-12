@@ -6,6 +6,7 @@ Tap LOCK to face the nearest rival and lock on. With a lock-on, GUARD blocks.
 Hold AURA to charge ki. Slide AURA up to transform and down to go back.
 Hold AURA and slide it left to lower your ki: fatigue recovers much faster.
 Slide KI to the left to fire your second attack.
+In melee, tap KI to strike and hold it to send your rival flying.
 Z dodges, counters and chases. It glows when the moment is right.
 Tap SKILL for your next technique, or slide on it to go through the list.
 Drag on the right half of the screen to look around.

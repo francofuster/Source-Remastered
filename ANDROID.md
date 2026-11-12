@@ -42,10 +42,10 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 **F3, contextos y asistencias: hecha en el emulador.** Falta probarla en un móvil, con dos dedos a la vez.
 
 - **Contextos** (`cl_touch.c`, `Touch_UpdateContext` y `Touch_Label`): los botones cambian de texto según la situación, leída del `playerState` de la instantánea.
-  - Cuerpo a cuerpo: KI pasa a COMBO, FUERTE a LANZAR y Z a CONTRA.
+  - Cuerpo a cuerpo: KI pasa a COMBO (toque: golpe; mantener: LAUNCH), FUERTE a LANZAR y Z a CONTRA.
   - Rival lanzado: Z pasa a PERSEGUIR y parpadea; KI, FUERTE y GUARDIA se atenúan.
   - También ESQUIVAR (un rival a menos de 200 unidades que se acerca rápido), ROMPER, ATRÁS, FRENAR, RECUPERAR y EMPUJAR (choque de rayos).
-- **Combo guiado** (perfil Asistido, `touch_profile 1`): en cuerpo a cuerpo, mantener KI encadena golpes, una ráfaga y un lanzamiento; un toque da un golpe. Mantener FUERTE y mover el stick elige hacia dónde se lanza. El perfil Clásico (`touch_profile 0`) deja solo la fricción.
+- **KI en cuerpo a cuerpo** (perfil Asistido, `touch_profile 1`; desde la 1.4-alpha4): cada toque es un golpe, MOUSE1 y MOUSE2 por turnos, como los clics de PC (en `PM_Melee` un toque corto de cualquiera es un *breaker*); mantenerlo pasados 250 ms es MOUSE2 mantenido, el lanzamiento, que sigue al menos 650 ms aunque se suelte (el juego carga 550). Mientras tanto KI dice LAUNCH en rojo, y el stick elige hacia dónde sale el rival. Bajo COMBO se ve LAUNCH sin flecha: ya no se desliza. Antes, mantener KI hacía un combo guiado (ráfaga con W y lanzamiento, en bucle). El perfil Clásico (`touch_profile 0`) deja solo la fricción y el KI de siempre (BREAK, deslizar para LAUNCH).
 - **LOCK:** gira la vista hacia el rival visible más cercano a la mira (primero dentro de 22°; si no hay ninguno, en cualquier dirección) y fija en el comando siguiente. El juego traza el fijado antes de aplicar los ángulos del comando (`PM_CheckLockon` va antes que `PM_UpdateViewAngles`), por eso el botón sale un comando después del giro.
 - **Aim assist** (`Engine/client/cl_aimassist.c`, solo sin lock-on):
   - Captura 22°; fricción a 11° (la cámara gira al 55 %); imán a 5° (28°/s); sigue al rival si se mueve.
@@ -153,6 +153,12 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 - **Publicar:** `.\Build-Android.ps1 -Stage -Notes "..."` deja la APK, el zip y el manifest en `..\Build-Android\release\android-<versión>`; `-Publish -NotesFile notas.md` además crea la prerelease en el commit actual (tiene que estar subido; `-Replace` borra antes una release con el mismo tag). Un cambio solo de datos: `-Stage -DataOnly -Tag android-<versión>-d2`, que reusa la APK ya compilada de esa versión.
 - **Probar sin GitHub:** `python Android/tools/update_server.py ..\Build-Android\release` imita la API y los archivos (con `Range`); `--only <tag>` muestra una sola release, `--cut-after <bytes>` corta cada descarga y `--kbps` la hace lenta. El móvil lo usa con `adb reverse tcp:8000 tcp:8000` y `--es updateFeed http://localhost:8000/releases`; el emulador con `http://10.0.2.2:8000/releases`. La app solo acepta esa dirección de prueba hacia `localhost`, `127.0.0.1` o `10.0.2.2`, y solo ahí permite HTTP sin cifrar (`res/xml/network_security_config.xml`).
 - **Probado:** en el emulador de Android 15 (x86_64): instalación limpia (219 MB en 27 s desde el PC), sin novedades (arranca en medio segundo), APK nueva con el permiso y el instalador de Android, datos con 2 archivos cambiados (756 bytes), solo datos con un archivo borrado, corte cada 60 MB (siguió en tres reintentos) y sin conexión. Contra GitHub de verdad: ve la alpha 2 sin manifest y arranca. En el emulador de Android 7: instalación limpia y APK nueva por el instalador viejo, sin permiso por app.
+
+**1.4-alpha4 (después de 1.4-alpha3):**
+- **Nombre del jugador:** el menú principal tomaba el nombre una sola vez, al crearse, y queda debajo de FIGHTER. Al volver seguía mostrando el viejo, y `MainMenu_Save` (cualquier botón del menú principal, o ESC) lo escribía de nuevo en `name`: el cambio se perdía. Ahora `MainMenu_SyncName` toma el nombre nuevo cuando la variable cambió en otro lado, sin pisar lo que se esté escribiendo en el menú principal de PC. El luchador del menú ya se actualizaba así.
+- **KI en cuerpo a cuerpo:** un golpe por toque (MOUSE1 y MOUSE2 por turnos), mantener lanza (ver Fase F3). Un consejo de carga nuevo lo explica.
+- `touch_debug 1` también imprime los cambios de contexto (`touch: context melee -> foe launched`), los toques de KI en cuerpo a cuerpo con su duración y botón, y el lanzamiento.
+- Probado en el Moto G06: toques que alternan MOUSE1 y MOUSE2 y bajan la vida del rival, mantener → LAUNCH en rojo → el rival sale volando y se enciende CHASE, sin disparar un ataque de ki después. Con un bot quieto, el cuerpo a cuerpo termina tras 1,5 s sin golpes (`PM_MeleeIdle`), como en PC. Un `screencap` justo después de un `input tap` puede demorar el soltar y convertir el toque en mantener: en las pruebas, sacar capturas entre toques no sirve.
 
 ## Estructura
 

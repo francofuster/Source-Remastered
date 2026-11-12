@@ -66,6 +66,7 @@ typedef struct {
 	menubitmap_s	setup;
 	menubitmap_s	exit;
 	menufield_s		name;
+	char			nameSeen[MAX_EDIT_LINE];	// the name cvar when the field last took it
 	menubitmap_s	nameButton;		// phone: the plate opens FIGHTER
 	menubitmap_s	player;
 	playerInfo_t	playerinfo;
@@ -269,8 +270,34 @@ MainMenu_Cache
 ===============
 */
 void MainMenu_Cache( void ) {}
+
+/*
+===============
+MainMenu_SyncName
+
+The main menu stays under FIGHTER, which can change the name. The field
+took the name once, when the menu was made: a newer name has to replace
+it, or the plate kept the old one and MainMenu_Save wrote it back. An edit
+made here (PC) is kept, since the cvar did not change meanwhile.
+===============
+*/
+static void MainMenu_SyncName( void ) {
+	char	name[MAX_EDIT_LINE];
+
+	trap_Cvar_VariableStringBuffer( "name", name, sizeof( name ) );
+	if ( !strcmp( name, s_main.nameSeen ) ) {
+		return;
+	}
+	Q_strncpyz( s_main.name.field.buffer, name, sizeof( s_main.name.field.buffer ) );
+	Q_strncpyz( s_main.nameSeen, name, sizeof( s_main.nameSeen ) );
+	s_main.name.field.cursor = strlen( s_main.name.field.buffer );
+	s_main.name.field.scroll = 0;
+}
+
 void MainMenu_Save ( void ) {
+	MainMenu_SyncName();
 	trap_Cvar_Set("name", s_main.name.field.buffer );
+	Q_strncpyz( s_main.nameSeen, s_main.name.field.buffer, sizeof( s_main.nameSeen ) );
 }
 
 
@@ -325,6 +352,7 @@ static void Main_MenuDraw( void ) {
 		return;
 	}
 
+	MainMenu_SyncName();
 	Menu_Draw( &s_main.menu );
 	UI_DHints( hints, 2 );
 }
@@ -444,6 +472,7 @@ void UI_MainMenu( void ) {
 		Menu_AddItem( &s_main.menu, &s_main.name );
 	}
 	Q_strncpyz(s_main.name.field.buffer,UI_Cvar_VariableString("name"),sizeof(s_main.name.field.buffer) );
+	Q_strncpyz( s_main.nameSeen, s_main.name.field.buffer, sizeof( s_main.nameSeen ) );
 	Menu_AddItem( &s_main.menu, &s_main.player );
 	trap_Key_SetCatcher( KEYCATCH_UI );
 	uis.menusp = 0;

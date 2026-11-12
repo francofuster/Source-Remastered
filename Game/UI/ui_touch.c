@@ -297,7 +297,7 @@ static void TouchControls_MenuInit( void ) {
 	UI_DOptionsBegin( &s_touch.menu, 0, 0, 0, 0 );
 	UI_DOptionsPhoneArea( 34, 444, 356 );
 	UI_DOptionsSection( "PLAY" );
-	UI_DOptionsRow( &s_touch.profile, "Profile", "Assisted adds the magnet, auto lock and the guided combo.", qfalse );
+	UI_DOptionsRow( &s_touch.profile, "Profile", "Assisted: magnet, auto lock; in melee hold KI to launch.", qfalse );
 	UI_DOptionsRow( &s_touch.aim, "Aim assist", "Slows the view near a rival and bends shots to it.", qfalse );
 	UI_DOptionsRow( &s_touch.look, "Look speed", "How fast a drag on the right half turns the view.", qfalse );
 	UI_DOptionsSection( "BUTTONS" );

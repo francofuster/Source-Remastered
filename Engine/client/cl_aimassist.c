@@ -468,7 +468,8 @@ void CL_AimAssistInit( void ) {
 	cl_aaDwell = Cvar_Get( "cl_aaDwell", "400", CVAR_ARCHIVE );
 	// 1 prints the players it measures (only on LOCK; 2 also every frame)
 	cl_aaDebug = Cvar_Get( "cl_aaDebug", "0", 0 );
-	// 1 Asistido: magnet, auto lock and guided combo. 0 Clasico: friction only.
+	// 1 Asistido: magnet, auto lock and KI in melee (tap blows, hold launch).
+	// 0 Clasico: friction only.
 	touch_profile = Cvar_Get( "touch_profile", "1", CVAR_ARCHIVE );
 
 	Com_Memset( &aa, 0, sizeof( aa ) );

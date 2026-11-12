@@ -13,8 +13,9 @@ modules know nothing about touch.
 
 Phase F3 adds the contexts: the same buttons do what the situation calls
 for (free, locked on, melee, opponent launched, launched yourself, beam
-struggle), with their labels, the guided combo, the launch direction on the
-stick, the Z hints and the aim assist (cl_aimassist.c).
+struggle), with their labels, KI in melee (a blow per tap, hold for the
+launch), the launch direction on the stick, the Z hints and the aim assist
+(cl_aimassist.c).
 Layout and thresholds: the Android proposal, section "Joystick virtual".
 ===========================================================================
 */
@@ -52,12 +53,12 @@ Layout and thresholds: the Android proposal, section "Joystick virtual".
 #define KI_DECIDE_MS			200
 #define LAND_TRACE				160.0f	// VUELO down this close to the ground lands
 
-// Guided combo (Asistido, in melee): holding KI rushes with W, then holds
-// FUERTE past 550 ms for the power launch, over and over. A tap still breaks.
-#define COMBO_HOLD_MS			220
-#define COMBO_RUSH_MS			900
-#define COMBO_LAUNCH_MS			650
-#define COMBO_CYCLE_MS			1650
+// KI in melee (Asistido): each tap is one blow, MOUSE1 and MOUSE2 by turns,
+// the clicks of PC (PM_Melee: a short press of either is a breaker). Held,
+// it is MOUSE2 held, the power launch: down past the 550 ms the game
+// charges, even if the finger leaves before.
+#define MELEE_HOLD_MS			250
+#define LAUNCH_SEND_MS			650
 
 // Z hints, from bg_pmove.c (PM_LockedZanzoken)
 #define ZAN_DODGE_RANGE			200
@@ -174,6 +175,9 @@ static struct {
 	int				auraMode;			// AURA_*
 	int				kiMode;				// KI_*
 	qboolean		kiAltLatched;		// the KI tap that was let go was the second attack
+	qboolean		kiLaunch;			// melee: this KI press became the launch
+	qboolean		kiNextAlt;			// melee: the next KI tap is MOUSE2, not MOUSE1
+	int				launchUntil;		// melee: the launch keeps FUERTE down until this time
 	int				auraStick;			// AURA with the stick: 1 forward, -1 back
 	int				tierDir;			// F + W (1) or F + S (-1) still being sent
 	int				tierUntil;			// ... until this time, even after AURA is up
@@ -187,6 +191,7 @@ static struct {
 	qboolean		lockPressed;
 	qboolean		lockSendNext;		// LOCK turned the view: the button goes next command
 	int				debugKnock;			// touch_debug: sign of the last knockback timer
+	int				debugCtx;			// touch_debug: the last context printed
 	qboolean		classic;			// a classic server: no locked-on zanzoken there
 
 	qhandle_t		disc, ring, glow, knob, stickBase, pill, arrowUp, arrowDown, arrowLeft, pause;
@@ -294,6 +299,12 @@ static void Touch_UpdateContext( void ) {
 		tc.zHint = qfalse;
 		tc.chaseWindow = qfalse;
 	}
+	if ( touch_debug && touch_debug->integer && tc.ctx != tc.debugCtx ) {
+		static const char *names[] = { "free", "locked", "melee", "foe launched", "knocked", "struggle" };
+
+		Com_Printf( "touch: context %s -> %s\n", names[tc.debugCtx], names[tc.ctx] );
+		tc.debugCtx = tc.ctx;
+	}
 }
 
 /*
@@ -320,6 +331,19 @@ static qboolean Touch_Visible( int button ) {
 
 /*
 =================
+Touch_MeleeKi
+
+KI is the blows (taps) and the launch (hold): in melee with the Asistido
+profile, unless it is recovering or was slid into the second attack.
+=================
+*/
+static qboolean Touch_MeleeKi( void ) {
+	return tc.ctx == CTX_MELEE && touch_profile && touch_profile->integer &&
+		tc.kiMode != KI_RECOVER && tc.kiMode != KI_ALT;
+}
+
+/*
+=================
 Touch_Label
 
 What a button says in the current context; *dim when it does nothing there.
@@ -333,6 +357,10 @@ static touchLabel_t Touch_Label( int button, qboolean *dim ) {
 	case TB_KI:
 		if ( tc.ctx == CTX_KNOCKED || ( touchButtons[TB_KI].finger >= 0 && tc.kiMode == KI_RECOVER ) ) {
 			return TL_RECOVER;
+		}
+		// held into the launch: it says so while FUERTE is down
+		if ( tc.ctx == CTX_MELEE && ( cls.realtime < tc.launchUntil || ( tc.kiLaunch && touchButtons[TB_KI].finger >= 0 ) ) ) {
+			return TL_LAUNCH;
 		}
 		if ( touchButtons[TB_KI].finger >= 0 && tc.kiMode == KI_ALT ) {
 			return Touch_Label( TB_STRONG, dim );
@@ -470,6 +498,7 @@ static void Touch_ButtonDown( int button, int finger ) {
 		break;
 	case TB_KI:
 		tc.kiMode = tc.ctx == CTX_KNOCKED ? KI_RECOVER : KI_WAIT;
+		tc.kiLaunch = qfalse;
 		break;
 	case TB_SKILL:
 		tc.skillDrag = 0.0f;
@@ -492,12 +521,18 @@ static void Touch_ButtonUp( int button ) {
 		b->latched = qtrue;
 	}
 
-	// The guided combo ran: letting go must not also break
-	if ( button == TB_KI && tc.kiMode != KI_ALT && tc.ctx == CTX_MELEE && touch_profile && touch_profile->integer &&
-		cls.realtime - b->downTime >= COMBO_HOLD_MS ) {
+	if ( button == TB_KI && tc.kiLaunch ) {
+		// held into the launch, which goes on by itself: nothing more
 		b->latched = qfalse;
-	}
-	if ( button == TB_KI ) {
+	} else if ( button == TB_KI && Touch_MeleeKi() ) {
+		// melee: one blow per tap, MOUSE1 and MOUSE2 by turns
+		tc.kiAltLatched = tc.kiNextAlt;
+		tc.kiNextAlt = !tc.kiNextAlt;
+		if ( touch_debug->integer ) {
+			Com_Printf( "touch: KI tap in melee (%d ms), %s\n", cls.realtime - b->downTime,
+				tc.kiAltLatched ? "MOUSE2" : "MOUSE1" );
+		}
+	} else if ( button == TB_KI ) {
 		// let go before it knew: a tap of the first attack
 		tc.kiAltLatched = tc.kiMode == KI_ALT || tc.kiMode == KI_RECOVER;
 		if ( tc.kiMode == KI_RECOVER && tc.ctx != CTX_KNOCKED ) {
@@ -691,8 +726,9 @@ static void Touch_FingerMove( touchFinger_t *f ) {
 		touchButton_t *b = &touchButtons[f->button];
 
 		// KI slid left in its first moments is the second attack; a move
-		// any other way makes it the first one at once
-		if ( f->button == TB_KI && tc.kiMode == KI_WAIT ) {
+		// any other way makes it the first one at once. Not in melee with
+		// Asistido: there holding it is the launch.
+		if ( f->button == TB_KI && tc.kiMode == KI_WAIT && !Touch_MeleeKi() ) {
 			float sx = ( f->x - f->x0 ) / tc.dp;
 			float sy = ( f->y - f->y0 ) / tc.dp;
 
@@ -914,14 +950,13 @@ Called by CL_CreateCmd after the keyboard, the mouse and the joystick.
 void CL_TouchMove( usercmd_t *cmd ) {
 	touchButton_t *b;
 	float lookYaw = 0.0f, lookPitch = 0.0f;
-	qboolean assisted, flying;
+	qboolean flying;
 	int i, prevStick;
 
 	if ( !touch_enable ) {
 		return;
 	}
 	Touch_UpdateContext();
-	assisted = touch_profile && touch_profile->integer;
 
 	if ( !Touch_GameActive() ) {
 		// A menu or the console took over: the game must not see held buttons
@@ -971,10 +1006,11 @@ void CL_TouchMove( usercmd_t *cmd ) {
 		}
 	}
 
-	// KI: in melee with the Asistido profile, holding it plays the guided
-	// combo (rush with W, then FUERTE past 550 ms for the power launch);
-	// a tap still breaks. Everywhere else it is MOUSE1. Slid left it is
-	// FUERTE (MOUSE2); while that is still open it sends nothing.
+	// KI: in melee with the Asistido profile, a tap is one blow (MOUSE1 and
+	// MOUSE2 by turns) and a hold the power launch (MOUSE2 past 550 ms), as
+	// the clicks of PC. Everywhere else it is
+	// MOUSE1. Slid left it is FUERTE (MOUSE2); while that is still open it
+	// sends nothing.
 	b = &touchButtons[TB_KI];
 	// knocked back, KI recovers, also when it was held before the hit
 	if ( b->finger >= 0 && tc.ctx == CTX_KNOCKED ) {
@@ -993,7 +1029,24 @@ void CL_TouchMove( usercmd_t *cmd ) {
 		}
 	}
 	if ( tc.ctx != CTX_STRUGGLE ) {
-		if ( b->finger >= 0 ) {
+		if ( tc.kiLaunch ) {
+			// this press is the launch (below), and nothing else
+		} else if ( Touch_MeleeKi() ) {
+			// nothing while it may still be a tap; held past MELEE_HOLD_MS it
+			// is the launch, which goes on by itself (below). A tap that was
+			// let go sends its click in one usercmd.
+			if ( b->finger >= 0 ) {
+				if ( cls.realtime - b->downTime >= MELEE_HOLD_MS ) {
+					tc.kiLaunch = qtrue;
+					tc.launchUntil = cls.realtime + LAUNCH_SEND_MS;
+					if ( touch_debug->integer ) {
+						Com_Printf( "touch: KI held in melee, launch\n" );
+					}
+				}
+			} else if ( b->latched ) {
+				cmd->buttons |= tc.kiAltLatched ? BUTTON_ALT_ATTACK : BUTTON_ATTACK;
+			}
+		} else if ( b->finger >= 0 ) {
 			int held = cls.realtime - b->downTime;
 
 			if ( tc.kiMode == KI_WAIT && held >= KI_DECIDE_MS ) {
@@ -1008,16 +1061,6 @@ void CL_TouchMove( usercmd_t *cmd ) {
 				cmd->buttons |= BUTTON_ALT_ATTACK;
 			} else if ( tc.kiMode == KI_WAIT ) {
 				// not yet
-			} else if ( tc.ctx == CTX_MELEE && assisted ) {
-				if ( held >= COMBO_HOLD_MS ) {
-					int phase = ( held - COMBO_HOLD_MS ) % COMBO_CYCLE_MS;
-
-					if ( phase < COMBO_RUSH_MS ) {
-						cmd->forwardmove = 127;
-					} else if ( phase < COMBO_RUSH_MS + COMBO_LAUNCH_MS ) {
-						cmd->buttons |= BUTTON_ALT_ATTACK;
-					}
-				}
 			} else {
 				cmd->buttons |= BUTTON_ATTACK;
 			}
@@ -1026,9 +1069,24 @@ void CL_TouchMove( usercmd_t *cmd ) {
 		}
 	}
 
+	// The launch: MOUSE2 held, as on PC, at least until the game charged it
+	// even if the finger left. Out of melee it stops (the game ignores attack
+	// buttons still down from the melee, PMF_ATTACK*_HELD, so a launch that
+	// lands fires no ki attack), and the next melee starts with MOUSE1.
+	if ( tc.ctx == CTX_MELEE ) {
+		if ( cls.realtime < tc.launchUntil || ( tc.kiLaunch && b->finger >= 0 ) ) {
+			cmd->buttons |= BUTTON_ALT_ATTACK;
+			cmd->forwardmove = 0;
+		}
+	} else {
+		tc.launchUntil = 0;
+		tc.kiNextAlt = qfalse;
+	}
+
 	// FUERTE held in melee: the stick picks where the power launch sends it,
 	// the R, C, D and A of PC (PM_Melee reads upmove, then rightmove)
-	if ( tc.ctx == CTX_MELEE && touchButtons[TB_KI].finger >= 0 && tc.kiMode == KI_ALT && tc.stickMag >= STICK_DEAD ) {
+	if ( tc.ctx == CTX_MELEE && tc.stickMag >= STICK_DEAD &&
+		( cls.realtime < tc.launchUntil || ( touchButtons[TB_KI].finger >= 0 && ( tc.kiLaunch || tc.kiMode == KI_ALT ) ) ) ) {
 		cmd->forwardmove = 0;
 		cmd->rightmove = 0;
 		if ( fabs( tc.stickNY ) >= fabs( tc.stickNX ) ) {
@@ -1301,7 +1359,7 @@ void CL_TouchDraw( void ) {
 		label = Touch_Label( i, &dim );
 		a = dim ? alpha * 0.4f : alpha;
 		tint = b->tint;
-		if ( i == TB_KI && held && tc.kiMode == KI_ALT ) {
+		if ( i == TB_KI && ( ( held && tc.kiMode == KI_ALT ) || label == TL_LAUNCH ) ) {
 			tint = touchButtons[TB_STRONG].tint;
 		}
 		if ( i == TB_AURA && held ) {
@@ -1334,8 +1392,9 @@ void CL_TouchDraw( void ) {
 			float ly = b->py;
 
 			// KI holds the second attack too: its word under the label,
-			// with the arrow of the slide
-			if ( i == TB_KI && label != TL_RECOVER && !( held && tc.kiMode == KI_ALT ) ) {
+			// with the arrow of the slide. In melee with Asistido the launch
+			// is a hold, not a slide: the word alone.
+			if ( i == TB_KI && label != TL_RECOVER && label != TL_LAUNCH && !( held && tc.kiMode == KI_ALT ) ) {
 				qboolean altDim;
 				touchLabel_t alt = Touch_Label( TB_STRONG, &altDim );
 				float hw = size * 0.5f;
@@ -1343,8 +1402,12 @@ void CL_TouchDraw( void ) {
 				float ha = ( dim || altDim ) ? alpha * 0.3f : alpha * 0.8f;
 
 				ly -= b->pr * 0.14f;
-				Touch_DrawPic( b->px - size * 0.25f, hy, size * 0.1f, size * 0.1f, NULL, ha, tc.arrowLeft );
-				Touch_DrawPic( b->px + size * 0.06f, hy, hw, hw * 0.5f, NULL, ha, tc.labels[alt] );
+				if ( Touch_MeleeKi() ) {
+					Touch_DrawPic( b->px, hy, hw, hw * 0.5f, NULL, ha, tc.labels[alt] );
+				} else {
+					Touch_DrawPic( b->px - size * 0.25f, hy, size * 0.1f, size * 0.1f, NULL, ha, tc.arrowLeft );
+					Touch_DrawPic( b->px + size * 0.06f, hy, hw, hw * 0.5f, NULL, ha, tc.labels[alt] );
+				}
 			}
 			Touch_DrawPic( b->px, ly, lw, lw * 0.5f, NULL, a * 1.1f, tc.labels[label] );
 		}
