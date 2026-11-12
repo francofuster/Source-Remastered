@@ -2949,6 +2949,11 @@ void CL_Init( void ) {
 #ifdef USE_TOUCH
 	CL_TouchInit ();
 #endif
+#ifdef __ANDROID__
+	// Read by SetupActivity from zeq2config.cfg before the engine starts:
+	// 0 skips looking for a new release when the game opens
+	Cvar_Get( "cl_updateCheck", "1", CVAR_ARCHIVE );
+#endif
 
 	//
 	// register our variables

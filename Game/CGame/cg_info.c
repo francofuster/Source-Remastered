@@ -46,7 +46,15 @@ static vec4_t	ld_gold		= { 0.95f, 0.70f, 0.24f, 1.00f };
 static vec4_t	ld_ki		= { 0.33f, 0.59f, 1.00f, 1.00f };
 
 #ifdef __ANDROID__
-// the touch controls (Engine/client/cl_touch.c)
+// The touch controls (Engine/client/cl_touch.c). touch/tips.txt in the game
+// data replaces this list when it is there: changing the tips then takes a
+// data update, not a new APK.
+#define TIPS_FILE		"touch/tips.txt"
+#define MAX_FILE_TIPS	32
+static char			ld_tipText[4096];
+static const char	*ld_fileTips[MAX_FILE_TIPS];
+static int			ld_numFileTips = -1;	// -1: not read yet
+
 static const char *loadingTips[] = {
 	"Tap LOCK to face the nearest rival and lock on. With a lock-on, GUARD blocks.",
 	"Hold AURA to charge ki. Slide AURA up to transform and down to go back.",
@@ -67,6 +75,64 @@ static const char *loadingTips[] = {
 	"Press R to fly up and C to fly down.",
 	"Hold F1 to see the scores of the match."
 };
+#endif
+
+#ifdef __ANDROID__
+/*
+===================
+LD_LoadTips
+
+Reads TIPS_FILE once: one tip per line, empty lines and lines that start
+with // are skipped. ASCII only, about 110 characters at most (three lines
+in the panel).
+===================
+*/
+static void LD_LoadTips( void ) {
+	fileHandle_t	f;
+	int				len, i, start;
+	char			*line, *end;
+
+	if ( ld_numFileTips >= 0 ) {
+		return;
+	}
+	ld_numFileTips = 0;
+	f = 0;
+	len = trap_FS_FOpenFile( TIPS_FILE, &f, FS_READ );
+	if ( !f ) {
+		return;
+	}
+	if ( len <= 0 ) {
+		trap_FS_FCloseFile( f );
+		return;
+	}
+	if ( len >= (int)sizeof( ld_tipText ) ) {
+		len = sizeof( ld_tipText ) - 1;
+	}
+	trap_FS_Read( ld_tipText, len, f );
+	trap_FS_FCloseFile( f );
+	ld_tipText[len] = 0;
+
+	start = 0;
+	for ( i = 0; i <= len; i++ ) {
+		if ( ld_tipText[i] != '\n' && ld_tipText[i] != '\r' && ld_tipText[i] != 0 ) {
+			continue;
+		}
+		ld_tipText[i] = 0;
+		line = ld_tipText + start;
+		start = i + 1;
+		while ( *line == ' ' || *line == '\t' ) {
+			line++;
+		}
+		end = line + strlen( line );
+		while ( end > line && ( end[-1] == ' ' || end[-1] == '\t' ) ) {
+			*--end = 0;
+		}
+		if ( !*line || ( line[0] == '/' && line[1] == '/' ) || ld_numFileTips >= MAX_FILE_TIPS ) {
+			continue;
+		}
+		ld_fileTips[ld_numFileTips++] = line;
+	}
+}
 #endif
 
 /*
@@ -453,6 +519,8 @@ void CG_DrawInformation( void ) {
 	char		buf[1024];
 	int			value;
 	int			tip;
+	const char	**tips;
+	int			numTips;
 	float		fill;
 	float		bob;
 	vec4_t		track;
@@ -478,20 +546,29 @@ void CG_DrawInformation( void ) {
 	LD_PicST( 40 - ld_extra, 24, 170, 86, 155.0f / 1024.0f, 194.0f / 768.0f, 874.0f / 1024.0f, 558.0f / 768.0f, logo );
 
 	// tip of the day
-	tip = ( atoi( Info_ValueForKey( CG_ConfigString( CS_SYSTEMINFO ), "sv_serverid" ) ) & 0x7fffffff ) % ( sizeof( loadingTips ) / sizeof( loadingTips[0] ) );
+	tips = loadingTips;
+	numTips = sizeof( loadingTips ) / sizeof( loadingTips[0] );
+#ifdef __ANDROID__
+	LD_LoadTips();
+	if ( ld_numFileTips > 0 ) {
+		tips = ld_fileTips;
+		numTips = ld_numFileTips;
+	}
+#endif
+	tip = ( atoi( Info_ValueForKey( CG_ConfigString( CS_SYSTEMINFO ), "sv_serverid" ) ) & 0x7fffffff ) % numTips;
 #ifdef __ANDROID__
 	// a phone shows the canvas at about its real size: bigger panel and text
 	LD_Glass( 700 + ld_extra, 30, 540, 176 );
 	trap_R_SetColor( NULL );
 	LD_Pic( 728 + ld_extra, 60, 40, 48, trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" ) );
 	LD_Prop( 790 + ld_extra, 56, "TIP", 20, UI_LEFT, ld_gold );
-	LD_WrappedText( 790 + ld_extra, 86, loadingTips[tip], 27, 420, ld_white );
+	LD_WrappedText( 790 + ld_extra, 86, tips[tip], 27, 420, ld_white );
 #else
 	LD_Glass( 860 + ld_extra, 30, 380, 118 );
 	trap_R_SetColor( NULL );
 	LD_Pic( 884 + ld_extra, 54, 30, 36, trap_R_RegisterShaderNoMip( "interface/menu/dragonBall.png" ) );
 	LD_Prop( 928 + ld_extra, 52, "TIP", 15, UI_LEFT, ld_gold );
-	LD_WrappedText( 928 + ld_extra, 72, loadingTips[tip], 19, 290, ld_white );
+	LD_WrappedText( 928 + ld_extra, 72, tips[tip], 19, 290, ld_white );
 #endif
 
 	// map name and rules

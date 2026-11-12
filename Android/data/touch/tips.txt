@@ -1,0 +1,14 @@
+// Loading screen tips of ZEQ2-Lite Mobile (Game/CGame/cg_info.c reads this).
+// One tip per line. Empty lines and lines starting with // are skipped.
+// ASCII only, about 110 characters at most: the panel fits three lines.
+// Changing this file needs no new APK: the app updates it as game data.
+Tap LOCK to face the nearest rival and lock on. With a lock-on, GUARD blocks.
+Hold AURA to charge ki. Slide AURA up to transform and down to go back.
+Hold AURA and slide it left to lower your ki: fatigue recovers much faster.
+Slide KI to the left to fire your second attack.
+Z dodges, counters and chases. It glows when the moment is right.
+Tap SKILL for your next technique, or slide on it to go through the list.
+Drag on the right half of the screen to look around.
+Push the stick past its ring for a moment to boost.
+Hold the up arrow to fly. On the ground, a tap jumps.
+Options > Touch controls: button size, opacity, look speed and aim assist.

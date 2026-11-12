@@ -91,11 +91,15 @@ android {
 }
 
 // --- Game data ---------------------------------------------------------------
-// Build-Android/ZEQ2 goes into the APK as assets/zeq2data.zip. SetupActivity
-// unpacks it into the app folder in shared storage on the first run, as the
-// loose files the engine reads on PC (a pk3 would change what
-// trap_FS_GetFileList returns for folders, which the fighter list and the bots
-// rely on). zeq2data.id tells SetupActivity when the data changed.
+// Build-Android/ZEQ2 is packed as zeq2data.zip. The release APK does not carry
+// it: the zip goes to the GitHub release next to the APK, and SetupActivity
+// downloads it the first time and then only the files that change
+// (Build-Android.ps1 -Stage / -Publish). A debug APK carries it as
+// assets/zeq2data.zip, so it installs and plays without a release;
+// -PzeqBundleData=true or false overrides that for either build type.
+// SetupActivity writes the data as the loose files the engine reads on PC (a
+// pk3 would change what trap_FS_GetFileList returns for folders, which the
+// fighter list and the bots rely on). zeq2data.id identifies the data.
 def zeqDataDir = file("../../../Build-Android/ZEQ2")
 // Files of the Android build only, versioned with the source: the touch
 // control images (tools/make_touch_art.py writes them)
@@ -137,9 +141,14 @@ def packZeqData = tasks.register("packZeqData", Zip) {
     }
 }
 
+def zeqBundleData = project.findProperty("zeqBundleData")
+
 androidComponents {
     onVariants(selector().all()) { variant ->
-        variant.sources.assets.addGeneratedSourceDirectory(packZeqData) { it.destinationDirectory }
+        boolean bundle = zeqBundleData != null ? zeqBundleData.toString().toBoolean() : variant.buildType == "debug"
+        if (bundle) {
+            variant.sources.assets.addGeneratedSourceDirectory(packZeqData) { it.destinationDirectory }
+        }
     }
 }
 

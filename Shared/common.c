@@ -1539,6 +1539,16 @@ void Com_InitHunkMemory( void ) {
 		s_hunkTotal = cv->integer * 1024 * 1024;
 	}
 
+#if defined( __ANDROID__ ) && !defined( __LP64__ )
+	// A 32-bit Android app cannot get 768 MB in one block (512 also failed
+	// on Android 7), and the GPU driver needs address space of its own. A
+	// match on lastStand with four fighters uses about 110 MB.
+	if ( s_hunkTotal > 1024 * 1024 * MIN_COMHUNKMEGS ) {
+		s_hunkTotal = 1024 * 1024 * MIN_COMHUNKMEGS;
+		Com_Printf( "32-bit: hunk capped to %i megs\n", MIN_COMHUNKMEGS );
+	}
+#endif
+
 	s_hunkData = calloc( s_hunkTotal + 31, 1 );
 	if ( !s_hunkData ) {
 		Com_Error( ERR_FATAL, "Hunk data failed to allocate %i megs", s_hunkTotal / (1024*1024) );

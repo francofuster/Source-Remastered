@@ -3,7 +3,33 @@
     <string name="app_name">ZEQ2-Lite Mobile</string>
     <string name="setup_unpacking">Preparing the game data. This only happens on the first run.</string>
     <string name="setup_failed">The game data could not be prepared: %1$s\nCheck the free space and open the game again.</string>
-    <string name="setup_missing">This APK has no game data.</string>
     <string name="setup_progress">%1$s of %2$s MB</string>
     <string name="setup_space">The game data needs %1$s MB free and there are %2$s MB. Free some space and open the game again.</string>
+
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_checking_files">Checking the game files</string>
+    <string name="update_data_title">New game data · %1$s</string>
+    <plurals name="update_data_body">
+        <item quantity="one">1 file changed: %2$s.</item>
+        <item quantity="other">%1$d files changed: %2$s.</item>
+    </plurals>
+    <string name="update_apk_title">New version · %1$s</string>
+    <string name="update_apk_body">Download: %1$s. Android will ask you to confirm the install.</string>
+    <string name="update_now">Update</string>
+    <string name="update_later">Not now</string>
+    <string name="update_downloading_data">Updating the game data</string>
+    <string name="update_downloading_first">Downloading the game data. This only happens the first time.</string>
+    <string name="update_downloading_apk">Downloading the new version</string>
+    <string name="update_progress">%1$s of %2$s</string>
+    <string name="update_progress_files">File %3$d of %4$d · %1$s of %2$s</string>
+    <string name="update_installing">Confirm the install in the Android window.</string>
+    <string name="update_permission_title">Allow updates</string>
+    <string name="update_permission">To install the new version, Android needs you to allow ZEQ2-Lite Mobile to install apps. Turn it on in the next screen and come back.</string>
+    <string name="update_open_settings">Open settings</string>
+    <string name="update_failed">The update stopped: %1$s\nRetry continues where it left off.</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_play">Play anyway</string>
+    <string name="update_offline_first">The game data is downloaded the first time the game opens (about 220 MB). Connect to the internet and try again.</string>
+    <string name="update_no_release">No game data was found to download. Try again later.</string>
+    <string name="update_needs_apk">This game data needs the new version of the app.</string>
 </resources>

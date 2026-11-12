@@ -20,6 +20,12 @@ set(CMAKE_C_EXTENSIONS ON)
 # char is unsigned on ARM and the game code was written for x86.
 add_compile_options(-fsigned-char)
 
+# 32-bit x86 (an Android 7 emulator, for tests) would pick the PC assembly
+# for sound mixing and Sys_SnapVector, which is not built here: use the C.
+if(ANDROID_ABI STREQUAL "x86")
+  add_compile_definitions(C_ONLY)
+endif()
+
 # --- SDL 2 ----------------------------------------------------------------
 set(SDL_SHARED ON CACHE BOOL "" FORCE)
 set(SDL_STATIC OFF CACHE BOOL "" FORCE)

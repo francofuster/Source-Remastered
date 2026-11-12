@@ -101,10 +101,10 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
   - Antes de descomprimir comprueba el espacio libre: lo que falta de los datos más 64 MB. Si no hay, dice cuántos MB hacen falta y cuántos hay.
   - El progreso se ve en MB.
   - Si la carpeta de `Android/data` no se puede escribir, descomprime en el almacenamiento interno. Pasa cuando una desinstalación deja la carpeta vieja, con el usuario de la instalación anterior (lo vimos en el emulador con `adb uninstall`).
-  - Guarda la lista de lo que descomprime (`.zeq2data.files`). La siguiente actualización borra lo que ya no trae, sin tocar lo que escribe el juego.
+  - Guarda la lista de lo que descomprime (`.zeq2data.files`; desde la 1.4-alpha3, `.zeq2data.index` con el CRC32 de cada archivo). La siguiente actualización borra lo que ya no trae, sin tocar lo que escribe el juego.
   - En el Moto G06 descomprimir los 325 MB tarda unos 21 s; una actualización con los mismos datos no descomprime nada.
 - **Versión:** `zeqVersionCode` y `zeqVersionName` en `Android/gradle.properties`. El código tiene que subir con cada APK que se reparta, o Android no lo instala encima.
-- **Release:** `.\Build-Android.ps1 -Release` compila el nativo optimizado (RelWithDebInfo), sin depurador, y deja `..\Build-Android\ZEQ2-<versión>.apk`.
+- **Release:** `.\Build-Android.ps1 -Release` compila el nativo optimizado (RelWithDebInfo), sin depurador, y deja `..\Build-Android\ZEQ2-Lite-Mobile-<versión>.apk` (desde la 1.4-alpha3 sin los datos: ver «Actualizaciones desde la app»).
 - **Firma:** la clave de release está en `Android/zeq2-release.jks` y sus datos en `Android/keystore.properties`; los dos quedan fuera de git. **Hay que guardar copia de ambos:** sin esa clave no se puede publicar una actualización que se instale encima. Sin `keystore.properties`, el release sale con la clave de depuración y `-debugkey` en el nombre.
 - **Nombre e icono:** «ZEQ2-Lite Mobile». El icono sale de `Android/tools/zeq2icon.png` con `Android/tools/make_icon.py`: adaptativo en Android 8+ (cada launcher lo recorta con su forma) y cuadrado en los anteriores.
 - **Instalar en un móvil por Wi-Fi:** activar la depuración inalámbrica, `adb pair <ip:puerto> <código>` con el diálogo «Vincular con código» abierto, y luego `adb connect <ip:puerto>`. Con varios dispositivos conectados: `.\Build-Android.ps1 -Install -Device <serie>`.
@@ -136,36 +136,62 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 - Deslizar AURA arriba o abajo casi nunca transformaba. El servidor mira las teclas de tier cada 300 ms (`PM_CheckTransform` → `EV_TIERCHECK` → `checkTier`), y un deslizamiento rápido las mandaba menos tiempo. Uno lento, además, ya había pasado a cargar y se ignoraba. Ahora cuenta a cualquier velocidad, también después de empezar a cargar, y el F + W o F + S se sigue mandando 450 ms aunque se suelte AURA (como los bots, `BOTLITE_TIER_HOLD_MS`). AURA con el stick también lo mantiene 450 ms como mínimo.
 - Menú principal en el móvil: la placa del nombre mantiene la proporción de su imagen y ya no lleva «Change fighter».
 
+**32 bits (después de 1.4-alpha2):**
+- La APK lleva también `armeabi-v7a` (ARM de 32 bits, muchos móviles que salieron con Android 7 a 9), junto a `arm64-v8a`. Es una sola APK: Android instala la parte que le toca al móvil. Crece 3,7 MB; casi todo su tamaño son los datos, que comparten.
+- **Memoria en 32 bits:** `default.cfg` pide un hunk de 768 MB (`com_hunkMegs`) en un solo bloque. Un proceso de 32 bits en Android no lo consigue (512 tampoco, en Android 7) y el juego se cerraba al arrancar con «Hunk data failed to allocate 768 megs». En 32 bits el hunk se limita a 256 MB (`Com_InitHunkMemory`, solo con `!__LP64__`; los 64 bits siguen igual). Medido en el emulador con Android 7: `lastStand` con cuatro luchadores usa 108 MB y `desert`, el mapa más grande, 131 MB.
+- Prueba: el emulador de Android 7 x86 (`zeq2_api24_x86`, ver Requisitos), 4 min en `desert` con tres bots, sin cierres; el stick y los botones responden. El Moto G06 solo ejecuta 64 bits (`ro.product.cpu.abilist` = `arm64-v8a`, sin `app_process32`), así que el código ARM de 32 bits no se pudo probar en un móvil real.
+
+**Actualizaciones desde la app (1.4-alpha3).** Propuesta: https://claude.ai/artifact/3taj6BZ3cmGWuxVLSVyStv.
+- **La APK de release ya no lleva los datos:** pesa unos 10 MB (antes 239). Cada release de Android en GitHub (tag `android-*`) lleva tres archivos: la APK, `zeq2data.zip` (los datos, el mismo zip que antes iba dentro) y `manifest.json` (versión, `versionCode`, SHA-256 de la APK, identificador de los datos, desde qué `versionCode` sirven esos datos y las notas del aviso). La APK de depuración sigue llevando los datos dentro y no busca actualizaciones.
+- **Al abrir** (`SetupActivity`, `Updater.java`): pregunta a la API de GitHub por las releases y toma solo la más nueva con tag `android-*` (una más vieja devolvería datos viejos). Sin respuesta en 3 s, o si esa release no tiene `manifest.json` (las de antes del actualizador), el juego arranca. La lista se guarda con su ETag: una respuesta 304 no gasta del límite de 60 consultas por hora de la API sin cuenta.
+- **APK nueva** (`versionCode` mayor): aviso con las notas y el tamaño; la baja a `cache/update`, comprueba el SHA-256 y se la pasa al instalador de Android por `ApkProvider` (un `content://` de solo lectura). Desde Android 8, la primera vez el jugador permite «Instalar apps desconocidas» para el juego (la app abre ese ajuste). Si los datos nuevos necesitan el código nuevo (`needsVersionCode`), primero va la APK.
+- **Datos nuevos:** lee solo el final del zip remoto (el directorio central, unos 140 KB con 1678 archivos y su CRC32) y lo compara con el índice local `.zeq2data.index` (nombre, tamaño y CRC32 de cada archivo instalado). Baja solo los distintos, pidiendo esos tramos del zip con `Range` (GitHub responde 206); los vecinos a menos de 256 KB van en una sola petición. Cada archivo se escribe como `.zeq2part`, se comprueba su CRC y recién entonces reemplaza al viejo. Borra los que la versión nueva ya no trae. La primera vez es el mismo camino, con todos los archivos. Antes de bajar, avisa con la cantidad y el tamaño; la primera vez baja sin preguntar.
+- **Cortes:** el índice se guarda cada 25 archivos y al fallar; «Reintentar» compara de nuevo y sigue desde el primer archivo que falta. Si la release se reemplaza en medio, el tamaño del zip en `Content-Range` ya no coincide y la descarga se detiene en vez de mezclar dos zips.
+- **Datos de una versión anterior:** sin `.zeq2data.index`, la lista vieja (`.zeq2data.files`, solo nombres) se convierte leyendo el CRC32 de cada archivo una vez.
+- `cl_updateCheck 0` (en `zeq2config.cfg`) apaga la búsqueda al abrir; sin datos instalados, igual los baja.
+- **Consejos de carga** en `Android/data/touch/tips.txt` (uno por línea, `//` para comentarios): cambiarlos es una actualización de datos. Sin el archivo quedan los de `cg_info.c`.
+- **Publicar:** `.\Build-Android.ps1 -Stage -Notes "..."` deja la APK, el zip y el manifest en `..\Build-Android\release\android-<versión>`; `-Publish -NotesFile notas.md` además crea la prerelease en el commit actual (tiene que estar subido; `-Replace` borra antes una release con el mismo tag). Un cambio solo de datos: `-Stage -DataOnly -Tag android-<versión>-d2`, que reusa la APK ya compilada de esa versión.
+- **Probar sin GitHub:** `python Android/tools/update_server.py ..\Build-Android\release` imita la API y los archivos (con `Range`); `--only <tag>` muestra una sola release, `--cut-after <bytes>` corta cada descarga y `--kbps` la hace lenta. El móvil lo usa con `adb reverse tcp:8000 tcp:8000` y `--es updateFeed http://localhost:8000/releases`; el emulador con `http://10.0.2.2:8000/releases`. La app solo acepta esa dirección de prueba hacia `localhost`, `127.0.0.1` o `10.0.2.2`, y solo ahí permite HTTP sin cifrar (`res/xml/network_security_config.xml`).
+- **Probado:** en el emulador de Android 15 (x86_64): instalación limpia (219 MB en 27 s desde el PC), sin novedades (arranca en medio segundo), APK nueva con el permiso y el instalador de Android, datos con 2 archivos cambiados (756 bytes), solo datos con un archivo borrado, corte cada 60 MB (siguió en tres reintentos) y sin conexión. Contra GitHub de verdad: ve la alpha 2 sin manifest y arranca. En el emulador de Android 7: instalación limpia y APK nueva por el instalador viejo, sin permiso por app.
+
 ## Estructura
 
 | Ruta | Qué es |
 |---|---|
 | `CMakeLists.txt` | La parte nativa del APK. Sus listas de fuentes replican `Q3OBJ`, `CGOBJ_`, `GOBJ_` y `UIOBJ_` del `Makefile`: un archivo nuevo también hay que añadirlo aquí. |
-| `Android/` | Proyecto Gradle: AGP 9.4.1 y wrapper de Gradle 9.8.1. La tarea `packZeqData` comprime `Build-Android/ZEQ2` en `assets/zeq2data.zip`. |
-| `.../SetupActivity.java` | Lanzador. Descomprime los datos si cambiaron y abre el juego, pasándole los argumentos `--es args "..."`. |
+| `Android/` | Proyecto Gradle: AGP 9.4.1 y wrapper de Gradle 9.8.1. La tarea `packZeqData` comprime `Build-Android/ZEQ2` y `Android/data` en `zeq2data.zip`: va dentro de la APK de depuración, y en las de release va a la release de GitHub (`-PzeqBundleData` lo cambia). |
+| `.../SetupActivity.java` | Lanzador. Baja, actualiza o descomprime los datos y abre el juego, pasándole los argumentos `--es args "..."`. |
+| `.../Updater.java`, `DataIndex.java`, `ApkProvider.java` | Actualizaciones desde las releases de GitHub: la release más nueva, el zip remoto por tramos, el índice de archivos instalados y la APK para el instalador. |
+| `Android/data` | Datos propios de Android, versionados con el código: las imágenes táctiles (`tools/make_touch_art.py`) y `touch/tips.txt`. |
+| `Android/tools/update_server.py` | Servidor de prueba que imita las releases de GitHub. |
 | `.../ZEQ2Activity.java` | La actividad del juego, que hereda de `SDLActivity`. |
 | `.../ZEQ2Surface.java` | La superficie del juego: dibuja a `r_androidHeight` y escala a la pantalla. |
 | `Game/UI/ui_touch.c` | La página TOUCH CONTROLS de las opciones (diseño móvil). |
 | `Android/third_party/SDL2` | SDL 2.32.10, copiado de `Source-LastRevision/deps/.sdl2`. |
 | `Android/third_party/gl4es` | gl4es, commit `bc4314d` del 30-10-2026, sin los tests ni las trazas. Traduce OpenGL 1.x a GLES 2. |
 | `Android/third_party/libogg`, `libvorbis` | libogg 1.3.3 y libvorbis 1.3.6, para la música. |
-| `Build-Android.ps1` | Compila, instala y lanza el juego. |
+| `Build-Android.ps1` | Compila, instala y lanza el juego; prepara y publica las releases. |
 
 ## Requisitos (los de este PC)
 
 - Android SDK en `D:\Android`, con platform 36, build-tools 36, NDK `29.0.14206865` y CMake `3.31.6`.
 - JDK 27 en `C:\Program Files\Java\jdk-27`.
 - Emulador: AVD `zeq2_api35` en `D:\Android\avd`. Antes de lanzarlo, define `ANDROID_AVD_HOME=D:\Android\avd`.
+- Android 7 y 32 bits: AVD `zeq2_api24_x86` (Android 7.0, x86 de 32 bits). El emulador actual ya no arranca imágenes ARM de 32 bits, así que se prueba con una APK de x86: `gradlew.bat :app:assembleRelease -PzeqAbis=x86`. En x86 se compila con `C_ONLY`, porque el motor pediría el ensamblador de PC para el sonido y `Sys_SnapVector`.
 
 ## Uso
 
 ```powershell
-.\Build-Android.ps1                              # APK arm64, para un móvil
-.\Build-Android.ps1 -Emulator                    # también x86_64, para el emulador
+.\Build-Android.ps1                              # APK arm64 y armeabi-v7a (32 bits), para un móvil
+.\Build-Android.ps1 -Emulator                    # arm64 y x86_64, para el emulador
+.\Build-Android.ps1 -Install -Abi armeabi-v7a    # instala el código de 32 bits en un móvil de 64, para probarlo
 .\Build-Android.ps1 -Install -Run                # instalar, abrir y seguir el log
 .\Build-Android.ps1 -NoBuild -Run -Map desert    # entrar directo en un mapa
 .\Build-Android.ps1 -Clean -Install              # desinstalar antes: borra datos y configuración
-.\Build-Android.ps1 -Release                     # APK de release firmada: ..\Build-Android\ZEQ2-<versión>.apk
+.\Build-Android.ps1 -Release                     # APK de release firmada, sin datos: ..\Build-Android\ZEQ2-Lite-Mobile-<versión>.apk
+.\Build-Android.ps1 -Stage -Notes "..."          # release preparada en ..\Build-Android\release\android-<versión>
+.\Build-Android.ps1 -Publish -NotesFile notas.md -Notes "..."   # y además la crea en GitHub
+.\Build-Android.ps1 -Run -Feed http://localhost:8000/releases   # contra el servidor de prueba
 .\Build-Android.ps1 -Install -Device <serie>     # con varios dispositivos (adb devices)
 ```
 
@@ -196,7 +222,7 @@ La parte de PC sigue con SDL 1.2. Todo lo de SDL 2 está dentro de `#if SDL_MAJO
 - `Engine/sdl/sdl_input.c`, para los menús: `in_inputMode` (lo último usado: ratón o teclado, dedo o mando), `in_screenDp` (alto de la pantalla en dp) y el puente del teclado de pantalla (`in_textInput`).
 - `SetupActivity` le pasa al motor la carpeta de datos (`fs_basepath` y `fs_homepath`). Justo tras arrancar el móvil, Android aún puede no ofrecer el almacenamiento compartido; entonces los datos van a la memoria interna, y el motor los busca ahí.
 - `Shared/vm.c`: en Android los módulos siempre son nativos, aunque `default.cfg` pida `vm_* 2`.
-- `Shared/q_platform.h`: `ARCH_STRING "arm64"`.
+- `Shared/q_platform.h`: `ARCH_STRING "arm64"` (en 32 bits ya existía `"arm"`).
 
 ### Fallos del código compartido
 
