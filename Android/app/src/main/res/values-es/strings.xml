@@ -28,7 +28,7 @@
     <string name="update_failed">La actualización se detuvo: %1$s\nReintentar sigue desde donde quedó.</string>
     <string name="update_retry">Reintentar</string>
     <string name="update_play">Jugar igual</string>
-    <string name="update_offline_first">Los datos del juego se descargan la primera vez que abres el juego (unos 220 MB). Conéctate a internet y vuelve a intentarlo.</string>
+    <string name="update_offline_first">Los datos del juego (unos 220 MB) se descargan la primera vez que abres el juego, y la descarga no pudo empezar. Comprueba la conexión y vuelve a intentarlo.</string>
     <string name="update_no_release">No se encontraron datos del juego para descargar. Vuelve a intentarlo más tarde.</string>
     <string name="update_needs_apk">Estos datos del juego necesitan la versión nueva de la app.</string>
 </resources>

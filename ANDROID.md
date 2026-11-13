@@ -160,6 +160,13 @@ Propuesta completa: https://claude.ai/artifact/BoERV5dvduJBkzhiXYapQz
 - `touch_debug 1` también imprime los cambios de contexto (`touch: context melee -> foe launched`), los toques de KI en cuerpo a cuerpo con su duración y botón, y el lanzamiento.
 - Probado en el Moto G06: toques que alternan MOUSE1 y MOUSE2 y bajan la vida del rival, mantener → LAUNCH en rojo → el rival sale volando y se enciende CHASE, sin disparar un ataque de ki después. Con un bot quieto, el cuerpo a cuerpo termina tras 1,5 s sin golpes (`PM_MeleeIdle`), como en PC. Un `screencap` justo después de un `input tap` puede demorar el soltar y convertir el toque en mantener: en las pruebas, sacar capturas entre toques no sirve.
 
+**1.4-alpha4, versionCode 9 (la misma release y el mismo nombre de APK, para no romper el QR):**
+- **Android 7.0 no descargaba nada** («sin conexión» con internet): los archivos de las releases se sirven desde `release-assets.githubusercontent.com`, con certificado de Let's Encrypt (ISRG Root X1), y esa raíz llegó en Android 7.1.1. La conexión fallaba con `SSLHandshakeException: Trust anchor for certification path not found`. La app lleva ahora ISRG Root X1 y X2 (`res/raw`, sacadas del almacén de Windows y comprobadas por su SHA-256) junto a las del sistema (`network_security_config.xml`). `api.github.com` y `github.com` usan Sectigo y no tenían el problema.
+- **Sin la lista de releases** (la API de GitHub da 403 al pasar las 60 consultas por hora de una dirección, algo posible en datos móviles compartidos): la app usa los archivos de su propia release, `releases/download/android-<versionName>/`, que no cuentan para ese límite. No ve versiones nuevas, pero baja los datos.
+- Sin datos instalados, la búsqueda espera más (15 s de conexión, 20 de lectura; con datos, 5 y 6) y la pantalla de error dice qué falló (`SocketTimeoutException: connect timed out`, etc.), para diagnosticar por captura.
+- `update_server.py --api-fail` imita el 403 de la API.
+- Probado en el emulador de Android 7.0: antes, el error exacto; después, 219 MB desde GitHub en 44 s; con la lista en 403, los datos desde la release propia; sin servidor, el mensaje con el detalle.
+
 ## Estructura
 
 | Ruta | Qué es |

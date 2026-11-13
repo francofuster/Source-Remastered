@@ -16,6 +16,8 @@ Options to test the hard cases:
   --cut-after N   close the connection after N bytes of each file response
                   (a cut download: the app must resume where it stopped)
   --only TAG      list only this release (the others stay on disk)
+  --api-fail      the release list answers 403 (the API limit): the app
+                  must fall back to the files of its own release
 """
 import argparse
 import json
@@ -62,6 +64,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         host = self.headers.get('Host', 'localhost:%d' % ARGS.port)
         path = unquote(self.path.split('?')[0])
+        if path == '/releases' and ARGS.api_fail:
+            # what GitHub answers when the 60 requests an hour are used up
+            body = b'{"message":"API rate limit exceeded"}'
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('X-RateLimit-Remaining', '0')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == '/releases':
             body = json.dumps(releases(host), indent=1).encode('utf8')
             self.send_response(200)
@@ -139,6 +151,7 @@ def main():
     p.add_argument('--kbps', type=float, default=0)
     p.add_argument('--cut-after', type=int, default=0)
     p.add_argument('--only', default='')
+    p.add_argument('--api-fail', action='store_true', help='answer /releases with 403, the API rate limit')
     ARGS = p.parse_args()
     ARGS.root = os.path.abspath(ARGS.root)
     server = ThreadingHTTPServer(('0.0.0.0', ARGS.port), Handler)

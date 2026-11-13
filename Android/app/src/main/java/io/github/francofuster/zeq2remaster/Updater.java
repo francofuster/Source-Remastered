@@ -45,6 +45,14 @@ final class Updater {
 
     static final String DEFAULT_FEED =
             "https://api.github.com/repos/francofuster/Source-Remastered/releases?per_page=20";
+    /**
+     * Where the files of a release are, by tag: the fallback when the release
+     * list cannot be read. Direct downloads do not count against the 60
+     * requests an hour of the API, which a mobile network shared by many
+     * phones behind one address can use up.
+     */
+    static final String DEFAULT_DOWNLOADS =
+            "https://github.com/francofuster/Source-Remastered/releases/download/";
     static final String TAG_PREFIX = "android-";
     static final String MANIFEST = "manifest.json";
 
@@ -53,8 +61,12 @@ final class Updater {
     /** The index is saved every this many files, so an interrupted download keeps its work. */
     private static final int SAVE_EVERY = 25;
 
-    private static final int CHECK_CONNECT_MS = 3000;
-    private static final int CHECK_READ_MS = 4000;
+    // With game data the check must not hold the game up; without it there is
+    // nothing to play yet, and a slow mobile network gets more time
+    private static final int CHECK_CONNECT_MS = 5000;
+    private static final int CHECK_READ_MS = 6000;
+    private static final int FIRST_CONNECT_MS = 15000;
+    private static final int FIRST_READ_MS = 20000;
     private static final int DOWNLOAD_CONNECT_MS = 10000;
     private static final int DOWNLOAD_READ_MS = 20000;
 
@@ -115,11 +127,31 @@ final class Updater {
 
     /**
      * The newest Android release, or null when there is none or it has no
-     * manifest (the releases before the updater). Short timeouts: with no
-     * answer the game simply starts.
+     * manifest (the releases before the updater). When the release list
+     * cannot be read, the release of this very APK (ownTag, from downloads)
+     * is used instead: no newer version can be seen then, but the game data
+     * still comes down. patient: no game data yet, so longer timeouts.
      */
-    Release check(String feed) throws IOException, JSONException {
-        JSONArray releases = new JSONArray(fetchFeed(feed));
+    Release check(String feed, String downloads, String ownTag, boolean patient) throws IOException, JSONException {
+        int connectMs = patient ? FIRST_CONNECT_MS : CHECK_CONNECT_MS;
+        int readMs = patient ? FIRST_READ_MS : CHECK_READ_MS;
+        JSONArray releases;
+        try {
+            releases = new JSONArray(fetchFeed(feed, connectMs, readMs));
+        } catch (IOException | JSONException e) {
+            if (downloads == null || ownTag == null) {
+                throw e;
+            }
+            Log.w(TAG, "Update: release list failed (" + e + "), using " + ownTag);
+            String base = downloads + ownTag + "/";
+            try {
+                JSONObject m = new JSONObject(readText(base + MANIFEST, connectMs, readMs));
+                return fromManifest(ownTag, m, name -> base + name);
+            } catch (IOException | JSONException e2) {
+                Log.w(TAG, "Update: " + ownTag + " failed too: " + e2);
+                throw e;
+            }
+        }
         for (int i = 0; i < releases.length(); i++) {
             JSONObject rel = releases.getJSONObject(i);
             String tag = rel.optString("tag_name", "");
@@ -133,33 +165,58 @@ final class Updater {
                 Log.i(TAG, "Update: " + tag + " has no " + MANIFEST);
                 return null;
             }
-            JSONObject m = new JSONObject(readText(manifestUrl, CHECK_CONNECT_MS, CHECK_READ_MS));
-            JSONObject apk = m.getJSONObject("apk");
-            JSONObject data = m.getJSONObject("data");
-            Release r = new Release();
-            r.tag = tag;
-            r.version = m.getString("version");
-            r.versionCode = m.getLong("versionCode");
-            r.notes = m.optString("notes", "");
-            r.apkName = apk.getString("file");
-            r.apkBytes = apk.getLong("bytes");
-            r.apkSha256 = apk.getString("sha256").toLowerCase();
-            r.apkUrl = assetUrl(assets, r.apkName);
-            r.dataName = data.getString("file");
-            r.dataId = data.getString("id");
-            r.dataBytes = data.getLong("bytes");
-            r.dataUnpacked = data.optLong("unpackedBytes", 0);
-            r.dataFiles = data.optInt("files", 0);
-            r.dataNeeds = data.optLong("needsVersionCode", r.versionCode);
-            r.dataUrl = assetUrl(assets, r.dataName);
-            if (r.apkUrl == null || r.dataUrl == null) {
-                throw new IOException(tag + " lacks " + (r.apkUrl == null ? r.apkName : r.dataName));
-            }
+            JSONObject m = new JSONObject(readText(manifestUrl, connectMs, readMs));
+            Release r = fromManifest(tag, m, name -> {
+                try {
+                    return assetUrl(assets, name);
+                } catch (JSONException e) {
+                    return null;
+                }
+            });
             Log.i(TAG, "Update: newest is " + tag + " (version " + r.version + ", code " + r.versionCode
                     + ", data " + r.dataId.substring(0, Math.min(12, r.dataId.length())) + ")");
             return r;
         }
         return null;
+    }
+
+    private interface AssetUrl {
+        String of(String name);
+    }
+
+    private static Release fromManifest(String tag, JSONObject m, AssetUrl urls) throws JSONException, IOException {
+        JSONObject apk = m.getJSONObject("apk");
+        JSONObject data = m.getJSONObject("data");
+        Release r = new Release();
+        r.tag = tag;
+        r.version = m.getString("version");
+        r.versionCode = m.getLong("versionCode");
+        r.notes = m.optString("notes", "");
+        r.apkName = apk.getString("file");
+        r.apkBytes = apk.getLong("bytes");
+        r.apkSha256 = apk.getString("sha256").toLowerCase();
+        r.apkUrl = urls.of(r.apkName);
+        r.dataName = data.getString("file");
+        r.dataId = data.getString("id");
+        r.dataBytes = data.getLong("bytes");
+        r.dataUnpacked = data.optLong("unpackedBytes", 0);
+        r.dataFiles = data.optInt("files", 0);
+        r.dataNeeds = data.optLong("needsVersionCode", r.versionCode);
+        r.dataUrl = urls.of(r.dataName);
+        if (r.apkUrl == null || r.dataUrl == null) {
+            throw new IOException(tag + " lacks " + (r.apkUrl == null ? r.apkName : r.dataName));
+        }
+        return r;
+    }
+
+    /** For the screen: what went wrong, in one short line. */
+    static String describe(Throwable e) {
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String s = root.getClass().getSimpleName() + (root.getMessage() != null ? ": " + root.getMessage() : "");
+        return s.length() > 160 ? s.substring(0, 157) + "..." : s;
     }
 
     private static String assetUrl(JSONArray assets, String name) throws JSONException {
@@ -180,8 +237,8 @@ final class Updater {
      * without an account; an answer that did not change (304 to the saved
      * ETag) does not count, so the last list is kept.
      */
-    private String fetchFeed(String feed) throws IOException {
-        HttpURLConnection c = open(feed, CHECK_CONNECT_MS, CHECK_READ_MS);
+    private String fetchFeed(String feed, int connectMs, int readMs) throws IOException {
+        HttpURLConnection c = open(feed, connectMs, readMs);
         c.setRequestProperty("Accept", "application/vnd.github+json");
         String etag = prefs.getString("etag:" + feed, null);
         String cached = prefs.getString("body:" + feed, null);

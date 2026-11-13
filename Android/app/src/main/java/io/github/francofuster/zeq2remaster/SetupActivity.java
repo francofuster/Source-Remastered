@@ -121,18 +121,23 @@ public class SetupActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         showWork(getString(R.string.update_checking));
         final String url = feed;
+        // the files of each release, for when the release list cannot be read
+        final String downloads = url.equals(Updater.DEFAULT_FEED) ? Updater.DEFAULT_DOWNLOADS
+                : Uri.parse(url).buildUpon().path("/files/").clearQuery().build().toString();
+        final String ownTag = Updater.TAG_PREFIX + versionName();
+        final boolean patient = !hadData;
         worker(() -> {
             Updater.Release found = null;
-            boolean reached = true;
+            String failure = null;
             try {
-                found = updater.check(url);
+                found = updater.check(url, downloads, ownTag, patient);
             } catch (Exception e) {
                 Log.w(TAG, "Update check failed: " + e);
-                reached = false;
+                failure = Updater.describe(e);
             }
             final Updater.Release r = found;
-            final boolean online = reached;
-            runOnUiThread(() -> checked(r, online));
+            final String why = failure;
+            runOnUiThread(() -> checked(r, why));
         });
     }
 
@@ -146,14 +151,18 @@ public class SetupActivity extends Activity {
 
     // --- Update flow -------------------------------------------------------
 
-    private void checked(Updater.Release r, boolean online) {
+    /** why: what failed, null when the release list was read. */
+    private void checked(Updater.Release r, String why) {
         if (r == null || r.versionCode < installedCode) {
             // Nothing newer, or no answer: play with what is there
             if (hadData) {
                 startGame();
             } else {
-                failWith(getString(online ? R.string.update_no_release : R.string.update_offline_first),
+                failWith(getString(why == null ? R.string.update_no_release : R.string.update_offline_first),
                         this::recreate, null);
+                if (why != null) {
+                    detail.setText(why);
+                }
             }
             return;
         }

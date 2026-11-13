@@ -29,7 +29,7 @@
     <string name="update_failed">The update stopped: %1$s\nRetry continues where it left off.</string>
     <string name="update_retry">Retry</string>
     <string name="update_play">Play anyway</string>
-    <string name="update_offline_first">The game data is downloaded the first time the game opens (about 220 MB). Connect to the internet and try again.</string>
+    <string name="update_offline_first">The game data (about 220 MB) is downloaded the first time the game opens, and the download could not start. Check the connection and try again.</string>
     <string name="update_no_release">No game data was found to download. Try again later.</string>
     <string name="update_needs_apk">This game data needs the new version of the app.</string>
 </resources>
